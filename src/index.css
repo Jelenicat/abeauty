@@ -1,0 +1,12 @@
+/* Minimal reset za naš layout */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  display: block;    /* ukloni Vite-ov flex */
+  min-width: 0;      /* bez prisilnog min width-a */
+  min-height: 100%;  /* visina tela = visina stranice */
+}

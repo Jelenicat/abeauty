@@ -1,0 +1,187 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { db } from "../firebase";
+import {
+  doc, getDoc, updateDoc, deleteDoc,
+  collection, query, where, onSnapshot, addDoc,
+  serverTimestamp, orderBy
+} from "firebase/firestore";
+
+export default function AdminCategory() {
+  const { categoryId } = useParams();
+  const catId = categoryId; // koristimo catId niže
+  const nav = useNavigate();
+
+  const [catName, setCatName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [services, setServices] = useState([]);
+
+  // forma za novu/usluge
+  const [editing, setEditing] = useState(null); // id usluge ili null
+  const [name, setName] = useState("");
+  const [durationMin, setDurationMin] = useState("");
+  const [price, setPrice] = useState("");
+  const [discount, setDiscount] = useState(""); // % (radi sa discountPercent u bazi)
+
+  const finalPrice = useMemo(() => {
+    const p = Number(price) || 0;
+    const d = Number(discount) || 0;
+    return Math.max(0, Math.round(p * (1 - d / 100)));
+  }, [price, discount]);
+
+  // učitaj kategoriju + njene usluge
+  useEffect(() => {
+    if (!catId) return;
+
+    let off = () => {};
+    (async () => {
+      const snap = await getDoc(doc(db, "categories", catId));
+      if (snap.exists()) setCatName(snap.data().name || "");
+      setLoading(false);
+
+      off = onSnapshot(
+        query(
+          collection(db, "services"),
+          where("categoryId", "==", catId),
+          orderBy("order", "asc")
+        ),
+        (s) => {
+          const arr = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setServices(arr);
+        }
+      );
+    })();
+
+    return () => off();
+  }, [catId]);
+
+  const resetForm = () => {
+    setEditing(null);
+    setName("");
+    setDurationMin("");
+    setPrice("");
+    setDiscount("");
+  };
+
+  const saveCategoryName = async () => {
+    const n = catName.trim();
+    if (!n) return;
+    await updateDoc(doc(db, "categories", catId), { name: n, updatedAt: serverTimestamp() });
+    alert("Naziv kategorije sačuvan.");
+  };
+
+  const deleteCategory = async () => {
+    if (services.length) {
+      if (!confirm(`Kategorija ima ${services.length} usluga. Obrisaćeš SAMO kategoriju (usluge ostaju). Nastavi?`)) return;
+    } else {
+      if (!confirm("Obrisati kategoriju?")) return;
+    }
+    await deleteDoc(doc(db, "categories", catId));
+    nav("/admin/katalog");
+  };
+
+  const startEdit = (srv) => {
+    setEditing(srv.id);
+    setName(srv.name || "");
+    setDurationMin(String(srv.durationMin || ""));
+    setPrice(String(srv.basePrice || ""));
+    // čitamo discountPercent (ili fallback na staro ime ako postoji)
+    setDiscount(String(srv.discountPercent ?? srv.discount ?? ""));
+  };
+
+  const saveService = async (e) => {
+    e?.preventDefault?.();
+    const payload = {
+      categoryId: catId,
+      name: name.trim(),
+      durationMin: Number(durationMin) || 0,
+      basePrice: Number(price) || 0,
+      discountPercent: Number(discount) || 0, // ← polje kao u bazi
+      finalPrice,
+      updatedAt: serverTimestamp(),
+    };
+    if (!payload.name) return;
+
+    if (editing) {
+      await updateDoc(doc(db, "services", editing), payload);
+    } else {
+      await addDoc(collection(db, "services"), {
+        ...payload,
+        order: (services?.length || 0) + 1,
+        createdAt: serverTimestamp(),
+      });
+    }
+    resetForm();
+  };
+
+  const removeService = async (id) => {
+    if (!confirm("Obrisati uslugu?")) return;
+    await deleteDoc(doc(db, "services", id));
+    if (editing === id) resetForm();
+  };
+
+  return (
+    <div style={wrap}>
+      <div style={panel}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+          <button style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
+          <h2 style={title}>Kategorija</h2>
+        </div>
+
+        {/* preimenovanje / brisanje kategorije */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
+          <input style={inp} value={catName} onChange={e => setCatName(e.target.value)} placeholder="Naziv kategorije" />
+          <button style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
+          <button style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
+        </div>
+
+        {/* forma za uslugu */}
+        <form onSubmit={saveService} style={form}>
+          <input style={inp} placeholder="Naziv usluge" value={name} onChange={e => setName(e.target.value)} />
+          <input style={inp} type="number" min="0" placeholder="Trajanje (min)" value={durationMin} onChange={e => setDurationMin(e.target.value)} />
+          <input style={inp} type="number" min="0" placeholder="Cena (RSD)" value={price} onChange={e => setPrice(e.target.value)} />
+          <input style={inp} type="number" min="0" max="90" placeholder="Popust % (opciono)" value={discount} onChange={e => setDiscount(e.target.value)} />
+          <div style={{ alignSelf: "center", color: "#fff", fontWeight: 800 }}>Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
+          <button style={btn} type="submit">{editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}</button>
+          {editing && <button style={ghostBtn} type="button" onClick={resetForm}>Otkaži</button>}
+        </form>
+
+        {/* lista usluga */}
+        <div style={list}>
+          {services.map(s => (
+            <div key={s.id} style={row}>
+              <div>
+                <div style={{ fontWeight: 900 }}>{s.name}</div>
+                <div style={{ opacity: .8, fontSize: 13 }}>
+                  {s.durationMin} min · {s.basePrice} RSD{" "}
+                  {s.discountPercent
+                    ? `· popust ${s.discountPercent}% → ${s.finalPrice} RSD`
+                    : ""}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
+                <button style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
+              </div>
+            </div>
+          ))}
+          {!services.length && !loading && <div style={{ color: "#fff" }}>Još nema usluga u ovoj kategoriji.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* === styles === */
+const wrap = { minHeight: "100vh", background: 'url("/slika7.webp") center/cover no-repeat fixed', padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" };
+const panel = { width: "min(1250px,100%)", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.35)", backdropFilter: "blur(10px)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.25)", padding: "clamp(18px,4vw,28px)" };
+const title = { margin: 0, color: "#fff", fontWeight: 900, fontSize: "clamp(18px,3vw,28px)" };
+const inp = { height: 42, borderRadius: 12, border: "1px solid #ececec", padding: "0 12px", background: "#fff" };
+const btn = { height: 42, border: "none", borderRadius: 12, background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff", fontWeight: 800, padding: "0 16px", cursor: "pointer" };
+const ghostBtn = { height: 42, borderRadius: 12, border: "1px solid rgba(255,255,255,.7)", background: "transparent", color: "#fff", fontWeight: 800, padding: "0 14px", cursor: "pointer" };
+const dangerBtn = { ...btn, background: "#ff5b6e" };
+const form = { display: "grid", gridTemplateColumns: "2fr 140px 140px 160px auto auto auto", gap: 8, marginBottom: 14 };
+const list = { display: "grid", gap: 10 };
+const row = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: 14, padding: "10px 12px", boxShadow: "0 10px 20px rgba(0,0,0,.06)" };
+const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#efefef", cursor: "pointer", fontWeight: 800 };
+const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
