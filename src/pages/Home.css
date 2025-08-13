@@ -201,16 +201,127 @@
   border:1px solid #ececec;
   box-shadow:0 24px 60px rgba(0,0,0,.25);
 }
+:root{
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+html, body { margin:0; padding:0; }
+* { box-sizing: border-box; }
+
+/* Tap target 44px min */
+.btn-ghost, .btn-primary, .login-btn, .zakazi-btn, .custom-btn { min-height:44px; }
+
+/* Spreči horizontalni scroll na mobilnom */
+.home-screen{ overflow-x:hidden; }
 
 /* Responsive */
-@media (max-width:1024px){
-  .logo{ height:120px; }
-}
-@media (max-width:768px){
-  .top-bar{ height:80px; }
-  .logo{ height:60px; }
-  .hero-section{ margin-top:80px; height:calc(100vh - 80px); padding-bottom:90px; }
-  .zakazi-btn{ padding:14px 32px; font-size:1.1rem; }
-  .o-nama-title{ font-size:2rem; }
-  .o-nama-text{ font-size:1rem; }
+@media (max-width: 768px){
+  /* Top bar / header */
+  .top-bar{
+    height:64px;
+    padding-top: max(0px, var(--safe-top));
+  }
+  .logo{
+    height:44px; /* ne zauzima pola ekrana */
+  }
+  .top-right{
+    right:10px;
+    gap:8px;
+  }
+  /* Sakrij "Ćao, Ime" na baš uskim ekranima da ne kvari raspored */
+  @media (max-width: 400px){
+    .hello-text{ display:none; }
+  }
+
+  /* Dugmad u traci */
+  .btn-ghost, .btn-primary, .login-btn{
+    height:40px;
+    padding:0 12px;
+    font-size:0.9rem;
+    border-radius:999px;
+  }
+
+  /* Hero */
+  .hero-section{
+    margin-top:64px;                /* visina trake */
+    height:75vh;                    /* bolje za mobilni sa URL trakom */
+    padding-bottom:60px;
+    position:relative;
+  }
+  /* dodaj blagi overlay preko pozadine da tekst/dugme budu čitljiviji */
+  .hero-section::after{
+    content:"";
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(0,0,0,.20) 0%, rgba(0,0,0,.30) 100%);
+    pointer-events:none;
+  }
+
+  .zakazi-btn{
+    padding:14px 28px;
+    font-size:1rem;
+    border-radius:999px;
+    box-shadow:0 14px 22px rgba(0,0,0,0.45);
+    /* mali “card” efekat ispod dugmeta radi čitljivosti na šarenoj pozadini */
+    background-image: none;
+    background:#ffffffee;
+    border:1px solid rgba(0,0,0,.05);
+  }
+  .zakazi-btn:hover{
+    transform:translate(-50%, -50%) scale(1.03);
+    box-shadow:0 18px 26px rgba(0,0,0,0.35);
+  }
+
+  /* O nama */
+  .o-nama-section{
+    margin:24px auto 0;
+    padding:0 14px;
+  }
+  .o-nama-title{
+    font-size:1.6rem;
+    margin-bottom:10px;
+  }
+  .o-nama-text{
+    font-size:0.98rem;
+    line-height:1.6;
+  }
+
+  .o-nama-buttons{
+    margin-top:18px;
+    gap:12px;
+  }
+  .custom-btn{
+    padding:12px 22px;
+    font-size:1rem;
+    box-shadow:0 12px 18px rgba(0,0,0,.35);
+    max-width: 90vw;       /* da ne izađe iz ekrana */
+    white-space: nowrap;   /* ostaje u jednom redu */
+  }
+  .custom-btn:hover{ transform:scale(1.03); }
+
+  /* Lokacija */
+  .lokacija-section{
+    padding:36px 14px 24px;
+  }
+  .lokacija-title{
+    font-size:1.7rem;
+    margin-bottom:14px;
+  }
+  .lokacija-mapa iframe{
+    height:300px;
+    border-radius:10px;
+  }
+
+  /* Modal */
+  .modal-card{
+    width: min(92vw, 420px);
+    padding:16px;
+    border-radius:14px;
+  }
+
+  /* Footer-spacer skratimo da se ne skroluje previše */
+  .home-screen > div[style*="height: 120vh"]{
+    height: 20vh !important;
+    padding-bottom: max(0px, var(--safe-bottom));
+  }
 }
