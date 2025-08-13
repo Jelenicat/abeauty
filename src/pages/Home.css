@@ -216,6 +216,7 @@ html, body { margin:0; padding:0; }
 .home-screen{ overflow-x:hidden; }
 
 /* Responsive */
+/* --- MOBILE --- */
 @media (max-width: 768px){
   /* Top bar / header */
   .top-bar{
@@ -223,15 +224,11 @@ html, body { margin:0; padding:0; }
     padding-top: max(0px, var(--safe-top));
   }
   .logo{
-    height:44px; /* ne zauzima pola ekrana */
+    height:44px;
   }
   .top-right{
     right:10px;
     gap:8px;
-  }
-  /* Sakrij "Ćao, Ime" na baš uskim ekranima da ne kvari raspored */
-  @media (max-width: 400px){
-    .hello-text{ display:none; }
   }
 
   /* Dugmad u traci */
@@ -244,26 +241,23 @@ html, body { margin:0; padding:0; }
 
   /* Hero */
   .hero-section{
-    margin-top:64px;                /* visina trake */
-    height:75vh;                    /* bolje za mobilni sa URL trakom */
+    margin-top:64px;
+    height:75vh;
     padding-bottom:60px;
     position:relative;
   }
-  /* dodaj blagi overlay preko pozadine da tekst/dugme budu čitljiviji */
   .hero-section::after{
     content:"";
     position:absolute; inset:0;
     background:linear-gradient(180deg, rgba(0,0,0,.20) 0%, rgba(0,0,0,.30) 100%);
     pointer-events:none;
   }
-
   .zakazi-btn{
     padding:14px 28px;
     font-size:1rem;
     border-radius:999px;
     box-shadow:0 14px 22px rgba(0,0,0,0.45);
-    /* mali “card” efekat ispod dugmeta radi čitljivosti na šarenoj pozadini */
-    background-image: none;
+    background-image:none;
     background:#ffffffee;
     border:1px solid rgba(0,0,0,.05);
   }
@@ -285,7 +279,6 @@ html, body { margin:0; padding:0; }
     font-size:0.98rem;
     line-height:1.6;
   }
-
   .o-nama-buttons{
     margin-top:18px;
     gap:12px;
@@ -294,8 +287,8 @@ html, body { margin:0; padding:0; }
     padding:12px 22px;
     font-size:1rem;
     box-shadow:0 12px 18px rgba(0,0,0,.35);
-    max-width: 90vw;       /* da ne izađe iz ekrana */
-    white-space: nowrap;   /* ostaje u jednom redu */
+    max-width:90vw;
+    white-space:nowrap;
   }
   .custom-btn:hover{ transform:scale(1.03); }
 
@@ -314,14 +307,20 @@ html, body { margin:0; padding:0; }
 
   /* Modal */
   .modal-card{
-    width: min(92vw, 420px);
+    width:min(92vw, 420px);
     padding:16px;
     border-radius:14px;
   }
 
-  /* Footer-spacer skratimo da se ne skroluje previše */
+  /* Skrati veliki spacer na dnu */
   .home-screen > div[style*="height: 120vh"]{
-    height: 20vh !important;
-    padding-bottom: max(0px, var(--safe-bottom));
+    height:20vh !important;
+    padding-bottom:max(0px, var(--safe-bottom));
   }
 }
+
+/* Poseban uski breakpoint – van glavnog @media bloka */
+@media (max-width: 400px){
+  .hello-text{ display:none; }
+}
+
