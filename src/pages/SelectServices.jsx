@@ -39,15 +39,14 @@ const finalPriceOf = (s) => {
 
 /* -------- component -------- */
 export default function SelectServices() {
-  const { user } = useAuth(); // (nije obavezno, ali ostavljeno ako zatreba)
+  const { user } = useAuth();
   const { selectedServices, setSelectedServices } = useBooking();
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);
   const [activeCatId, setActiveCatId] = useState("");
-  const [search, setSearch] = useState("");
   const navigate = useNavigate();
 
-  // responsive flag (telefon vs desktop)
+  // responsive flag
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined"
       ? window.matchMedia("(max-width: 768px)").matches
@@ -58,7 +57,7 @@ export default function SelectServices() {
     const mq = window.matchMedia("(max-width: 768px)");
     const onChange = (e) => setIsMobile(e.matches);
     mq.addEventListener?.("change", onChange);
-    mq.addListener?.(onChange); // stariji Safari
+    mq.addListener?.(onChange);
     return () => {
       mq.removeEventListener?.("change", onChange);
       mq.removeListener?.(onChange);
@@ -109,14 +108,7 @@ export default function SelectServices() {
     if (!activeCatId && cats.length) setActiveCatId(cats[0].id);
   }, [cats, activeCatId]);
 
-  const shown = useMemo(() => {
-    let arr = servicesByCat.get(activeCatId) || [];
-    const q = search.trim().toLowerCase();
-    if (q) arr = arr.filter((s) => String(s.name || "").toLowerCase().includes(q));
-    return arr;
-  }, [servicesByCat, activeCatId, search]);
-
-  // pomoćna za slike kategorija (pokušava više polja, fallback)
+  // helper za sliku kategorije
   const catImage = (c) =>
     c?.image || c?.photo || c?.cover || c?.img || "/slika3.webp";
 
@@ -138,7 +130,7 @@ export default function SelectServices() {
           id: srv.id,
           name: srv.name,
           durationMin: Number(srv.durationMin || 0),
-          price: finalPriceOf(srv), // čuvamo FINALNU cenu (sa popustom)
+          price: finalPriceOf(srv),
           basePrice: basePriceOf(srv) ?? null,
           discountPercent: discountOf(srv),
           categoryId: srv.categoryId || null,
@@ -148,14 +140,21 @@ export default function SelectServices() {
     }
   }
 
-  const totalMin = selectedServices.reduce((a, b) => a + Number(b.durationMin || 0), 0);
-  const totalPrice = selectedServices.reduce((a, b) => a + Number(b.price || 0), 0);
-  const canContinue = selectedServices.length >= 1 && selectedServices.length <= 5;
+  const totalMin = selectedServices.reduce(
+    (a, b) => a + Number(b.durationMin || 0),
+    0
+  );
+  const totalPrice = selectedServices.reduce(
+    (a, b) => a + Number(b.price || 0),
+    0
+  );
+  const canContinue =
+    selectedServices.length >= 1 && selectedServices.length <= 5;
 
   return (
     <div style={wrap}>
       <div style={panel}>
-        {/* header */}
+        {/* header (crna slova) */}
         <div
           style={{
             display: "flex",
@@ -167,119 +166,135 @@ export default function SelectServices() {
         >
           <div>
             <h2 style={title}>Izaberi usluge</h2>
-            <div style={{ color: "#fff", opacity: 0.9 }}>
-              Min 1, maksimalno 5. Prvo odaberi kategoriju, pa čekiraj usluge.
+            <div style={{ color: "#000", opacity: 0.9 }}>
+              Min 1, maksimalno 5. Odaberi kategoriju i čekiraj uslugu.
             </div>
           </div>
-          <div style={{ minWidth: 280, flex: "0 1 320px" }}>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Pretraga usluga…"
-              style={searchInp}
-            />
-          </div>
+          {/* pretraga je uklonjena */}
         </div>
 
-        {/* Kategorije */}
-        {isMobile ? (
-          // MOBILE: kartice kao na dizajnu
-          <div style={mobCatList}>
-            {cats.map((c) => {
-              const active = c.id === activeCatId;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => setActiveCatId(c.id)}
-                  style={mobCatCard(catImage(c), active)}
-                >
-                  <span style={mobCatLabel}>{String(c.name || "").toUpperCase()}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          // DESKTOP: postojeća velika dugmad
-          <div style={bigCatsRow}>
-            {cats.map((c) => {
-              const active = c.id === activeCatId;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => setActiveCatId(c.id)}
-                  style={bigCatBtn(active)}
-                >
-                  {c.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Lista usluga u aktivnoj kategoriji */}
-        <div style={srvGrid(isMobile)}>
-          {shown.map((s) => {
-            const checked = !!selectedServices.find((x) => x.id === s.id);
-            const base = basePriceOf(s);
-            const disc = discountOf(s);
-            const price = finalPriceOf(s);
+        {/* KATEGORIJE + USLUGE: svaka kategorija renderuje svoje usluge odmah ispod */}
+        <div style={catStack}>
+          {cats.map((c) => {
+            const isActive = c.id === activeCatId;
+            const list = servicesByCat.get(c.id) || [];
             return (
-              <label key={s.id} style={srvCard(checked)}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(s.id)}
-                  style={{ display: "none" }}
-                />
-                <div style={{ fontWeight: 900, lineHeight: 1.3 }}>{s.name}</div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    opacity: 0.9,
-                    marginTop: 6,
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span>{Number(s.durationMin || 0)} min</span>
-                  {price != null && (
-                    <>
-                      <span>•</span>
-                      {disc > 0 && base != null ? (
-                        <>
-                          <span
+              <div key={c.id} style={{ display: "grid", gap: 10 }}>
+                {/* Kategorija (tile na mobilu, dugme na desktopu) */}
+                {isMobile ? (
+                  <button
+                    onClick={() => setActiveCatId(c.id)}
+                    style={mobCatCard(catImage(c), isActive)}
+                  >
+                    <span style={mobCatLabel}>
+                      {String(c.name || "").toUpperCase()}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setActiveCatId(c.id)}
+                    style={deskCatBtn(isActive)}
+                  >
+                    {c.name}
+                  </button>
+                )}
+
+                {/* USLUGE — prikazuju se samo ispod aktivne kategorije */}
+                {isActive && (
+                  <div style={srvGrid(isMobile)}>
+                    {list.map((s) => {
+                      const checked = !!selectedServices.find(
+                        (x) => x.id === s.id
+                      );
+                      const base = basePriceOf(s);
+                      const disc = discountOf(s);
+                      const price = finalPriceOf(s);
+                      return (
+                        <label key={s.id} style={srvCard(checked)}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(s.id)}
+                            style={{ display: "none" }}
+                          />
+                          {/* Naziv CENTRIRAN i CRN */}
+                          <div
                             style={{
-                              textDecoration: "line-through",
-                              opacity: 0.7,
+                              fontWeight: 900,
+                              lineHeight: 1.3,
+                              textAlign: "center",
+                              color: "#000",
                             }}
                           >
-                            {money(base)}
-                          </span>
-                          <b>{money(price)}</b>
-                          <span style={badgeSale}>-{disc}%</span>
-                        </>
-                      ) : (
-                        <b>{money(price)}</b>
-                      )}
-                    </>
-                  )}
-                </div>
-              </label>
+                            {s.name}
+                          </div>
+                          {/* Info red CENTRIRAN i CRN */}
+                          <div
+                            style={{
+                              fontSize: 12,
+                              marginTop: 6,
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexWrap: "wrap",
+                              color: "#000",
+                            }}
+                          >
+                            <span>{Number(s.durationMin || 0)} min</span>
+                            {price != null && (
+                              <>
+                                <span>•</span>
+                                {disc > 0 && base != null ? (
+                                  <>
+                                    <span
+                                      style={{
+                                        textDecoration: "line-through",
+                                        opacity: 0.7,
+                                      }}
+                                    >
+                                      {money(base)}
+                                    </span>
+                                    <b style={{ color: "#000" }}>
+                                      {money(price)}
+                                    </b>
+                                    <span style={badgeSale}>-{disc}%</span>
+                                  </>
+                                ) : (
+                                  <b style={{ color: "#000" }}>
+                                    {money(price)}
+                                  </b>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                    {!list.length && (
+                      <div
+                        style={{
+                          gridColumn: "1/-1",
+                          color: "#000",
+                          opacity: 0.9,
+                          textAlign: "center",
+                        }}
+                      >
+                        Nema usluga u ovoj kategoriji.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             );
           })}
-          {!shown.length && (
-            <div style={{ gridColumn: "1/-1", color: "#fff", opacity: 0.9 }}>
-              Nema usluga u ovoj kategoriji.
-            </div>
-          )}
         </div>
 
-        {/* Sažetak + Nastavi */}
+        {/* Sažetak + Nastavi (crna slova) */}
         <div style={summaryRow}>
-          <div style={{ color: "#fff" }}>
-            Izabrano: <b>{selectedServices.length}</b> • Trajanje: <b>{totalMin} min</b>
+          <div style={{ color: "#000" }}>
+            Izabrano: <b>{selectedServices.length}</b> • Trajanje:{" "}
+            <b>{totalMin} min</b>
             {totalPrice ? (
               <>
                 {" "}
@@ -311,55 +326,38 @@ const wrap = {
 };
 const panel = {
   width: "min(1200px, 100%)",
-  background: "rgba(255,255,255,.12)",
+  background: "rgba(255,255,255,.2)", // svetlije da crni tekst bude čitljiv
   border: "1px solid rgba(255,255,255,.35)",
   backdropFilter: "blur(10px)",
   borderRadius: 28,
   boxShadow: "0 24px 60px rgba(0,0,0,.25)",
   padding: "clamp(16px,3vw,24px)",
 };
-const title = { margin: 0, color: "#fff", textShadow: "0 2px 14px rgba(0,0,0,.25)" };
-const searchInp = {
-  height: 42,
-  width: "100%",
-  borderRadius: 12,
-  border: "1px solid #ececec",
-  background: "#fff",
-  padding: "0 12px",
-  fontSize: 14,
+const title = { margin: 0, color: "#000" };
+
+/* Stog kategorija (svaka sa svojim listom) */
+const catStack = {
+  display: "grid",
+  gap: 16,
+  marginTop: 12,
 };
 
-/* ===== DESKTOP categories (existing) ===== */
-const bigCatsRow = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))",
-  gap: 10,
-  margin: "12px 0 14px",
-};
-const bigCatBtn = (active) => ({
+/* ===== DESKTOP kategorije (bez roze okvira) ===== */
+const deskCatBtn = (active) => ({
   height: 64,
   borderRadius: 16,
-  border: active ? "none" : "1px solid rgba(255,255,255,.6)",
-  background: active
-    ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
-    : "rgba(255,255,255,.15)",
-  color: "#fff",
+  border: "1px solid rgba(0,0,0,.2)",
+  background: active ? "rgba(255,255,255,.95)" : "rgba(255,255,255,.85)",
+  color: "#000",
   fontWeight: 900,
   cursor: "pointer",
-  boxShadow: active ? "0 8px 20px rgba(255,127,181,.28)" : "none",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
 });
 
-/* ===== MOBILE category tiles ===== */
-const mobCatList = {
-  display: "grid",
-  gridTemplateColumns: "1fr",
-  gap: 12,
-  margin: "12px 0 16px",
-};
-const mobCatCard = (imgUrl, active) => ({
+/* ===== MOBILE category tile ===== (bez outline-a, label crna) */
+const mobCatCard = (imgUrl /* , active */) => ({
   position: "relative",
   display: "block",
   width: "100%",
@@ -370,30 +368,26 @@ const mobCatCard = (imgUrl, active) => ({
   cursor: "pointer",
   boxShadow: "0 10px 24px rgba(0,0,0,.18)",
   background: `
-    linear-gradient(180deg, rgba(255,255,255,0) 40%, rgba(0,0,0,.28) 100%),
-    linear-gradient(0deg, rgba(0,0,0,.20), rgba(0,0,0,.20)),
+    linear-gradient(180deg, rgba(255,255,255,0) 40%, rgba(0,0,0,.18) 100%),
     url('${imgUrl}') center/cover no-repeat
   `,
   WebkitMaskImage: "-webkit-radial-gradient(white, black)",
   isolation: "isolate",
-  ...(active && {
-    outline: "2px solid rgba(255,127,181,.9)",
-    outlineOffset: 0,
-  }),
+  // nema roze okvira / outline-a
 });
 const mobCatLabel = {
   position: "absolute",
   right: 16,
   top: "50%",
   transform: "translateY(-50%)",
-  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
-  color: "#fff",
+  background: "rgba(255,255,255,.92)",
+  color: "#000", // crna slova
   padding: "10px 14px",
   borderRadius: 14,
   fontWeight: 900,
-  letterSpacing: ".12em",
+  letterSpacing: ".08em",
   fontSize: 13,
-  boxShadow: "0 8px 18px rgba(255,127,181,.28)",
+  boxShadow: "0 8px 18px rgba(0,0,0,.15)",
 };
 
 /* ===== Services grid & cards ===== */
@@ -402,25 +396,29 @@ const srvGrid = (mobile) => ({
   gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill,minmax(260px,1fr))",
   gap: 10,
 });
+
+// jača boja za checked; sva slova crna
 const srvCard = (checked) => ({
   borderRadius: 16,
-  border: "1px solid rgba(255,255,255,.35)",
-  background: checked
-    ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-    : "rgba(255,255,255,.92)",
-  padding: 14,
-  color: "#222",
-  boxShadow: checked ? "0 10px 22px rgba(0,0,0,.18)" : "0 6px 16px rgba(0,0,0,.12)",
+  border: "1px solid rgba(0,0,0,.15)",
+  background: checked ? "#ffb7d0" : "#ffffff", // JAČA nijansa kad je čekirano
+  padding: 16,
+  color: "#000",
+  boxShadow: checked
+    ? "0 10px 22px rgba(0,0,0,.20)"
+    : "0 6px 16px rgba(0,0,0,.12)",
   cursor: "pointer",
+  transition: "background .15s ease, box-shadow .15s ease",
 });
 
 const badgeSale = {
-  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
-  color: "#fff",
+  background: "#ffe3ef",
+  color: "#000",
   borderRadius: 999,
   padding: "2px 8px",
   fontSize: 11,
   fontWeight: 900,
+  border: "1px solid rgba(0,0,0,.1)",
 };
 
 const summaryRow = {
@@ -434,11 +432,11 @@ const summaryRow = {
 const primaryBtn = (on) => ({
   height: 40,
   borderRadius: 12,
-  border: "none",
+  border: "1px solid rgba(0,0,0,.15)",
   padding: "0 16px",
   fontWeight: 900,
   cursor: on ? "pointer" : "not-allowed",
-  background: on ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)" : "#ccc",
-  color: "#fff",
-  boxShadow: on ? "0 8px 20px rgba(255,127,181,.28)" : "none",
+  background: on ? "#ffd6e7" : "#eee",
+  color: "#000",
+  boxShadow: on ? "0 8px 20px rgba(0,0,0,.15)" : "none",
 });
