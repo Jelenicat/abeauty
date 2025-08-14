@@ -224,7 +224,7 @@ html, body { margin:0; padding:0; }
     padding-top: max(0px, var(--safe-top));
   }
   .logo{
-    height:44px;
+    height:100px;
   }
   .top-right{
     right:10px;
