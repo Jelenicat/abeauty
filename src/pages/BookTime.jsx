@@ -40,7 +40,7 @@ const discountOf = (s) => {
 const finalPriceOf = (s) => {
   const b = basePriceOf(s);
   if (b == null) return null;
-  return Math.round(b * (100 - discountOf(s)) / 100);
+  return Math.round((b * (100 - discountOf(s))) / 100);
 };
 const money = (v) =>
   v == null || v === ""
@@ -109,9 +109,7 @@ export default function BookTime() {
       <div style={wrap}>
         <div style={panel}>
           <h2 style={title}>Nema izabranih usluga</h2>
-          <div style={{ color: "#fff" }}>
-            Vrati se i izaberi do 5 usluga.
-          </div>
+          <div style={{ color: "#fff" }}>Vrati se i izaberi do 5 usluga.</div>
         </div>
       </div>
     );
@@ -194,7 +192,10 @@ export default function BookTime() {
 
   const currentSlots =
     p.mode === "specific"
-      ? (slotsByEmp.get(p.empId) || []).map((s) => ({ ...s, employeeId: p.empId }))
+      ? (slotsByEmp.get(p.empId) || []).map((s) => ({
+          ...s,
+          employeeId: p.empId,
+        }))
       : combined;
 
   async function book(slot) {
@@ -235,7 +236,7 @@ export default function BookTime() {
         return;
       }
 
-      // payload BEZ undefined vrednosti
+      // payload
       const payload = {
         type: "booking",
         status: "booked",
@@ -301,7 +302,9 @@ export default function BookTime() {
                   style={srvItem(active, booked)}
                   type="button"
                 >
-                  <div style={{ fontWeight: 900, lineHeight: 1.3 }}>{s.name}</div>
+                  <div style={{ fontWeight: 900, lineHeight: 1.3 }}>
+                    {s.name}
+                  </div>
                   <div style={{ fontSize: 12, opacity: 0.85 }}>
                     {Number(s.durationMin || 0)} min{" "}
                     {finalPriceOf(s) != null && <>• {money(finalPriceOf(s))}</>}
@@ -321,8 +324,9 @@ export default function BookTime() {
             })}
           </div>
 
-          {/* desna kolona: planer */}
+          {/* desna kolona: novi UI */}
           <div style={rightCol}>
+            {/* info o usluzi + kontrole (zadržane) */}
             <div
               style={{
                 display: "flex",
@@ -332,10 +336,15 @@ export default function BookTime() {
               }}
             >
               <div>
-                <div style={{ fontSize: 12, opacity: 0.85 }}>Usluga</div>
-                <div style={{ fontWeight: 900 }}>{activeService.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.9 }}>
-                  Trajanje: <b>{Number(activeService.durationMin || 0)} min</b>{" "}
+                <div style={{ fontSize: 12, opacity: 0.85, color: "#fff" }}>
+                  Usluga
+                </div>
+                <div style={{ fontWeight: 900, color: "#fff" }}>
+                  {activeService.name}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.9, color: "#fff" }}>
+                  Trajanje:{" "}
+                  <b>{Number(activeService.durationMin || 0)} min</b>{" "}
                   {finalPriceOf(activeService) != null && (
                     <>
                       • Cena: <b>{money(finalPriceOf(activeService))}</b>
@@ -347,7 +356,7 @@ export default function BookTime() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(3,minmax(160px,1fr))",
+                  gridTemplateColumns: "repeat(3,minmax(150px,1fr))",
                   gap: 8,
                   alignItems: "end",
                 }}
@@ -418,19 +427,65 @@ export default function BookTime() {
               </div>
             </div>
 
-            <MiniCalendar
+            {/* 1) traka sa datumima */}
+            <DateStrip
               monthStr={monthAnchor}
               selectedDay={selectedDay}
               onSelect={setSelectedDay}
             />
 
-            <div style={{ color: "#fff", opacity: 0.9, marginBottom: 6 }}>
-              {p.mode === "specific"
-                ? "Dostupni termini za izabranu radnicu:"
-                : "Dostupni termini (sve radnice):"}
+            {/* 2) kartice radnica */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                margin: "4px 2px 8px",
+              }}
+            >
+              <div style={{ color: "#fff", fontWeight: 900 }}>Hair Stylish</div>
+              <div style={{ color: "#fff", opacity: 0.85, fontSize: 12 }}>
+                See All
+              </div>
             </div>
 
-            <div style={slotsGrid}>
+            <div style={stylistsRow}>
+              {eligible.length ? (
+                eligible.map((e) => {
+                  const activeEmp = p.empId === e.id && p.mode === "specific";
+                  return (
+                    <EmpCard
+                      key={e.id}
+                      name={e.name}
+                      rating={Number(e.rating || 4.7)}
+                      active={activeEmp}
+                      onClick={() =>
+                        setPrefs(
+                          new Map(
+                            prefs.set(activeService.id, {
+                              ...p,
+                              mode: "specific",
+                              empId: e.id,
+                            })
+                          )
+                        )
+                      }
+                    />
+                  );
+                })
+              ) : (
+                <div style={{ color: "#fff", opacity: 0.85, padding: 8 }}>
+                  Nema radnica za ovu uslugu/kategoriju.
+                </div>
+              )}
+            </div>
+
+            {/* 3) available time */}
+            <div style={{ color: "#fff", opacity: 0.9, margin: "8px 2px 6px" }}>
+              Available Time
+            </div>
+
+            <div style={pillsGrid}>
               {loading ? (
                 <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
               ) : currentSlots.length ? (
@@ -440,7 +495,7 @@ export default function BookTime() {
                     <button
                       key={`${s.employeeId}_${s.startMin}`}
                       style={{
-                        ...slotBtn,
+                        ...pillBtn,
                         opacity: busyAction ? 0.7 : 1,
                         pointerEvents: busyAction ? "none" : "auto",
                       }}
@@ -449,12 +504,14 @@ export default function BookTime() {
                       disabled={busyAction}
                       title={e?.name || "Radnica"}
                     >
-                      <div style={{ fontWeight: 900 }}>
-                        {minToTime(s.startMin)}–{minToTime(s.endMin)}
+                      <div style={{ fontWeight: 800 }}>
+                        {minToTime(s.startMin)}
                       </div>
-                      <div style={{ fontSize: 12, opacity: 0.85 }}>
-                        {e?.name || "Radnica"}
-                      </div>
+                      {p.mode !== "specific" && (
+                        <div style={{ fontSize: 11, opacity: 0.85 }}>
+                          {e?.name || "Radnica"}
+                        </div>
+                      )}
                     </button>
                   );
                 })
@@ -464,20 +521,106 @@ export default function BookTime() {
                 </div>
               )}
             </div>
+
+            {allBooked && (
+              <div style={{ marginTop: 12, color: "#fff" }}>
+                🎉 Sve izabrane usluge su zakazane. Hvala!
+              </div>
+            )}
           </div>
         </div>
-
-        {allBooked && (
-          <div style={{ marginTop: 12, color: "#fff" }}>
-            🎉 Sve izabrane usluge su zakazane. Hvala!
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-/* ---------- mini monthly calendar ---------- */
+/* ---------- date strip (horizontalni datumi) ---------- */
+function DateStrip({ monthStr, selectedDay, onSelect }) {
+  // render 14 dana oko izabranog
+  const start = new Date(selectedDay);
+  start.setDate(selectedDay.getDate() - 4);
+  const days = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+
+  return (
+    <div style={stripWrap}>
+      <button
+        type="button"
+        onClick={() =>
+          onSelect(
+            new Date(
+              selectedDay.getFullYear(),
+              selectedDay.getMonth(),
+              selectedDay.getDate() - 7
+            )
+          )
+        }
+        style={stripArrow}
+      >
+        ‹
+      </button>
+
+      <div style={stripScroller}>
+        {days.map((d, idx) => {
+          const isSel = dateKey(d) === dateKey(selectedDay);
+          const wd = d
+            .toLocaleDateString("sr-RS", { weekday: "short" })
+            .replace(".", "");
+          return (
+            <button key={idx} onClick={() => onSelect(d)} type="button" style={stripDay(isSel)}>
+              <div style={{ fontSize: 11, opacity: 0.9 }}>{wd}</div>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>{d.getDate()}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        onClick={() =>
+          onSelect(
+            new Date(
+              selectedDay.getFullYear(),
+              selectedDay.getMonth(),
+              selectedDay.getDate() + 7
+            )
+          )
+        }
+        style={stripArrow}
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
+/* ---------- kartica radnice ---------- */
+function EmpCard({ name, rating = 4.7, onClick, active }) {
+  const initials = String(name || "?")
+    .split(" ")
+    .map((s) => s[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  return (
+    <button type="button" onClick={onClick} style={empCard(active)}>
+      <div style={empAvatar}>
+        {/* kasnije samo zameni sadržaj za <img src="..." alt={name} style={empImg} /> */}
+        <div style={empInitials}>{initials}</div>
+      </div>
+      <div style={{ fontWeight: 700, marginTop: 6, color: "#222" }}>{name}</div>
+      <div style={{ fontSize: 12, opacity: 0.9, color: "#555" }}>
+        ⭐ {Number(rating).toFixed(1)}
+      </div>
+    </button>
+  );
+}
+
+/* ---------- mini monthly calendar (ostavljen ako poželiš i mesečni prikaz) ---------- */
 function MiniCalendar({ monthStr, selectedDay, onSelect }) {
   const base = new Date(monthStr + "-01T00:00:00");
   const days = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
@@ -538,8 +681,16 @@ const panel = {
   boxShadow: "0 24px 60px rgba(0,0,0,.25)",
   padding: "clamp(16px,3vw,24px)",
 };
-const title = { marginTop: 0, color: "#fff", textShadow: "0 2px 14px rgba(0,0,0,.25)" };
-const layout = { display: "grid", gridTemplateColumns: "360px 1fr", gap: 12 };
+const title = {
+  marginTop: 0,
+  color: "#fff",
+  textShadow: "0 2px 14px rgba(0,0,0,.25)",
+};
+const layout = {
+  display: "grid",
+  gridTemplateColumns: "360px 1fr",
+  gap: 12,
+};
 const leftCol = { display: "grid", gap: 8, alignContent: "start" };
 const rightCol = {
   background: "rgba(0,0,0,.35)",
@@ -547,6 +698,8 @@ const rightCol = {
   padding: 12,
   border: "1px solid rgba(255,255,255,.2)",
 };
+
+/* leva kolona – item usluge */
 const srvItem = (active, booked) => ({
   textAlign: "left",
   padding: 12,
@@ -560,6 +713,7 @@ const srvItem = (active, booked) => ({
   cursor: "pointer",
   outline: booked ? "2px solid rgba(26,127,60,.6)" : "none",
 });
+
 const lbl = { color: "#fff", fontWeight: 900, fontSize: 12, opacity: 0.95 };
 const inp = {
   height: 40,
@@ -571,22 +725,99 @@ const inp = {
   color: "#222",
   width: "100%",
 };
-const slotsGrid = {
+
+/* --- Date strip --- */
+const stripWrap = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))",
+  gridTemplateColumns: "32px 1fr 32px",
+  alignItems: "center",
+  gap: 8,
+  margin: "12px 0 10px",
+};
+const stripArrow = {
+  height: 32,
+  width: 32,
+  borderRadius: 10,
+  border: "1px solid rgba(255,255,255,.35)",
+  background: "rgba(255,255,255,.15)",
+  color: "#fff",
+  fontSize: 18,
+  cursor: "pointer",
+};
+const stripScroller = {
+  display: "grid",
+  gridAutoFlow: "column",
+  gridAutoColumns: "minmax(60px, 1fr)",
+  gap: 8,
+  overflowX: "auto",
+  padding: "2px 2px",
+  scrollbarWidth: "none",
+};
+const stripDay = (sel) => ({
+  display: "grid",
+  placeItems: "center",
+  gap: 2,
+  padding: "8px 6px",
+  borderRadius: 12,
+  border: sel ? "1px solid #ffcfde" : "1px solid rgba(255,255,255,.35)",
+  background: sel ? "linear-gradient(135deg,#ffffff,#ffe3ef)" : "rgba(255,255,255,.12)",
+  color: "#fff",
+  minWidth: 64,
+  cursor: "pointer",
+  boxShadow: sel ? "0 6px 16px rgba(255,127,181,.25)" : "none",
+});
+
+/* --- Stilisti (radnice) --- */
+const stylistsRow = {
+  display: "grid",
+  gridAutoFlow: "column",
+  gridAutoColumns: "minmax(140px, 180px)",
+  gap: 10,
+  overflowX: "auto",
+  paddingBottom: 4,
+};
+const empCard = (active) => ({
+  textAlign: "center",
+  padding: 12,
+  borderRadius: 16,
+  background: "#fff",
+  border: active ? "2px solid #eab8c8" : "1px solid #ececec",
+  boxShadow: active ? "0 8px 22px rgba(0,0,0,.12)" : "0 4px 12px rgba(0,0,0,.08)",
+  cursor: "pointer",
+});
+const empAvatar = {
+  height: 64,
+  width: 64,
+  borderRadius: "50%",
+  background: "linear-gradient(135deg,#ffe9f2,#fff)",
+  border: "1px solid #f1d8e0",
+  display: "grid",
+  placeItems: "center",
+  margin: "0 auto",
+};
+const empInitials = { fontWeight: 900, color: "#b8798e" };
+const empImg = { height: "100%", width: "100%", borderRadius: "50%", objectFit: "cover" };
+
+/* --- Pil dugmići vremena --- */
+const pillsGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))",
   gap: 8,
 };
-const slotBtn = {
-  textAlign: "left",
-  padding: 10,
-  borderRadius: 12,
-  border: "1px solid rgba(255,255,255,.35)",
-  background: "rgba(255,255,255,.92)",
+const pillBtn = {
+  display: "grid",
+  justifyItems: "center",
+  gap: 2,
+  padding: "10px 12px",
+  borderRadius: 999,
+  border: "1px solid #efcddc",
+  background: "#fff",
   color: "#222",
   cursor: "pointer",
-  boxShadow: "0 6px 16px rgba(0,0,0,.12)",
+  boxShadow: "0 6px 16px rgba(0,0,0,.08)",
 };
 
+/* --- (opciono) mesečni mini kalendar – ostavljen nepromenjen --- */
 const calHeader = {
   display: "grid",
   gridTemplateColumns: "repeat(7,1fr)",
