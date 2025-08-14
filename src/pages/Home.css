@@ -343,7 +343,7 @@ html, body { margin:0; padding:0; }
   .zakazi-btn{
 
     border-radius:999px;
-       width: 90%;         /* zauzima 90% širine ekrana */
+       width: 70%;         /* zauzima 90% širine ekrana */
     max-width: 350px;   /* ali ne ide beskonačno široko */
     padding: 18px 0;    /* veći vertikalni padding */
     font-size: 1.3rem;  /* malo veći tekst */
@@ -360,7 +360,7 @@ html, body { margin:0; padding:0; }
   /* Ostala dugmad malo veća */
   .custom-btn{
    
-       width: 90%;         /* zauzima 90% širine ekrana */
+       width: 70%;         /* zauzima 90% širine ekrana */
     max-width: 350px;   /* ali ne ide beskonačno široko */
     padding: 18px 0;    /* veći vertikalni padding */
     font-size: 1.3rem;  /* malo veći tekst */
