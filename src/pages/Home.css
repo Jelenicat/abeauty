@@ -267,7 +267,7 @@ html, body { margin:0; padding:0; }
   pointer-events:none;
 }
 
-/* Pozadina preko celog ekrana — stavi svoju splash sliku */
+/* Pozadina preko celog ekrana — tvoja splash slika */
 .splash-bg{
   position:absolute; inset:0;
   background: url("/slikadobrodosli.webp") center/cover no-repeat;
@@ -300,7 +300,7 @@ html, body { margin:0; padding:0; }
 @media (max-width: 768px){
   /* globalna pozadina (ako želiš i nju mobilnu) */
   .home-screen{
-    background:url("/slika2.webp") center/cover no-repeat; /* ili promeni na mobilnu */
+    background:url("/slika2.webp") center/cover no-repeat; /* promeni ako želiš */
   }
 
   /* top bar */
@@ -308,7 +308,7 @@ html, body { margin:0; padding:0; }
     height:64px;
   }
   .logo{
-    height:150px; /* lepo popunjava header */
+    height:92px; /* staje u 64px header bez preklapanja */
   }
   .top-right{
     right:10px;
