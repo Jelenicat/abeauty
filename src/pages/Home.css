@@ -253,6 +253,17 @@ html, body { margin:0; padding:0; }
   overflow:hidden;
   height:100vh;
 }
+/* Dok je splash aktivan (dok je body .no-scroll), krij top bar i logo */
+.no-scroll .top-bar {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/* Kad splash nestane, top bar se lepo pojavi */
+.top-bar {
+  transition: opacity .25s ease;
+}
+
 
 .splash{
   position:fixed;
