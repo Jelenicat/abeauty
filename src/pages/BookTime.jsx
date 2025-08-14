@@ -77,10 +77,24 @@ function computeSlots({ segments, busy, totalMin, step = 15 }) {
   return res;
 }
 
+/* ---------- responsive hook ---------- */
+function useIsMobile(breakpoint = 820) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth <= breakpoint : true
+  );
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 /* ---------- component ---------- */
 export default function BookTime() {
   const { selectedServices } = useBooking();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
 
   const [employees, setEmployees] = useState([]);
   const [activeId, setActiveId] = useState(selectedServices[0]?.id || "");
@@ -106,8 +120,8 @@ export default function BookTime() {
 
   if (!selectedServices.length) {
     return (
-      <div style={wrap}>
-        <div style={panel}>
+      <div style={wrap(isMobile)}>
+        <div style={panel(isMobile)}>
           <h2 style={title}>Nema izabranih usluga</h2>
           <div style={{ color: "#fff" }}>Vrati se i izaberi do 5 usluga.</div>
         </div>
@@ -236,7 +250,6 @@ export default function BookTime() {
         return;
       }
 
-      // payload
       const payload = {
         type: "booking",
         status: "booked",
@@ -260,7 +273,6 @@ export default function BookTime() {
 
       await addDoc(collection(db, "appointments"), payload);
 
-      // markiraj kao zakazano + pređi na sledeću
       const next = new Map(prefs);
       next.set(activeService.id, { ...p, booked: true });
       setPrefs(next);
@@ -284,12 +296,178 @@ export default function BookTime() {
 
   const allBooked = selectedServices.every((s) => prefs.get(s.id)?.booked);
 
+  /* ---------- LAYOUT ---------- */
+  if (isMobile) {
+    // MOBILNI PRIKAZ – sve u jednoj koloni
+    return (
+      <div style={wrap(isMobile)}>
+        <div style={panel(isMobile)}>
+          <h2 style={title}>Rezervacija</h2>
+
+          {/* 1) Usluge */}
+          <div style={mobileServicesCol}>
+            {selectedServices.map((s) => {
+              const booked = prefs.get(s.id)?.booked;
+              const active = s.id === activeService.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setActiveId(s.id)}
+                  style={srvItemMobile(active, booked)}
+                  type="button"
+                >
+                  <div style={{ fontWeight: 900 }}>{s.name}</div>
+                  <div style={{ fontSize: 12, opacity: 0.85 }}>
+                    {Number(s.durationMin || 0)} min{" "}
+                    {finalPriceOf(s) != null && <>• {money(finalPriceOf(s))}</>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 2) Kalendar (odmah ispod usluga) */}
+          <DateStrip
+            monthStr={monthAnchor}
+            selectedDay={selectedDay}
+            onSelect={setSelectedDay}
+          />
+
+          {/* kratke kontrole (način/radnica/mesec) */}
+          <div style={mobileControls}>
+            <select
+              value={p.mode}
+              onChange={(e) =>
+                setPrefs(
+                  new Map(prefs.set(activeService.id, { ...p, mode: e.target.value }))
+                )
+              }
+              style={inpMobile}
+            >
+              <option value="any">Prva slobodna radnica</option>
+              <option value="specific">Određena radnica</option>
+            </select>
+
+            <select
+              value={p.empId}
+              onChange={(e) =>
+                setPrefs(
+                  new Map(prefs.set(activeService.id, { ...p, empId: e.target.value }))
+                )
+              }
+              disabled={p.mode !== "specific"}
+              style={{
+                ...inpMobile,
+                background: p.mode === "specific" ? "#fff" : "#f3f3f3",
+              }}
+            >
+              <option value="">Radnica</option>
+              {eligible.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="month"
+              value={monthAnchor}
+              onChange={(e) => {
+                setMonthAnchor(e.target.value);
+                const [y, m] = e.target.value.split("-").map((n) => parseInt(n, 10));
+                setSelectedDay(new Date(y, m - 1, 1));
+              }}
+              style={inpMobile}
+            />
+          </div>
+
+          {/* 3) Radnice */}
+          <div style={sectionTitleMobile}>Hair Stylish</div>
+          <div style={stylistsRowMobile}>
+            {eligible.length ? (
+              eligible.map((e) => {
+                const activeEmp = p.empId === e.id && p.mode === "specific";
+                return (
+                  <EmpCard
+                    key={e.id}
+                    name={e.name}
+                    rating={Number(e.rating || 4.7)}
+                    active={activeEmp}
+                    onClick={() =>
+                      setPrefs(
+                        new Map(
+                          prefs.set(activeService.id, {
+                            ...p,
+                            mode: "specific",
+                            empId: e.id,
+                          })
+                        )
+                      )
+                    }
+                  />
+                );
+              })
+            ) : (
+              <div style={{ color: "#fff", opacity: 0.85, padding: 8 }}>
+                Nema radnica za ovu uslugu/kategoriju.
+              </div>
+            )}
+          </div>
+
+          {/* 4) Termini */}
+          <div style={sectionTitleMobile}>Available Time</div>
+          <div style={pillsGridMobile}>
+            {loading ? (
+              <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
+            ) : currentSlots.length ? (
+              currentSlots.map((s) => {
+                const e = employees.find((x) => x.id === s.employeeId);
+                return (
+                  <button
+                    key={`${s.employeeId}_${s.startMin}`}
+                    style={{
+                      ...pillBtnMobile,
+                      opacity: busyAction ? 0.7 : 1,
+                      pointerEvents: busyAction ? "none" : "auto",
+                    }}
+                    onClick={() => book(s)}
+                    type="button"
+                    disabled={busyAction}
+                    title={e?.name || "Radnica"}
+                  >
+                    {minToTime(s.startMin)}
+                    {p.mode !== "specific" && (
+                      <span style={{ fontSize: 11, opacity: 0.8, display: "block" }}>
+                        {e?.name || "Radnica"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            ) : (
+              <div style={{ color: "#fff", opacity: 0.9 }}>
+                Nema slobodnih termina za izabrani dan.
+              </div>
+            )}
+          </div>
+
+          {allBooked && (
+            <div style={{ marginTop: 12, color: "#fff" }}>
+              🎉 Sve izabrane usluge su zakazane. Hvala!
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // DESKTOP – postojeći lepi raspored
   return (
-    <div style={wrap}>
-      <div style={panel}>
+    <div style={wrap(isMobile)}>
+      <div style={panel(isMobile)}>
         <h2 style={title}>Rezerviši odabrane usluge</h2>
 
-        <div style={layout}>
+        <div style={layoutDesktop}>
           {/* leva kolona: usluge */}
           <div style={leftCol}>
             {selectedServices.map((s) => {
@@ -299,7 +477,7 @@ export default function BookTime() {
                 <button
                   key={s.id}
                   onClick={() => setActiveId(s.id)}
-                  style={srvItem(active, booked)}
+                  style={srvItemDesktop(active, booked)}
                   type="button"
                 >
                   <div style={{ fontWeight: 900, lineHeight: 1.3 }}>
@@ -324,56 +502,26 @@ export default function BookTime() {
             })}
           </div>
 
-          {/* desna kolona: novi UI */}
+          {/* desna kolona */}
           <div style={rightCol}>
-            {/* info o usluzi + kontrole (zadržane) */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                alignItems: "end",
-              }}
-            >
+            {/* info + kontrole */}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "end" }}>
               <div>
-                <div style={{ fontSize: 12, opacity: 0.85, color: "#fff" }}>
-                  Usluga
-                </div>
-                <div style={{ fontWeight: 900, color: "#fff" }}>
-                  {activeService.name}
-                </div>
+                <div style={{ fontSize: 12, opacity: 0.85, color: "#fff" }}>Usluga</div>
+                <div style={{ fontWeight: 900, color: "#fff" }}>{activeService.name}</div>
                 <div style={{ fontSize: 12, opacity: 0.9, color: "#fff" }}>
-                  Trajanje:{" "}
-                  <b>{Number(activeService.durationMin || 0)} min</b>{" "}
-                  {finalPriceOf(activeService) != null && (
-                    <>
-                      • Cena: <b>{money(finalPriceOf(activeService))}</b>
-                    </>
-                  )}
+                  Trajanje: <b>{Number(activeService.durationMin || 0)} min</b>{" "}
+                  {finalPriceOf(activeService) != null && <>• Cena: <b>{money(finalPriceOf(activeService))}</b></>}
                 </div>
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3,minmax(150px,1fr))",
-                  gap: 8,
-                  alignItems: "end",
-                }}
-              >
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(150px,1fr))", gap: 8, alignItems: "end" }}>
                 <div>
                   <label style={lbl}>Način izbora</label>
                   <select
                     value={p.mode}
                     onChange={(e) =>
-                      setPrefs(
-                        new Map(
-                          prefs.set(activeService.id, {
-                            ...p,
-                            mode: e.target.value,
-                          })
-                        )
-                      )
+                      setPrefs(new Map(prefs.set(activeService.id, { ...p, mode: e.target.value })))
                     }
                     style={inp}
                   >
@@ -386,26 +534,14 @@ export default function BookTime() {
                   <select
                     value={p.empId}
                     onChange={(e) =>
-                      setPrefs(
-                        new Map(
-                          prefs.set(activeService.id, {
-                            ...p,
-                            empId: e.target.value,
-                          })
-                        )
-                      )
+                      setPrefs(new Map(prefs.set(activeService.id, { ...p, empId: e.target.value })))
                     }
                     disabled={p.mode !== "specific"}
-                    style={{
-                      ...inp,
-                      background: p.mode === "specific" ? "#fff" : "#f3f3f3",
-                    }}
+                    style={{ ...inp, background: p.mode === "specific" ? "#fff" : "#f3f3f3" }}
                   >
                     <option value="">— Odaberi —</option>
                     {eligible.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name}
-                      </option>
+                      <option key={e.id} value={e.id}>{e.name}</option>
                     ))}
                   </select>
                 </div>
@@ -416,9 +552,7 @@ export default function BookTime() {
                     value={monthAnchor}
                     onChange={(e) => {
                       setMonthAnchor(e.target.value);
-                      const [y, m] = e.target.value
-                        .split("-")
-                        .map((n) => parseInt(n, 10));
+                      const [y, m] = e.target.value.split("-").map((n) => parseInt(n, 10));
                       setSelectedDay(new Date(y, m - 1, 1));
                     }}
                     style={inp}
@@ -427,26 +561,13 @@ export default function BookTime() {
               </div>
             </div>
 
-            {/* 1) traka sa datumima */}
-            <DateStrip
-              monthStr={monthAnchor}
-              selectedDay={selectedDay}
-              onSelect={setSelectedDay}
-            />
+            {/* traka sa datumima */}
+            <DateStrip monthStr={monthAnchor} selectedDay={selectedDay} onSelect={setSelectedDay} />
 
-            {/* 2) kartice radnica */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                margin: "4px 2px 8px",
-              }}
-            >
+            {/* radnice */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 2px 8px" }}>
               <div style={{ color: "#fff", fontWeight: 900 }}>Hair Stylish</div>
-              <div style={{ color: "#fff", opacity: 0.85, fontSize: 12 }}>
-                See All
-              </div>
+              <div style={{ color: "#fff", opacity: .85, fontSize: 12 }}>See All</div>
             </div>
 
             <div style={stylistsRow}>
@@ -460,31 +581,18 @@ export default function BookTime() {
                       rating={Number(e.rating || 4.7)}
                       active={activeEmp}
                       onClick={() =>
-                        setPrefs(
-                          new Map(
-                            prefs.set(activeService.id, {
-                              ...p,
-                              mode: "specific",
-                              empId: e.id,
-                            })
-                          )
-                        )
+                        setPrefs(new Map(prefs.set(activeService.id, { ...p, mode: "specific", empId: e.id })))
                       }
                     />
                   );
                 })
               ) : (
-                <div style={{ color: "#fff", opacity: 0.85, padding: 8 }}>
-                  Nema radnica za ovu uslugu/kategoriju.
-                </div>
+                <div style={{ color: "#fff", opacity: .85, padding: 8 }}>Nema radnica za ovu uslugu/kategoriju.</div>
               )}
             </div>
 
-            {/* 3) available time */}
-            <div style={{ color: "#fff", opacity: 0.9, margin: "8px 2px 6px" }}>
-              Available Time
-            </div>
-
+            {/* termini */}
+            <div style={{ color: "#fff", opacity: 0.9, margin: "8px 2px 6px" }}>Available Time</div>
             <div style={pillsGrid}>
               {loading ? (
                 <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
@@ -494,31 +602,21 @@ export default function BookTime() {
                   return (
                     <button
                       key={`${s.employeeId}_${s.startMin}`}
-                      style={{
-                        ...pillBtn,
-                        opacity: busyAction ? 0.7 : 1,
-                        pointerEvents: busyAction ? "none" : "auto",
-                      }}
+                      style={{ ...pillBtn, opacity: busyAction ? 0.7 : 1, pointerEvents: busyAction ? "none" : "auto" }}
                       onClick={() => book(s)}
                       type="button"
                       disabled={busyAction}
                       title={e?.name || "Radnica"}
                     >
-                      <div style={{ fontWeight: 800 }}>
-                        {minToTime(s.startMin)}
-                      </div>
+                      <div style={{ fontWeight: 800 }}>{minToTime(s.startMin)}</div>
                       {p.mode !== "specific" && (
-                        <div style={{ fontSize: 11, opacity: 0.85 }}>
-                          {e?.name || "Radnica"}
-                        </div>
+                        <div style={{ fontSize: 11, opacity: 0.85 }}>{e?.name || "Radnica"}</div>
                       )}
                     </button>
                   );
                 })
               ) : (
-                <div style={{ color: "#fff", opacity: 0.9 }}>
-                  Nema slobodnih termina za izabrani dan.
-                </div>
+                <div style={{ color: "#fff", opacity: 0.9 }}>Nema slobodnih termina za izabrani dan.</div>
               )}
             </div>
 
@@ -535,8 +633,7 @@ export default function BookTime() {
 }
 
 /* ---------- date strip (horizontalni datumi) ---------- */
-function DateStrip({ monthStr, selectedDay, onSelect }) {
-  // render 14 dana oko izabranog
+function DateStrip({ selectedDay, onSelect }) {
   const start = new Date(selectedDay);
   start.setDate(selectedDay.getDate() - 4);
   const days = Array.from({ length: 14 }, (_, i) => {
@@ -559,6 +656,7 @@ function DateStrip({ monthStr, selectedDay, onSelect }) {
           )
         }
         style={stripArrow}
+        aria-label="Prethodna nedelja"
       >
         ‹
       </button>
@@ -590,6 +688,7 @@ function DateStrip({ monthStr, selectedDay, onSelect }) {
           )
         }
         style={stripArrow}
+        aria-label="Sledeća nedelja"
       >
         ›
       </button>
@@ -609,7 +708,7 @@ function EmpCard({ name, rating = 4.7, onClick, active }) {
   return (
     <button type="button" onClick={onClick} style={empCard(active)}>
       <div style={empAvatar}>
-        {/* kasnije samo zameni sadržaj za <img src="..." alt={name} style={empImg} /> */}
+        {/* zameni sa <img src="..." alt={name} style={empImg} /> kad dodaš slike */}
         <div style={empInitials}>{initials}</div>
       </div>
       <div style={{ fontWeight: 700, marginTop: 6, color: "#222" }}>{name}</div>
@@ -620,77 +719,31 @@ function EmpCard({ name, rating = 4.7, onClick, active }) {
   );
 }
 
-/* ---------- mini monthly calendar (ostavljen ako poželiš i mesečni prikaz) ---------- */
-function MiniCalendar({ monthStr, selectedDay, onSelect }) {
-  const base = new Date(monthStr + "-01T00:00:00");
-  const days = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
-  const startDow = new Date(base.getFullYear(), base.getMonth(), 1).getDay();
-  const cells = [];
-  for (let i = 0; i < startDow; i++) cells.push(null);
-  for (let d = 1; d <= days; d++) cells.push(d);
-
-  return (
-    <div style={{ margin: "10px 0 12px" }}>
-      <div style={calHeader}>
-        {["Ned", "Pon", "Uto", "Sre", "Čet", "Pet", "Sub"].map((d) => (
-          <div key={d} style={calHeadCell}>
-            {d}
-          </div>
-        ))}
-      </div>
-      <div style={calGrid}>
-        {cells.map((d, i) => {
-          if (!d) return <div key={i} style={calCell} />;
-          const k = `${base.getFullYear()}-${pad2(base.getMonth() + 1)}-${pad2(
-            d
-          )}`;
-          const isSel = dateKey(selectedDay) === k;
-          return (
-            <button
-              key={i}
-              style={calBtn(isSel)}
-              onClick={() =>
-                onSelect(new Date(base.getFullYear(), base.getMonth(), d))
-              }
-              type="button"
-            >
-              {d}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* ---------- styles ---------- */
-const wrap = {
+const wrap = (mobile) => ({
   minHeight: "100vh",
   background: "url('/slika7.webp') center/cover fixed no-repeat",
-  padding: 18,
+  padding: mobile ? 12 : 18,
   display: "flex",
   justifyContent: "center",
   alignItems: "flex-start",
-};
-const panel = {
-  width: "min(1400px, 100%)",
+});
+const panel = (mobile) => ({
+  width: mobile ? "min(860px, 100%)" : "min(1400px, 100%)",
   background: "rgba(255,255,255,.12)",
   border: "1px solid rgba(255,255,255,.35)",
   backdropFilter: "blur(10px)",
-  borderRadius: 28,
+  borderRadius: 24,
   boxShadow: "0 24px 60px rgba(0,0,0,.25)",
-  padding: "clamp(16px,3vw,24px)",
-};
+  padding: mobile ? 14 : "clamp(16px,3vw,24px)",
+});
 const title = {
   marginTop: 0,
   color: "#fff",
   textShadow: "0 2px 14px rgba(0,0,0,.25)",
 };
-const layout = {
-  display: "grid",
-  gridTemplateColumns: "360px 1fr",
-  gap: 12,
-};
+
+const layoutDesktop = { display: "grid", gridTemplateColumns: "360px 1fr", gap: 12 };
 const leftCol = { display: "grid", gap: 8, alignContent: "start" };
 const rightCol = {
   background: "rgba(0,0,0,.35)",
@@ -699,8 +752,8 @@ const rightCol = {
   border: "1px solid rgba(255,255,255,.2)",
 };
 
-/* leva kolona – item usluge */
-const srvItem = (active, booked) => ({
+/* USLUGE – desktop */
+const srvItemDesktop = (active, booked) => ({
   textAlign: "left",
   padding: 12,
   borderRadius: 14,
@@ -714,6 +767,25 @@ const srvItem = (active, booked) => ({
   outline: booked ? "2px solid rgba(26,127,60,.6)" : "none",
 });
 
+/* USLUGE – mobile kartice */
+const mobileServicesCol = {
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: 8,
+  marginBottom: 8,
+};
+const srvItemMobile = (active, booked) => ({
+  textAlign: "left",
+  padding: 12,
+  borderRadius: 14,
+  border: active ? "2px solid #ffc0d6" : "1px solid rgba(255,255,255,.35)",
+  background: "rgba(255,255,255,.92)",
+  color: "#222",
+  boxShadow: active ? "0 8px 20px rgba(0,0,0,.12)" : "0 3px 10px rgba(0,0,0,.08)",
+  cursor: "pointer",
+});
+
+/* kontrole */
 const lbl = { color: "#fff", fontWeight: 900, fontSize: 12, opacity: 0.95 };
 const inp = {
   height: 40,
@@ -725,19 +797,35 @@ const inp = {
   color: "#222",
   width: "100%",
 };
+const mobileControls = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3,1fr)",
+  gap: 8,
+  margin: "8px 0 6px",
+};
+const inpMobile = {
+  height: 40,
+  borderRadius: 12,
+  border: "1px solid #e8e8e8",
+  background: "#fff",
+  padding: "0 10px",
+  fontSize: 14,
+  color: "#222",
+  width: "100%",
+};
 
 /* --- Date strip --- */
 const stripWrap = {
   display: "grid",
-  gridTemplateColumns: "32px 1fr 32px",
+  gridTemplateColumns: "36px 1fr 36px",
   alignItems: "center",
   gap: 8,
-  margin: "12px 0 10px",
+  margin: "6px 0 8px",
 };
 const stripArrow = {
-  height: 32,
-  width: 32,
-  borderRadius: 10,
+  height: 36,
+  width: 36,
+  borderRadius: 12,
   border: "1px solid rgba(255,255,255,.35)",
   background: "rgba(255,255,255,.15)",
   color: "#fff",
@@ -747,7 +835,7 @@ const stripArrow = {
 const stripScroller = {
   display: "grid",
   gridAutoFlow: "column",
-  gridAutoColumns: "minmax(60px, 1fr)",
+  gridAutoColumns: "minmax(56px, 1fr)",
   gap: 8,
   overflowX: "auto",
   padding: "2px 2px",
@@ -768,6 +856,7 @@ const stripDay = (sel) => ({
 });
 
 /* --- Stilisti (radnice) --- */
+const sectionTitleMobile = { color: "#fff", fontWeight: 900, margin: "6px 2px" };
 const stylistsRow = {
   display: "grid",
   gridAutoFlow: "column",
@@ -775,6 +864,11 @@ const stylistsRow = {
   gap: 10,
   overflowX: "auto",
   paddingBottom: 4,
+};
+const stylistsRowMobile = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: 8,
 };
 const empCard = (active) => ({
   textAlign: "center",
@@ -816,41 +910,18 @@ const pillBtn = {
   cursor: "pointer",
   boxShadow: "0 6px 16px rgba(0,0,0,.08)",
 };
-
-/* --- (opciono) mesečni mini kalendar – ostavljen nepromenjen --- */
-const calHeader = {
+const pillsGridMobile = {
   display: "grid",
-  gridTemplateColumns: "repeat(7,1fr)",
-  gap: 6,
-  marginTop: 8,
-  marginBottom: 6,
+  gridTemplateColumns: "repeat(3, 1fr)",
+  gap: 8,
 };
-const calHeadCell = {
-  textAlign: "center",
-  padding: "6px 8px",
-  background: "rgba(255,255,255,.85)",
-  borderRadius: 10,
-  fontWeight: 900,
-  border: "1px solid #ececec",
-};
-const calGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(7,1fr)",
-  gap: 6,
-};
-const calCell = {
-  minHeight: 46,
-  borderRadius: 10,
-  border: "1px dashed rgba(255,255,255,.35)",
-};
-const calBtn = (sel) => ({
-  minHeight: 46,
-  borderRadius: 10,
-  border: "1px solid rgba(255,255,255,.35)",
-  background: sel
-    ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-    : "rgba(255,255,255,.12)",
-  color: "#fff",
-  fontWeight: 900,
+const pillBtnMobile = {
+  padding: "12px 10px",
+  borderRadius: 999,
+  border: "1px solid #efcddc",
+  background: "#fff",
+  color: "#222",
   cursor: "pointer",
-});
+  textAlign: "center",
+  boxShadow: "0 4px 12px rgba(0,0,0,.08)",
+};
