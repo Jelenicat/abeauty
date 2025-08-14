@@ -77,7 +77,7 @@ html, body { margin:0; padding:0; }
 /* Primarno dugme (pink gradijent) – koristi se za Odjavi se */
 .btn-primary{
   border:none;
-  background:linear-gradient(135deg,#ff5fa2,#ff7fb5);
+  background:linear-gradient(135deg,#f4829f,#f68fa9);
   color:#fff;
   box-shadow:0 8px 20px rgba(255,127,181,.28);
 }
