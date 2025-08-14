@@ -47,7 +47,7 @@
 
 /* HEADER */
 .lm-header{ text-align: center; }
-.lm-logo{ height: 120px; object-fit: contain; margin-bottom: -10px; }
+.lm-logo{ height: 180px; object-fit: contain; margin-bottom: -10px; }
 .lm-header h3{ margin: 0; color: var(--abeauty-text); font-size: 22px; font-weight: 700; }
 .lm-sub{ margin: 6px 0 14px; color: var(--abeauty-muted); font-size: 14px; }
 
@@ -83,6 +83,36 @@
 .lm-submit:disabled{
   background: #ddd; box-shadow: none; cursor: not-allowed; color:#999;
 }
+/* Tamniji “jastučić” samo iza loga */
+.lm-logo-wrap{
+  position: relative;
+  display: inline-block;
+  margin-bottom: -6px;       /* po potrebi prilagodi razmak ispod loga */
+}
+
+.lm-logo-bg{
+  position: absolute;
+  inset: -6px -12px;         /* koliko “širi” jastučić oko loga */
+  border-radius: 14px;       /* zaobljeni uglovi pozadine */
+  background: rgba(0,0,0,.42);           /* tamniji ton iza loga */
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  z-index: 0;
+}
+
+.lm-logo{
+  position: relative;        /* da bude iznad pozadine */
+  z-index: 1;
+  height: 120px;             /* prilagodi po želji (imao si 120–150px) */
+  object-fit: contain;
+}
+
+/* Malo manji jastučić na telefonu */
+@media (max-width: 768px){
+  .lm-logo{ height: 96px; }
+  .lm-logo-bg{ inset: -4px -8px; border-radius: 12px; }
+}
+
 
 /* RESPONSIVE TWEAKS – telefon i tablet */
 @media (max-width: 768px){
@@ -94,7 +124,7 @@
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
   }
-  .lm-logo{ height: 96px; margin-bottom: -6px; }
+  .lm-logo{ height: 150px; margin-bottom: -6px; }
   .lm-header h3{ font-size: 20px; }
 }
 .lm-sub{ margin: 6px 0 14px; color: var(--abeauty-muted); font-size: 14px; }

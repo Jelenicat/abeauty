@@ -61,7 +61,10 @@ export default function LoginModal({ open, onClose, onSuccess }) {
         <button className="lm-close" aria-label="Zatvori" onClick={onClose}>×</button>
 
         <div className="lm-header">
-          <img src="/logo.png" alt="aBeauty" className="lm-logo" />
+         <div className="lm-logo-wrap">
+  <span className="lm-logo-bg" aria-hidden="true"></span>
+  <img src="/logo.png" alt="aBeauty" className="lm-logo" />
+</div>
           <h3 id="lm-title">Popuni podatke da zakažeš termin</h3>
         </div>
 
