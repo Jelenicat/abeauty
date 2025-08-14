@@ -34,23 +34,21 @@ export default function Home() {
         <img src="/logo.png" alt="aBeauty logo" className="logo" />
 
         {/* desni deo trake */}
-        <div className="top-right">
-          {!isLoggedIn ? (
-            <button className="btn-ghost" onClick={() => setLoginOpen(true)}>
-              Uloguj se
-            </button>
-          ) : (
-            <>
-              <span className="hello-text">Ćao, {user.firstName}</span>
-              <button className="btn-ghost" onClick={goUsluge}>
-                Zakaži
-              </button>
-              <button className="btn-primary" onClick={logout}>
-                Odjavi se
-              </button>
-            </>
-          )}
-        </div>
+   <div className="top-right">
+  {!isLoggedIn ? (
+    <button className="btn-ghost" onClick={() => setLoginOpen(true)}>
+      Uloguj se
+    </button>
+  ) : (
+    <>
+      <span className="hello-text">Ćao, {user.firstName}</span>
+      <button className="btn-primary" onClick={logout}>
+        Odjavi se
+      </button>
+    </>
+  )}
+</div>
+
       </nav>
 
       {/* HERO */}
