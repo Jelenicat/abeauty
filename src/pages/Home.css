@@ -266,12 +266,13 @@ html, body { margin:0; padding:0; }
   }
 
   /* HERO na mobilnom: prikaži celu sliku (contain) */
+@media (max-width: 768px){
   .hero-section{
     margin-top:64px;
-     width:100%;
-    height:80vh;
-    background:url("/slika22.webp") center top / contain no-repeat;
-    padding-bottom:60px;
+    width:100%;
+    height:calc(100vh - 64px); /* puna visina ekrana umanjena za header */
+    background:url("/slika22.webp") center/cover no-repeat; /* cover umesto contain */
+    padding-bottom:0;
     position:relative;
   }
   .hero-section::after{
@@ -280,6 +281,8 @@ html, body { margin:0; padding:0; }
     background:linear-gradient(180deg, rgba(0,0,0,.10) 0%, rgba(0,0,0,.18) 100%);
     pointer-events:none;
   }
+}
+
 
   /* Zakaži termin – VEĆE i isto kao Galerija */
   .zakazi-btn{
