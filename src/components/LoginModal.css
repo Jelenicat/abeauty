@@ -1,34 +1,43 @@
 :root{
-  --abeauty-pink:#ff5fa2;      /* roze akcenat */
-  --abeauty-pink-2:#ff7fb5;    /* hover */
+  --abeauty-pink:#ff5fa2;
+  --abeauty-pink-2:#ff7fb5;
   --abeauty-text:#1f1f1f;
   --abeauty-muted:#7a7a7a;
   --abeauty-border:#ececec;
   --abeauty-shadow: 0 20px 60px rgba(0,0,0,.15);
 }
 
+/* OVERLAY */
 .lm-overlay{
   position: fixed; inset: 0;
   display: grid; place-items: center;
-  background: rgba(0,0,0,.45);
-  z-index: 1000;
+  background: rgba(0,0,0,.45);             /* lagano zatamnjenje */
+  z-index: 2000;                            /* iznad top-bara (koji ti je 1000) */
   padding: 20px;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 }
 
+/* CARD (glassmorphism) */
 .lm-card{
-  width: min(560px, 100%);
-  background: #fff;
-    backdrop-filter: blur(8px);
+  width: min(560px, 92vw);
+  background: rgba(255,255,255,.72);        /* PROZIRNO staklo */
+  border: 1px solid rgba(255,255,255,.45);  /* stakleni ivica */
   border-radius: 20px;
   box-shadow: var(--abeauty-shadow);
   padding: 24px 22px 26px;
   position: relative;
   animation: lm-pop .18s ease-out;
+  backdrop-filter: blur(12px) saturate(120%);      /* jači blur */
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
 }
 
-@keyframes lm-pop { from { transform: scale(.98); opacity: .3 } to { transform: scale(1); opacity: 1 } }
+@keyframes lm-pop { 
+  from { transform: scale(.98); opacity: .3 } 
+  to   { transform: scale(1);   opacity: 1 } 
+}
 
+/* CLOSE */
 .lm-close{
   position: absolute; top: 10px; right: 12px;
   border: none; background: transparent; font-size: 28px; line-height: 1;
@@ -36,9 +45,58 @@
 }
 .lm-close:hover{ color: var(--abeauty-text); }
 
+/* HEADER */
 .lm-header{ text-align: center; }
-.lm-logo{ height: 150px; object-fit: contain; margin-bottom: -20px; }
+.lm-logo{ height: 120px; object-fit: contain; margin-bottom: -10px; }
 .lm-header h3{ margin: 0; color: var(--abeauty-text); font-size: 22px; font-weight: 700; }
+.lm-sub{ margin: 6px 0 14px; color: var(--abeauty-muted); font-size: 14px; }
+
+/* FORM */
+.lm-form{ display: grid; gap: 14px; margin-top: 6px; }
+.lm-field{ display: grid; gap: 8px; }
+.lm-field > span{ font-size: 13px; color: var(--abeauty-text); font-weight: 600; }
+
+.lm-field input{
+  height: 44px; padding: 0 14px; font-size: 15px;
+  border-radius: 12px; border: 1px solid var(--abeauty-border);
+  outline: none; transition: border .15s, box-shadow .15s, background .15s;
+  background: rgba(255,255,255,.85);            /* blago prozirno polje */
+}
+.lm-field input:focus{
+  border-color: var(--abeauty-pink);
+  box-shadow: 0 0 0 3px rgba(255,95,162,.18);
+  background: rgba(255,255,255,.95);
+}
+.lm-field em{ color: #c02727; font-size: 12px; }
+
+/* SUBMIT */
+.lm-submit{
+  margin-top: 6px; height: 46px;
+  border: none; border-radius: 14px; cursor: pointer;
+  background: linear-gradient(135deg, var(--abeauty-pink), var(--abeauty-pink-2));
+  color: #fff; font-weight: 700; letter-spacing: .2px; font-size: 15px;
+  box-shadow: 0 12px 30px rgba(255,95,162,.35);
+  transition: transform .08s ease, filter .15s;
+}
+.lm-submit:hover{ filter: brightness(1.04); }
+.lm-submit:active{ transform: translateY(1px); }
+.lm-submit:disabled{
+  background: #ddd; box-shadow: none; cursor: not-allowed; color:#999;
+}
+
+/* RESPONSIVE TWEAKS – telefon i tablet */
+@media (max-width: 768px){
+  .lm-card{
+    width: min(520px, 94vw);
+    padding: 20px 18px 22px;
+    border-radius: 16px;
+    background: rgba(255,255,255,.70);       /* mrvicu providnije na tel. */
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .lm-logo{ height: 96px; margin-bottom: -6px; }
+  .lm-header h3{ font-size: 20px; }
+}
 .lm-sub{ margin: 6px 0 14px; color: var(--abeauty-muted); font-size: 14px; }
 
 .lm-form{ display: grid; gap: 14px; margin-top: 6px; }
