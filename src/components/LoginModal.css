@@ -19,6 +19,7 @@
 .lm-card{
   width: min(560px, 100%);
   background: #fff;
+    backdrop-filter: blur(8px);
   border-radius: 20px;
   box-shadow: var(--abeauty-shadow);
   padding: 24px 22px 26px;

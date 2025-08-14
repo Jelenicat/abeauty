@@ -285,13 +285,8 @@ html, body { margin:0; padding:0; }
 }
 
 /* Logo preko (po želji) */
-.splash-logo{
-  width:min(48vw, 180px);
-  height:auto;
-  opacity:0;
-  animation: logoIn 0.6s ease forwards;
-  animation-delay: 0.2s;
-}
+.splash-logo { display:none; }
+
 
 @keyframes splashFadeOut{
   to { opacity:0; visibility:hidden; }
