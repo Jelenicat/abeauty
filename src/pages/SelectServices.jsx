@@ -34,18 +34,36 @@ const finalPriceOf = (s) => {
   const base = basePriceOf(s);
   if (base == null) return null;
   const d = discountOf(s);
-  return Math.round(base * (100 - d) / 100);
+  return Math.round((base * (100 - d)) / 100);
 };
 
 /* -------- component -------- */
 export default function SelectServices() {
-  const { user } = useAuth();
+  const { user } = useAuth(); // (nije obavezno, ali ostavljeno ako zatreba)
   const { selectedServices, setSelectedServices } = useBooking();
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);
   const [activeCatId, setActiveCatId] = useState("");
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
+
+  // responsive flag (telefon vs desktop)
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 768px)").matches
+      : false
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener?.("change", onChange);
+    mq.addListener?.(onChange); // stariji Safari
+    return () => {
+      mq.removeEventListener?.("change", onChange);
+      mq.removeListener?.(onChange);
+    };
+  }, []);
 
   // snapshots
   useEffect(() => {
@@ -98,6 +116,10 @@ export default function SelectServices() {
     return arr;
   }, [servicesByCat, activeCatId, search]);
 
+  // pomoćna za slike kategorija (pokušava više polja, fallback)
+  const catImage = (c) =>
+    c?.image || c?.photo || c?.cover || c?.img || "/slika3.webp";
+
   function toggle(id) {
     const exists = selectedServices.find((x) => x.id === id);
     if (exists) {
@@ -116,9 +138,9 @@ export default function SelectServices() {
           id: srv.id,
           name: srv.name,
           durationMin: Number(srv.durationMin || 0),
-          price: finalPriceOf(srv),            // ⬅️ čuvamo FINALNU cenu (sa popustom)
-          basePrice: basePriceOf(srv) ?? null, // opciono, za prikaz
-          discountPercent: discountOf(srv),    // opciono, za prikaz
+          price: finalPriceOf(srv), // čuvamo FINALNU cenu (sa popustom)
+          basePrice: basePriceOf(srv) ?? null,
+          discountPercent: discountOf(srv),
           categoryId: srv.categoryId || null,
           color: srv.color || null,
         },
@@ -134,14 +156,22 @@ export default function SelectServices() {
     <div style={wrap}>
       <div style={panel}>
         {/* header */}
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
           <div>
             <h2 style={title}>Izaberi usluge</h2>
             <div style={{ color: "#fff", opacity: 0.9 }}>
               Min 1, maksimalno 5. Prvo odaberi kategoriju, pa čekiraj usluge.
             </div>
           </div>
-          <div style={{ minWidth: 280 }}>
+          <div style={{ minWidth: 280, flex: "0 1 320px" }}>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -151,20 +181,43 @@ export default function SelectServices() {
           </div>
         </div>
 
-        {/* Kategorije – veća dugmad */}
-        <div style={bigCatsRow}>
-          {cats.map((c) => {
-            const active = c.id === activeCatId;
-            return (
-              <button key={c.id} onClick={() => setActiveCatId(c.id)} style={bigCatBtn(active)}>
-                {c.name}
-              </button>
-            );
-          })}
-        </div>
+        {/* Kategorije */}
+        {isMobile ? (
+          // MOBILE: kartice kao na dizajnu
+          <div style={mobCatList}>
+            {cats.map((c) => {
+              const active = c.id === activeCatId;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCatId(c.id)}
+                  style={mobCatCard(catImage(c), active)}
+                >
+                  <span style={mobCatLabel}>{String(c.name || "").toUpperCase()}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          // DESKTOP: postojeća velika dugmad
+          <div style={bigCatsRow}>
+            {cats.map((c) => {
+              const active = c.id === activeCatId;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCatId(c.id)}
+                  style={bigCatBtn(active)}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Lista usluga u aktivnoj kategoriji */}
-        <div style={srvGrid}>
+        <div style={srvGrid(isMobile)}>
           {shown.map((s) => {
             const checked = !!selectedServices.find((x) => x.id === s.id);
             const base = basePriceOf(s);
@@ -179,14 +232,31 @@ export default function SelectServices() {
                   style={{ display: "none" }}
                 />
                 <div style={{ fontWeight: 900, lineHeight: 1.3 }}>{s.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.9, marginTop: 6, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    opacity: 0.9,
+                    marginTop: 6,
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
                   <span>{Number(s.durationMin || 0)} min</span>
                   {price != null && (
                     <>
                       <span>•</span>
                       {disc > 0 && base != null ? (
                         <>
-                          <span style={{ textDecoration: "line-through", opacity: 0.7 }}>{money(base)}</span>
+                          <span
+                            style={{
+                              textDecoration: "line-through",
+                              opacity: 0.7,
+                            }}
+                          >
+                            {money(base)}
+                          </span>
                           <b>{money(price)}</b>
                           <span style={badgeSale}>-{disc}%</span>
                         </>
@@ -210,7 +280,12 @@ export default function SelectServices() {
         <div style={summaryRow}>
           <div style={{ color: "#fff" }}>
             Izabrano: <b>{selectedServices.length}</b> • Trajanje: <b>{totalMin} min</b>
-            {totalPrice ? <> • Ukupno: <b>{money(totalPrice)}</b></> : null}
+            {totalPrice ? (
+              <>
+                {" "}
+                • Ukupno: <b>{money(totalPrice)}</b>
+              </>
+            ) : null}
           </div>
           <button
             disabled={!canContinue}
@@ -253,6 +328,8 @@ const searchInp = {
   padding: "0 12px",
   fontSize: 14,
 };
+
+/* ===== DESKTOP categories (existing) ===== */
 const bigCatsRow = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))",
@@ -263,7 +340,9 @@ const bigCatBtn = (active) => ({
   height: 64,
   borderRadius: 16,
   border: active ? "none" : "1px solid rgba(255,255,255,.6)",
-  background: active ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)" : "rgba(255,255,255,.15)",
+  background: active
+    ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+    : "rgba(255,255,255,.15)",
   color: "#fff",
   fontWeight: 900,
   cursor: "pointer",
@@ -272,20 +351,69 @@ const bigCatBtn = (active) => ({
   alignItems: "center",
   justifyContent: "center",
 });
-const srvGrid = {
+
+/* ===== MOBILE category tiles ===== */
+const mobCatList = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))",
-  gap: 10,
+  gridTemplateColumns: "1fr",
+  gap: 12,
+  margin: "12px 0 16px",
 };
+const mobCatCard = (imgUrl, active) => ({
+  position: "relative",
+  display: "block",
+  width: "100%",
+  height: 96,
+  borderRadius: 18,
+  border: "none",
+  overflow: "hidden",
+  cursor: "pointer",
+  boxShadow: "0 10px 24px rgba(0,0,0,.18)",
+  background: `
+    linear-gradient(180deg, rgba(255,255,255,0) 40%, rgba(0,0,0,.28) 100%),
+    linear-gradient(0deg, rgba(0,0,0,.20), rgba(0,0,0,.20)),
+    url('${imgUrl}') center/cover no-repeat
+  `,
+  WebkitMaskImage: "-webkit-radial-gradient(white, black)",
+  isolation: "isolate",
+  ...(active && {
+    outline: "2px solid rgba(255,127,181,.9)",
+    outlineOffset: 0,
+  }),
+});
+const mobCatLabel = {
+  position: "absolute",
+  right: 16,
+  top: "50%",
+  transform: "translateY(-50%)",
+  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
+  color: "#fff",
+  padding: "10px 14px",
+  borderRadius: 14,
+  fontWeight: 900,
+  letterSpacing: ".12em",
+  fontSize: 13,
+  boxShadow: "0 8px 18px rgba(255,127,181,.28)",
+};
+
+/* ===== Services grid & cards ===== */
+const srvGrid = (mobile) => ({
+  display: "grid",
+  gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill,minmax(260px,1fr))",
+  gap: 10,
+});
 const srvCard = (checked) => ({
   borderRadius: 16,
   border: "1px solid rgba(255,255,255,.35)",
-  background: checked ? "linear-gradient(135deg,#ffffff,#ffe3ef)" : "rgba(255,255,255,.92)",
+  background: checked
+    ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
+    : "rgba(255,255,255,.92)",
   padding: 14,
   color: "#222",
   boxShadow: checked ? "0 10px 22px rgba(0,0,0,.18)" : "0 6px 16px rgba(0,0,0,.12)",
   cursor: "pointer",
 });
+
 const badgeSale = {
   background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
   color: "#fff",
@@ -294,12 +422,14 @@ const badgeSale = {
   fontSize: 11,
   fontWeight: 900,
 };
+
 const summaryRow = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   gap: 10,
   marginTop: 14,
+  flexWrap: "wrap",
 };
 const primaryBtn = (on) => ({
   height: 40,
