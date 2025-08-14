@@ -56,7 +56,7 @@ export default function Home() {
 
     img.onload = () => {
       // Malo “udahni” (300ms), pa ugasi
-      setTimeout(closeSplash, 300);
+      setTimeout(closeSplash, 3000);
     };
     img.onerror = () => {
       // Ako slika ne postoji, ipak ugasi po tajmeru

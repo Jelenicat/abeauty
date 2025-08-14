@@ -305,7 +305,7 @@ html, body { margin:0; padding:0; }
 
   /* top bar */
   .top-bar{
-    height:64px;
+    height:80px;
   }
   .logo{
     height:150px; /* staje u 64px header bez preklapanja */
