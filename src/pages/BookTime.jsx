@@ -327,11 +327,7 @@ export default function BookTime() {
           </div>
 
           {/* 2) Kalendar (odmah ispod usluga) */}
-          <DateStrip
-            monthStr={monthAnchor}
-            selectedDay={selectedDay}
-            onSelect={setSelectedDay}
-          />
+          <DateStrip selectedDay={selectedDay} onSelect={setSelectedDay} />
 
           {/* kratke kontrole (način/radnica/mesec) */}
           <div style={mobileControls}>
@@ -339,7 +335,9 @@ export default function BookTime() {
               value={p.mode}
               onChange={(e) =>
                 setPrefs(
-                  new Map(prefs.set(activeService.id, { ...p, mode: e.target.value }))
+                  new Map(
+                    prefs.set(activeService.id, { ...p, mode: e.target.value })
+                  )
                 )
               }
               style={inpMobile}
@@ -352,7 +350,9 @@ export default function BookTime() {
               value={p.empId}
               onChange={(e) =>
                 setPrefs(
-                  new Map(prefs.set(activeService.id, { ...p, empId: e.target.value }))
+                  new Map(
+                    prefs.set(activeService.id, { ...p, empId: e.target.value })
+                  )
                 )
               }
               disabled={p.mode !== "specific"}
@@ -374,7 +374,9 @@ export default function BookTime() {
               value={monthAnchor}
               onChange={(e) => {
                 setMonthAnchor(e.target.value);
-                const [y, m] = e.target.value.split("-").map((n) => parseInt(n, 10));
+                const [y, m] = e.target.value
+                  .split("-")
+                  .map((n) => parseInt(n, 10));
                 setSelectedDay(new Date(y, m - 1, 1));
               }}
               style={inpMobile}
@@ -391,7 +393,6 @@ export default function BookTime() {
                   <EmpCard
                     key={e.id}
                     name={e.name}
-                    rating={Number(e.rating || 4.7)}
                     active={activeEmp}
                     onClick={() =>
                       setPrefs(
@@ -415,7 +416,9 @@ export default function BookTime() {
           </div>
 
           {/* 4) Termini */}
-          <div style={sectionTitleMobile}>Available Time</div>
+          <div style={{ color: "#fff", opacity: 0.9, margin: "8px 2px 6px" }}>
+            Available Time
+          </div>
           <div style={pillsGridMobile}>
             {loading ? (
               <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
@@ -437,7 +440,13 @@ export default function BookTime() {
                   >
                     {minToTime(s.startMin)}
                     {p.mode !== "specific" && (
-                      <span style={{ fontSize: 11, opacity: 0.8, display: "block" }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          opacity: 0.8,
+                          display: "block",
+                        }}
+                      >
                         {e?.name || "Radnica"}
                       </span>
                     )}
@@ -459,177 +468,255 @@ export default function BookTime() {
         </div>
       </div>
     );
-  }
+  } else {
+    // DESKTOP – postojeći lepi raspored
+    return (
+      <div style={wrap(isMobile)}>
+        <div style={panel(isMobile)}>
+          <h2 style={title}>Rezerviši odabrane usluge</h2>
 
-  // DESKTOP – postojeći lepi raspored
-  return (
-    <div style={wrap(isMobile)}>
-      <div style={panel(isMobile)}>
-        <h2 style={title}>Rezerviši odabrane usluge</h2>
-
-        <div style={layoutDesktop}>
-          {/* leva kolona: usluge */}
-          <div style={leftCol}>
-            {selectedServices.map((s) => {
-              const booked = prefs.get(s.id)?.booked;
-              const active = s.id === activeService.id;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => setActiveId(s.id)}
-                  style={srvItemDesktop(active, booked)}
-                  type="button"
-                >
-                  <div style={{ fontWeight: 900, lineHeight: 1.3 }}>
-                    {s.name}
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.85 }}>
-                    {Number(s.durationMin || 0)} min{" "}
-                    {finalPriceOf(s) != null && <>• {money(finalPriceOf(s))}</>}
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 12,
-                      fontWeight: 900,
-                      color: booked ? "#1a7f3c" : "#7a1b1b",
-                    }}
+          <div style={layoutDesktop}>
+            {/* leva kolona: usluge */}
+            <div style={leftCol}>
+              {selectedServices.map((s) => {
+                const booked = prefs.get(s.id)?.booked;
+                const active = s.id === activeService.id;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setActiveId(s.id)}
+                    style={srvItemDesktop(active, booked)}
+                    type="button"
                   >
-                    {booked ? "Zakazano" : "Nije zakazano"}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* desna kolona */}
-          <div style={rightCol}>
-            {/* info + kontrole */}
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "end" }}>
-              <div>
-                <div style={{ fontSize: 12, opacity: 0.85, color: "#fff" }}>Usluga</div>
-                <div style={{ fontWeight: 900, color: "#fff" }}>{activeService.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.9, color: "#fff" }}>
-                  Trajanje: <b>{Number(activeService.durationMin || 0)} min</b>{" "}
-                  {finalPriceOf(activeService) != null && <>• Cena: <b>{money(finalPriceOf(activeService))}</b></>}
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(150px,1fr))", gap: 8, alignItems: "end" }}>
-                <div>
-                  <label style={lbl}>Način izbora</label>
-                  <select
-                    value={p.mode}
-                    onChange={(e) =>
-                      setPrefs(new Map(prefs.set(activeService.id, { ...p, mode: e.target.value })))
-                    }
-                    style={inp}
-                  >
-                    <option value="any">Prva slobodna radnica</option>
-                    <option value="specific">Određena radnica</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={lbl}>Radnica</label>
-                  <select
-                    value={p.empId}
-                    onChange={(e) =>
-                      setPrefs(new Map(prefs.set(activeService.id, { ...p, empId: e.target.value })))
-                    }
-                    disabled={p.mode !== "specific"}
-                    style={{ ...inp, background: p.mode === "specific" ? "#fff" : "#f3f3f3" }}
-                  >
-                    <option value="">— Odaberi —</option>
-                    {eligible.map((e) => (
-                      <option key={e.id} value={e.id}>{e.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={lbl}>Mesec</label>
-                  <input
-                    type="month"
-                    value={monthAnchor}
-                    onChange={(e) => {
-                      setMonthAnchor(e.target.value);
-                      const [y, m] = e.target.value.split("-").map((n) => parseInt(n, 10));
-                      setSelectedDay(new Date(y, m - 1, 1));
-                    }}
-                    style={inp}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* traka sa datumima */}
-            <DateStrip monthStr={monthAnchor} selectedDay={selectedDay} onSelect={setSelectedDay} />
-
-            {/* radnice */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 2px 8px" }}>
-              <div style={{ color: "#fff", fontWeight: 900 }}>Hair Stylish</div>
-              <div style={{ color: "#fff", opacity: .85, fontSize: 12 }}>See All</div>
-            </div>
-
-            <div style={stylistsRow}>
-              {eligible.length ? (
-                eligible.map((e) => {
-                  const activeEmp = p.empId === e.id && p.mode === "specific";
-                  return (
-                    <EmpCard
-                      key={e.id}
-                      name={e.name}
-                      rating={Number(e.rating || 4.7)}
-                      active={activeEmp}
-                      onClick={() =>
-                        setPrefs(new Map(prefs.set(activeService.id, { ...p, mode: "specific", empId: e.id })))
-                      }
-                    />
-                  );
-                })
-              ) : (
-                <div style={{ color: "#fff", opacity: .85, padding: 8 }}>Nema radnica za ovu uslugu/kategoriju.</div>
-              )}
-            </div>
-
-            {/* termini */}
-            <div style={{ color: "#fff", opacity: 0.9, margin: "8px 2px 6px" }}>Available Time</div>
-            <div style={pillsGrid}>
-              {loading ? (
-                <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
-              ) : currentSlots.length ? (
-                currentSlots.map((s) => {
-                  const e = employees.find((x) => x.id === s.employeeId);
-                  return (
-                    <button
-                      key={`${s.employeeId}_${s.startMin}`}
-                      style={{ ...pillBtn, opacity: busyAction ? 0.7 : 1, pointerEvents: busyAction ? "none" : "auto" }}
-                      onClick={() => book(s)}
-                      type="button"
-                      disabled={busyAction}
-                      title={e?.name || "Radnica"}
-                    >
-                      <div style={{ fontWeight: 800 }}>{minToTime(s.startMin)}</div>
-                      {p.mode !== "specific" && (
-                        <div style={{ fontSize: 11, opacity: 0.85 }}>{e?.name || "Radnica"}</div>
+                    <div style={{ fontWeight: 900, lineHeight: 1.3 }}>
+                      {s.name}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                      {Number(s.durationMin || 0)} min{" "}
+                      {finalPriceOf(s) != null && (
+                        <>• {money(finalPriceOf(s))}</>
                       )}
-                    </button>
-                  );
-                })
-              ) : (
-                <div style={{ color: "#fff", opacity: 0.9 }}>Nema slobodnih termina za izabrani dan.</div>
-              )}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        fontWeight: 900,
+                        color: booked ? "#1a7f3c" : "#7a1b1b",
+                      }}
+                    >
+                      {booked ? "Zakazano" : "Nije zakazano"}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-            {allBooked && (
-              <div style={{ marginTop: 12, color: "#fff" }}>
-                🎉 Sve izabrane usluge su zakazane. Hvala!
+            {/* desna kolona */}
+            <div style={rightCol}>
+              {/* info + kontrole */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  alignItems: "end",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.85, color: "#fff" }}>
+                    Usluga
+                  </div>
+                  <div style={{ fontWeight: 900, color: "#fff" }}>
+                    {activeService.name}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.9, color: "#fff" }}>
+                    Trajanje:{" "}
+                    <b>{Number(activeService.durationMin || 0)} min</b>{" "}
+                    {finalPriceOf(activeService) != null && (
+                      <>
+                        • Cena: <b>{money(finalPriceOf(activeService))}</b>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3,minmax(150px,1fr))",
+                    gap: 8,
+                    alignItems: "end",
+                  }}
+                >
+                  <div>
+                    <label style={lbl}>Način izbora</label>
+                    <select
+                      value={p.mode}
+                      onChange={(e) =>
+                        setPrefs(
+                          new Map(
+                            prefs.set(activeService.id, {
+                              ...p,
+                              mode: e.target.value,
+                            })
+                          )
+                        )
+                      }
+                      style={inp}
+                    >
+                      <option value="any">Prva slobodna radnica</option>
+                      <option value="specific">Određena radnica</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Radnica</label>
+                    <select
+                      value={p.empId}
+                      onChange={(e) =>
+                        setPrefs(
+                          new Map(
+                            prefs.set(activeService.id, {
+                              ...p,
+                              empId: e.target.value,
+                            })
+                          )
+                        )
+                      }
+                      disabled={p.mode !== "specific"}
+                      style={{
+                        ...inp,
+                        background: p.mode === "specific" ? "#fff" : "#f3f3f3",
+                      }}
+                    >
+                      <option value="">— Odaberi —</option>
+                      {eligible.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Mesec</label>
+                    <input
+                      type="month"
+                      value={monthAnchor}
+                      onChange={(e) => {
+                        setMonthAnchor(e.target.value);
+                        const [y, m] = e.target.value
+                          .split("-")
+                          .map((n) => parseInt(n, 10));
+                        setSelectedDay(new Date(y, m - 1, 1));
+                      }}
+                      style={inp}
+                    />
+                  </div>
+                </div>
               </div>
-            )}
+
+              {/* traka sa datumima */}
+              <DateStrip selectedDay={selectedDay} onSelect={setSelectedDay} />
+
+              {/* radnice */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  margin: "4px 2px 8px",
+                }}
+              >
+                <div style={{ color: "#fff", fontWeight: 900 }}>
+                  Hair Stylish
+                </div>
+                <div style={{ color: "#fff", opacity: 0.85, fontSize: 12 }}>
+                  See All
+                </div>
+              </div>
+
+              <div style={stylistsRow}>
+                {eligible.length ? (
+                  eligible.map((e) => {
+                    const activeEmp = p.empId === e.id && p.mode === "specific";
+                    return (
+                      <EmpCard
+                        key={e.id}
+                        name={e.name}
+                        active={activeEmp}
+                        onClick={() =>
+                          setPrefs(
+                            new Map(
+                              prefs.set(activeService.id, {
+                                ...p,
+                                mode: "specific",
+                                empId: e.id,
+                              })
+                            )
+                          )
+                        }
+                      />
+                    );
+                  })
+                ) : (
+                  <div style={{ color: "#fff", opacity: 0.85, padding: 8 }}>
+                    Nema radnica za ovu uslugu/kategoriju.
+                  </div>
+                )}
+              </div>
+
+              {/* termini */}
+              <div style={{ color: "#fff", opacity: 0.9, margin: "8px 2px 6px" }}>
+                Available Time
+              </div>
+              <div style={pillsGrid}>
+                {loading ? (
+                  <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
+                ) : currentSlots.length ? (
+                  currentSlots.map((s) => {
+                    const e = employees.find((x) => x.id === s.employeeId);
+                    return (
+                      <button
+                        key={`${s.employeeId}_${s.startMin}`}
+                        style={{
+                          ...pillBtn,
+                          opacity: busyAction ? 0.7 : 1,
+                          pointerEvents: busyAction ? "none" : "auto",
+                        }}
+                        onClick={() => book(s)}
+                        type="button"
+                        disabled={busyAction}
+                        title={e?.name || "Radnica"}
+                      >
+                        <div style={{ fontWeight: 800 }}>
+                          {minToTime(s.startMin)}
+                        </div>
+                        {p.mode !== "specific" && (
+                          <div style={{ fontSize: 11, opacity: 0.85 }}>
+                            {e?.name || "Radnica"}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div style={{ color: "#fff", opacity: 0.9 }}>
+                    Nema slobodnih termina za izabrani dan.
+                  </div>
+                )}
+              </div>
+
+              {allBooked && (
+                <div style={{ marginTop: 12, color: "#fff" }}>
+                  🎉 Sve izabrane usluge su zakazane. Hvala!
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 }
 
 /* ---------- date strip (horizontalni datumi) ---------- */
@@ -696,8 +783,8 @@ function DateStrip({ selectedDay, onSelect }) {
   );
 }
 
-/* ---------- kartica radnice ---------- */
-function EmpCard({ name, rating = 4.7, onClick, active }) {
+/* ---------- kartica radnice (bez zvezdica, bez belog okvira) ---------- */
+function EmpCard({ name, onClick, active }) {
   const initials = String(name || "?")
     .split(" ")
     .map((s) => s[0])
@@ -708,13 +795,10 @@ function EmpCard({ name, rating = 4.7, onClick, active }) {
   return (
     <button type="button" onClick={onClick} style={empCard(active)}>
       <div style={empAvatar}>
-        {/* zameni sa <img src="..." alt={name} style={empImg} /> kad dodaš slike */}
+        {/* Kad dodaš slike: <img src="URL" alt={name} style={empImg} /> */}
         <div style={empInitials}>{initials}</div>
       </div>
-      <div style={{ fontWeight: 700, marginTop: 6, color: "#222" }}>{name}</div>
-      <div style={{ fontSize: 12, opacity: 0.9, color: "#555" }}>
-        ⭐ {Number(rating).toFixed(1)}
-      </div>
+      <div style={{ fontWeight: 700, marginTop: 8, color: "#222" }}>{name}</div>
     </button>
   );
 }
@@ -774,7 +858,7 @@ const mobileServicesCol = {
   gap: 8,
   marginBottom: 8,
 };
-const srvItemMobile = (active, booked) => ({
+const srvItemMobile = (active /* , booked */) => ({
   textAlign: "left",
   padding: 12,
   borderRadius: 14,
@@ -875,21 +959,23 @@ const empCard = (active) => ({
   padding: 12,
   borderRadius: 16,
   background: "#fff",
-  border: active ? "2px solid #eab8c8" : "1px solid #ececec",
-  boxShadow: active ? "0 8px 22px rgba(0,0,0,.12)" : "0 4px 12px rgba(0,0,0,.08)",
+  border: active ? "2px solid #ffb6d0" : "1px solid #ececec",
+  boxShadow: active ? "0 10px 24px rgba(255, 160, 190, .25)" : "0 6px 16px rgba(0,0,0,.08)",
   cursor: "pointer",
+  transition: "transform .18s ease, box-shadow .18s ease",
+  transform: active ? "scale(1.03)" : "scale(1)",
 });
 const empAvatar = {
-  height: 64,
-  width: 64,
+  height: 68,
+  width: 68,
   borderRadius: "50%",
-  background: "linear-gradient(135deg,#ffe9f2,#fff)",
-  border: "1px solid #f1d8e0",
+  background: "linear-gradient(135deg,#ffe3ef,#ffffff)",
   display: "grid",
   placeItems: "center",
   margin: "0 auto",
+  boxShadow: "0 6px 16px rgba(0,0,0,.10)",
 };
-const empInitials = { fontWeight: 900, color: "#b8798e" };
+const empInitials = { fontWeight: 900, color: "#b15b78", fontSize: 20, letterSpacing: 0.5 };
 const empImg = { height: "100%", width: "100%", borderRadius: "50%", objectFit: "cover" };
 
 /* --- Pil dugmići vremena --- */

@@ -176,11 +176,6 @@ export default function SelectServices() {
   return (
     <div style={wrap}>
       <div style={panel}>
-        <h2 style={title}>Izaberi usluge</h2>
-        <div style={{ color: "#000", opacity: 0.9 }}>
-          Min 1, maksimalno 5. Klikni na kategoriju i izaberi uslugu.
-        </div>
-
         <div style={catStack}>
           {cats.map((c) => (
             <div key={c.id} style={{ display: "grid", gap: 10 }}>
