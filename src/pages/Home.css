@@ -341,9 +341,12 @@ html, body { margin:0; padding:0; }
 
   /* Zakaži termin – veće dugme */
   .zakazi-btn{
-    padding:18px 56px;
-    font-size:1.25rem;
+
     border-radius:999px;
+       width: 90%;         /* zauzima 90% širine ekrana */
+    max-width: 350px;   /* ali ne ide beskonačno široko */
+    padding: 18px 0;    /* veći vertikalni padding */
+    font-size: 1.3rem;  /* malo veći tekst */
     background:url("/slika3.webp") center/cover no-repeat;
     color:#000; font-weight:700; border:none;
     box-shadow:0 18px 24px rgba(0,0,0,0.7);
@@ -356,10 +359,14 @@ html, body { margin:0; padding:0; }
 
   /* Ostala dugmad malo veća */
   .custom-btn{
-    padding:16px 42px;
+   
+       width: 90%;         /* zauzima 90% širine ekrana */
+    max-width: 350px;   /* ali ne ide beskonačno široko */
+    padding: 18px 0;    /* veći vertikalni padding */
+    font-size: 1.3rem;  /* malo veći tekst */
     font-size:1.15rem;
     box-shadow:0 16px 24px rgba(0,0,0,.45);
-    max-width:90vw;
+   
     white-space:nowrap;
   }
 

@@ -52,7 +52,7 @@ export default function Home() {
     img.src = "/slikadobrodosli.webp";
 
     // Fallback tajmer — max trajanje splash-a
-    const maxTimeout = setTimeout(closeSplash, 1600);
+   const maxTimeout = setTimeout(closeSplash, 4500)
 
     img.onload = () => {
       // Malo “udahni” (300ms), pa ugasi
