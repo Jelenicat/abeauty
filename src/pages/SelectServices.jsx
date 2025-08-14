@@ -121,7 +121,6 @@ export default function SelectServices() {
   function toggle(id) {
     const exists = selectedServices.find((x) => x.id === id);
     if (exists) {
-      // odčekiranje — samo skloni, bez prompta
       setSelectedServices(selectedServices.filter((x) => x.id !== id));
       return;
     }
@@ -144,7 +143,6 @@ export default function SelectServices() {
           color: srv.color || null,
         },
       ]);
-      // prikaži PROMPT posle selekcije
       setPromptServiceName(srv.name || "Usluga");
       setPromptOpen(true);
     }
@@ -161,14 +159,12 @@ export default function SelectServices() {
   const canContinue =
     selectedServices.length >= 1 && selectedServices.length <= 5;
 
-  // otvori modal za kliknutu kategoriju
   const openCategoryModal = (catId) => {
     setActiveCatId(catId);
     setIsModalOpen(true);
   };
   const closeCategoryModal = () => setIsModalOpen(false);
 
-  // UX: blokiraj scroll pozadine dok je bilo koji modal/prompt otvoren
   useEffect(() => {
     const open = isModalOpen || promptOpen;
     document.body.style.overflow = open ? "hidden" : "";
@@ -180,17 +176,11 @@ export default function SelectServices() {
   return (
     <div style={wrap}>
       <div style={panel}>
-        {/* header */}
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <h2 style={title}>Izaberi usluge</h2>
-            <div style={{ color: "#000", opacity: 0.9 }}>
-              Min 1, maksimalno 5. Klikni na kategoriju i izaberi uslugu.
-            </div>
-          </div>
+        <h2 style={title}>Izaberi usluge</h2>
+        <div style={{ color: "#000", opacity: 0.9 }}>
+          Min 1, maksimalno 5. Klikni na kategoriju i izaberi uslugu.
         </div>
 
-        {/* SAMO KATEGORIJE (klik otvara modal sa uslugama) */}
         <div style={catStack}>
           {cats.map((c) => (
             <div key={c.id} style={{ display: "grid", gap: 10 }}>
@@ -207,7 +197,6 @@ export default function SelectServices() {
           ))}
         </div>
 
-        {/* Sažetak + Nastavi */}
         <div style={summaryRow}>
           <div style={{ color: "#000" }}>
             Izabrano: <b>{selectedServices.length}</b> • Trajanje: <b>{totalMin} min</b>
@@ -223,7 +212,6 @@ export default function SelectServices() {
         </div>
       </div>
 
-      {/* MODAL: liste usluga za aktivnu kategoriju */}
       {isModalOpen && (
         <Modal onClose={closeCategoryModal}>
           <CategoryServicesView
@@ -235,7 +223,6 @@ export default function SelectServices() {
         </Modal>
       )}
 
-      {/* PROMPT posle selekcije usluge */}
       {promptOpen && (
         <Prompt
           title="Želiš li odmah da zakažeš?"
@@ -255,7 +242,7 @@ export default function SelectServices() {
   );
 }
 
-/* -------- Modal i podkomponente -------- */
+/* -------- Modal -------- */
 function Modal({ children, onClose }) {
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -273,12 +260,7 @@ function Modal({ children, onClose }) {
   );
 }
 
-function CategoryServicesView({
-  services,
-  selectedServices,
-  toggle,
-  isMobile,
-}) {
+function CategoryServicesView({ services, selectedServices, toggle, isMobile }) {
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <h3 style={{ margin: 0, color: "#000" }}>Izaberi uslugu</h3>
@@ -294,27 +276,14 @@ function CategoryServicesView({
               <div style={{ fontWeight: 900, lineHeight: 1.3, textAlign: "center", color: "#000" }}>
                 {s.name}
               </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  marginTop: 6,
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexWrap: "wrap",
-                  color: "#000",
-                }}
-              >
+              <div style={{ fontSize: 12, marginTop: 6, display: "flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap", color: "#000" }}>
                 <span>{Number(s.durationMin || 0)} min</span>
                 {price != null && (
                   <>
                     <span>•</span>
                     {disc > 0 && base != null ? (
                       <>
-                        <span style={{ textDecoration: "line-through", opacity: 0.7 }}>
-                          {money(base)}
-                        </span>
+                        <span style={{ textDecoration: "line-through", opacity: 0.7 }}>{money(base)}</span>
                         <b style={{ color: "#000" }}>{money(price)}</b>
                         <span style={badgeSale}>-{disc}%</span>
                       </>
@@ -327,26 +296,13 @@ function CategoryServicesView({
             </label>
           );
         })}
-        {!services.length && (
-          <div style={{ gridColumn: "1/-1", color: "#000", opacity: 0.9, textAlign: "center" }}>
-            Nema usluga u ovoj kategoriji.
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-/* -------- PROMPT (elegantan) -------- */
-function Prompt({
-  title,
-  subtitle,
-  primaryLabel,
-  secondaryLabel,
-  onPrimary,
-  onSecondary,
-  onClose,
-}) {
+/* -------- Prompt -------- */
+function Prompt({ title, subtitle, primaryLabel, secondaryLabel, onPrimary, onSecondary, onClose }) {
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -362,8 +318,8 @@ function Prompt({
           {subtitle ? <div style={{ color: "#333", opacity: .85 }}>{subtitle}</div> : null}
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}>
-          <button onClick={onPrimary} style={ctaPrimary}>Zakaži sada</button>
-          <button onClick={onSecondary} style={ctaSecondary}>Nastavi izbor</button>
+          <button onClick={onPrimary} style={ctaPrimary}>{primaryLabel}</button>
+          <button onClick={onSecondary} style={ctaSecondary}>{secondaryLabel}</button>
         </div>
       </div>
     </div>
@@ -371,222 +327,23 @@ function Prompt({
 }
 
 /* -------- styles -------- */
-const wrap = {
-  minHeight: "100vh",
-  background: "url('/slika7.webp') center/cover fixed no-repeat",
-  padding: 18,
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "flex-start",
-};
-const panel = {
-  width: "min(1200px, 100%)",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.35))",
-  border: "1px solid rgba(255,255,255,.5)",
-  backdropFilter: "blur(10px)",
-  borderRadius: 28,
-  boxShadow: "0 24px 60px rgba(0,0,0,.18)",
-  padding: "clamp(16px,3vw,24px)",
-};
+const wrap = { minHeight: "100vh", background: "url('/slika7.webp') center/cover fixed no-repeat", padding: 18, display: "flex", justifyContent: "center", alignItems: "flex-start" };
+const panel = { width: "min(1200px, 100%)", background: "linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.35))", border: "1px solid rgba(255,255,255,.5)", backdropFilter: "blur(10px)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.18)", padding: "clamp(16px,3vw,24px)" };
 const title = { margin: 0, color: "#000" };
-
-const catStack = {
-  display: "grid",
-  gap: 16,
-  marginTop: 12,
-};
-
-/* DESKTOP btn – centriran naziv */
-const deskCatBtn = () => ({
-  height: 64,
-  borderRadius: 16,
-  border: "1px solid rgba(0,0,0,.2)",
-  background: "rgba(255,255,255,.9)",
-  color: "#000",
-  fontWeight: 900,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",   // ← centar
-  textAlign: "center",        // ← centar
-});
-
-/* MOBILE tile – naziv u centru */
-const mobCatCard = (imgUrl) => ({
-  position: "relative",
-  display: "block",
-  width: "100%",
-  height: 96,
-  borderRadius: 18,
-  border: "none",
-  overflow: "hidden",
-  cursor: "pointer",
-  boxShadow: "0 10px 24px rgba(0,0,0,.18)",
-  background: `
-    linear-gradient(180deg, rgba(255,255,255,0) 40%, rgba(0,0,0,.18) 100%),
-    url('${imgUrl}') center/cover no-repeat
-  `,
-  WebkitMaskImage: "-webkit-radial-gradient(white, black)",
-  isolation: "isolate",
-});
-const mobCatLabel = {
-  position: "absolute",
-  left: "50%",
-  top: "50%",
-  transform: "translate(-50%, -50%)", // ← centrirano
-  background: "rgba(255,255,255,.92)",
-  color: "#000",
-  padding: "10px 16px",
-  borderRadius: 14,
-  fontWeight: 900,
-  letterSpacing: ".06em",
-  fontSize: 13,
-  textAlign: "center",
-  boxShadow: "0 8px 18px rgba(0,0,0,.15)",
-};
-
-const srvGrid = (mobile) => ({
-  display: "grid",
-  gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill,minmax(260px,1fr))",
-  gap: 10,
-});
-
-const srvCard = (checked) => ({
-  borderRadius: 16,
-  border: "1px solid rgba(0,0,0,.12)",
-  background: checked
-    ? "linear-gradient(180deg, #ffc3d6, #ffd9e6)" // jače, elegantno
-    : "#fff",
-  padding: 16,
-  color: "#000",
-  boxShadow: checked
-    ? "0 12px 24px rgba(0,0,0,.18)"
-    : "0 6px 16px rgba(0,0,0,.10)",
-  cursor: "pointer",
-  transition: "transform .12s ease, box-shadow .12s ease, background .12s ease",
-});
-const badgeSale = {
-  background: "rgba(255, 214, 231, .8)",
-  color: "#000",
-  borderRadius: 999,
-  padding: "2px 8px",
-  fontSize: 11,
-  fontWeight: 900,
-  border: "1px solid rgba(0,0,0,.08)",
-};
-
-const summaryRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 10,
-  marginTop: 14,
-  flexWrap: "wrap",
-};
-const primaryBtn = (on) => ({
-  height: 40,
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,.12)",
-  padding: "0 16px",
-  fontWeight: 900,
-  cursor: on ? "pointer" : "not-allowed",
-  background: on
-    ? "linear-gradient(180deg,#ffd6e7,#ffc2da)"
-    : "#eee",
-  color: "#000",
-  boxShadow: on ? "0 8px 20px rgba(0,0,0,.15)" : "none",
-});
-
-/* MODAL styles (kategorije) */
-const modalBack = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,.35)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 16,
-  zIndex: 1000,
-};
-const modalCard = {
-  width: "min(900px, 100%)",
-  maxHeight: "85vh",
-  overflow: "auto",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,.90), rgba(255,255,255,.75))",
-  backdropFilter: "blur(12px)",
-  borderRadius: 20,
-  border: "1px solid rgba(255,255,255,.7)",
-  boxShadow: "0 28px 70px rgba(0,0,0,.35)",
-  padding: 18,
-  position: "relative",
-};
-const modalClose = {
-  position: "absolute",
-  top: 8,
-  right: 8,
-  border: "1px solid rgba(0,0,0,.12)",
-  background: "#fff",
-  borderRadius: 10,
-  height: 36,
-  width: 36,
-  cursor: "pointer",
-};
-
-/* PROMPT styles (iznad modala) */
-const promptBack = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,.45)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 16,
-  zIndex: 1100,
-};
-const promptCard = {
-  width: "min(520px, 100%)",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.82))",
-  backdropFilter: "blur(14px)",
-  border: "1px solid rgba(255,255,255,.8)",
-  borderRadius: 18,
-  boxShadow: "0 30px 80px rgba(0,0,0,.40)",
-  padding: 20,
-  position: "relative",
-  textAlign: "center",
-};
-const promptClose = {
-  position: "absolute",
-  top: 8,
-  right: 8,
-  border: "1px solid rgba(0,0,0,.12)",
-  background: "#fff",
-  borderRadius: 10,
-  height: 36,
-  width: 36,
-  cursor: "pointer",
-};
-
-const ctaPrimary = {
-  height: 40,
-  padding: "0 16px",
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,.12)",
-  background: "linear-gradient(180deg,#ffd6e7,#ffbfd3)",
-  fontWeight: 900,
-  cursor: "pointer",
-  color: "#000",
-  boxShadow: "0 12px 28px rgba(0,0,0,.18)",
-};
-const ctaSecondary = {
-  height: 40,
-  padding: "0 16px",
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,.12)",
-  background: "#fff",
-  fontWeight: 900,
-  cursor: "pointer",
-  color: "#000",
-};
+const catStack = { display: "grid", gap: 16, marginTop: 12 };
+const deskCatBtn = () => ({ height: 64, borderRadius: 16, border: "1px solid rgba(0,0,0,.2)", background: "rgba(255,255,255,.9)", color: "#000", fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" });
+const mobCatCard = (imgUrl) => ({ position: "relative", display: "block", width: "100%", height: 96, borderRadius: 18, border: "none", overflow: "hidden", cursor: "pointer", boxShadow: "0 10px 24px rgba(0,0,0,.18)", background: `linear-gradient(180deg, rgba(255,255,255,0) 40%, rgba(0,0,0,.18) 100%), url('${imgUrl}') center/cover no-repeat` });
+const mobCatLabel = { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "rgba(255,255,255,.92)", color: "#000", padding: "10px 16px", borderRadius: 14, fontWeight: 900, letterSpacing: ".06em", fontSize: 13, textAlign: "center", boxShadow: "0 8px 18px rgba(0,0,0,.15)" };
+const srvGrid = (mobile) => ({ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill,minmax(260px,1fr))", gap: 10 });
+const srvCard = (checked) => ({ borderRadius: 16, background: checked ? "linear-gradient(180deg, #ffc3d6, #ffd9e6)" : "linear-gradient(180deg, #ffffff, #fafafa)", padding: 16, color: "#000", boxShadow: checked ? "0 14px 28px rgba(0,0,0,.20)" : "0 8px 18px rgba(0,0,0,.12)", cursor: "pointer", transition: "transform .12s ease, box-shadow .12s ease, background .12s ease" });
+const badgeSale = { background: "rgba(255, 214, 231, .8)", color: "#000", borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 900 };
+const summaryRow = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" };
+const primaryBtn = (on) => ({ height: 40, borderRadius: 12, border: "1px solid rgba(0,0,0,.12)", padding: "0 16px", fontWeight: 900, cursor: on ? "pointer" : "not-allowed", background: on ? "linear-gradient(180deg,#ffd6e7,#ffc2da)" : "#eee", color: "#000", boxShadow: on ? "0 8px 20px rgba(0,0,0,.15)" : "none" });
+const modalBack = { position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 1000 };
+const modalCard = { width: "min(900px, 100%)", maxHeight: "85vh", overflow: "auto", background: "linear-gradient(180deg, rgba(255,255,255,.90), rgba(255,255,255,.75))", backdropFilter: "blur(12px)", borderRadius: 20, border: "1px solid rgba(255,255,255,.7)", boxShadow: "0 28px 70px rgba(0,0,0,.35)", padding: 18, position: "relative" };
+const modalClose = { position: "absolute", top: 8, right: 8, border: "1px solid rgba(0,0,0,.12)", background: "#fff", borderRadius: 10, height: 36, width: 36, cursor: "pointer" };
+const promptBack = { position: "fixed", inset: 0, background: "rgba(0,0,0,.38)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 1100 };
+const promptCard = { width: "min(520px, 100%)", background: "linear-gradient(180deg, rgba(255,255,255,.82), rgba(255,255,255,.64))", backdropFilter: "blur(16px)", border: "1px solid rgba(255,255,255,.65)", borderRadius: 20, boxShadow: "0 34px 90px rgba(0,0,0,.42)", padding: 22, position: "relative", textAlign: "center" };
+const promptClose = { position: "absolute", top: 8, right: 8, background: "rgba(255,255,255,.95)", color: "#000", border: "1px solid rgba(0,0,0,.12)", borderRadius: 12, height: 36, width: 36, cursor: "pointer", display: "grid", placeItems: "center", fontSize: 18, lineHeight: 1 };
+const ctaPrimary = { height: 40, padding: "0 16px", borderRadius: 12, border: "1px solid rgba(0,0,0,.12)", background: "linear-gradient(180deg,#ffd6e7,#ffbfd3)", fontWeight: 900, cursor: "pointer", color: "#000", boxShadow: "0 12px 28px rgba(0,0,0,.18)" };
+const ctaSecondary = { height: 40, padding: "0 16px", borderRadius: 12, border: "1px solid rgba(0,0,0,.12)", background: "#fff", fontWeight: 900, cursor: "pointer", color: "#000" };
