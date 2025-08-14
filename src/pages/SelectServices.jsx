@@ -39,13 +39,17 @@ const finalPriceOf = (s) => {
 
 /* -------- component -------- */
 export default function SelectServices() {
-  const { user } = useAuth(); // eventualno kasnije
+  const { user } = useAuth();
   const { selectedServices, setSelectedServices } = useBooking();
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);
-  const [activeCatId, setActiveCatId] = useState(""); // zadržavamo, koristimo za modal
+  const [activeCatId, setActiveCatId] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [showProceedAsk, setShowProceedAsk] = useState(false); // “Zakaži sada” / “Nastavi izbor”
+
+  // PROMPT posle selekcije usluge
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptServiceName, setPromptServiceName] = useState("");
+
   const navigate = useNavigate();
 
   // responsive flag
@@ -117,8 +121,8 @@ export default function SelectServices() {
   function toggle(id) {
     const exists = selectedServices.find((x) => x.id === id);
     if (exists) {
+      // odčekiranje — samo skloni, bez prompta
       setSelectedServices(selectedServices.filter((x) => x.id !== id));
-      setShowProceedAsk(true); // čak i ako skine čekiranje, nudimo izbor (možeš da nastaviš ili da dodaš još)
       return;
     }
     if (selectedServices.length >= 5) {
@@ -140,7 +144,9 @@ export default function SelectServices() {
           color: srv.color || null,
         },
       ]);
-      setShowProceedAsk(true); // nakon dodavanja – postavi pitanje
+      // prikaži PROMPT posle selekcije
+      setPromptServiceName(srv.name || "Usluga");
+      setPromptOpen(true);
     }
   }
 
@@ -159,14 +165,17 @@ export default function SelectServices() {
   const openCategoryModal = (catId) => {
     setActiveCatId(catId);
     setIsModalOpen(true);
-    setShowProceedAsk(false);
   };
+  const closeCategoryModal = () => setIsModalOpen(false);
 
-  // close modal
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setShowProceedAsk(false);
-  };
+  // UX: blokiraj scroll pozadine dok je bilo koji modal/prompt otvoren
+  useEffect(() => {
+    const open = isModalOpen || promptOpen;
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isModalOpen, promptOpen]);
 
   return (
     <div style={wrap}>
@@ -190,7 +199,7 @@ export default function SelectServices() {
                   <span style={mobCatLabel}>{String(c.name || "").toUpperCase()}</span>
                 </button>
               ) : (
-                <button onClick={() => openCategoryModal(c.id)} style={deskCatBtn(false)}>
+                <button onClick={() => openCategoryModal(c.id)} style={deskCatBtn()}>
                   {c.name}
                 </button>
               )}
@@ -216,17 +225,31 @@ export default function SelectServices() {
 
       {/* MODAL: liste usluga za aktivnu kategoriju */}
       {isModalOpen && (
-        <Modal onClose={closeModal}>
+        <Modal onClose={closeCategoryModal}>
           <CategoryServicesView
             services={(servicesByCat.get(activeCatId) || [])}
             selectedServices={selectedServices}
             toggle={toggle}
             isMobile={isMobile}
-            onProceedNow={() => navigate("/rezervisi")}
-            onProceedLater={() => setShowProceedAsk(false)}
-            showProceedAsk={showProceedAsk}
           />
         </Modal>
+      )}
+
+      {/* PROMPT posle selekcije usluge */}
+      {promptOpen && (
+        <Prompt
+          title="Želiš li odmah da zakažeš?"
+          subtitle={promptServiceName ? `Dodali smo: ${promptServiceName}` : ""}
+          primaryLabel="Zakaži sada"
+          secondaryLabel="Nastavi izbor"
+          onPrimary={() => {
+            setPromptOpen(false);
+            setIsModalOpen(false);
+            navigate("/rezervisi");
+          }}
+          onSecondary={() => setPromptOpen(false)}
+          onClose={() => setPromptOpen(false)}
+        />
       )}
     </div>
   );
@@ -234,6 +257,12 @@ export default function SelectServices() {
 
 /* -------- Modal i podkomponente -------- */
 function Modal({ children, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <div style={modalBack} onClick={onClose}>
       <div style={modalCard} onClick={(e) => e.stopPropagation()}>
@@ -249,9 +278,6 @@ function CategoryServicesView({
   selectedServices,
   toggle,
   isMobile,
-  onProceedNow,
-  onProceedLater,
-  showProceedAsk,
 }) {
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -307,19 +333,39 @@ function CategoryServicesView({
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      {/* Pitanje posle klika na uslugu */}
-      {showProceedAsk && (
-        <div style={proceedStrip}>
-          <div style={{ fontWeight: 700, color: "#000" }}>
-            Želiš li odmah da zakažeš ili nastavljaš izbor?
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={onProceedNow} style={proceedPrimary}>Zakaži sada</button>
-            <button onClick={onProceedLater} style={proceedSecondary}>Nastavi izbor</button>
-          </div>
+/* -------- PROMPT (elegantan) -------- */
+function Prompt({
+  title,
+  subtitle,
+  primaryLabel,
+  secondaryLabel,
+  onPrimary,
+  onSecondary,
+  onClose,
+}) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div style={promptBack} onClick={onClose}>
+      <div style={promptCard} onClick={(e) => e.stopPropagation()}>
+        <button style={promptClose} onClick={onClose} aria-label="Zatvori">✕</button>
+        <div style={{ display: "grid", gap: 8, textAlign: "center" }}>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#111" }}>{title}</div>
+          {subtitle ? <div style={{ color: "#333", opacity: .85 }}>{subtitle}</div> : null}
         </div>
-      )}
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 14, flexWrap: "wrap" }}>
+          <button onClick={onPrimary} style={ctaPrimary}>Zakaži sada</button>
+          <button onClick={onSecondary} style={ctaSecondary}>Nastavi izbor</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -335,11 +381,12 @@ const wrap = {
 };
 const panel = {
   width: "min(1200px, 100%)",
-  background: "rgba(255,255,255,.2)",
-  border: "1px solid rgba(255,255,255,.35)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.35))",
+  border: "1px solid rgba(255,255,255,.5)",
   backdropFilter: "blur(10px)",
   borderRadius: 28,
-  boxShadow: "0 24px 60px rgba(0,0,0,.25)",
+  boxShadow: "0 24px 60px rgba(0,0,0,.18)",
   padding: "clamp(16px,3vw,24px)",
 };
 const title = { margin: 0, color: "#000" };
@@ -350,21 +397,22 @@ const catStack = {
   marginTop: 12,
 };
 
-/* DESKTOP btn – bez roze okvira */
+/* DESKTOP btn – centriran naziv */
 const deskCatBtn = () => ({
   height: 64,
   borderRadius: 16,
   border: "1px solid rgba(0,0,0,.2)",
-  background: "rgba(255,255,255,.95)",
+  background: "rgba(255,255,255,.9)",
   color: "#000",
   fontWeight: 900,
   cursor: "pointer",
   display: "flex",
   alignItems: "center",
-  justifyContent: "center",
+  justifyContent: "center",   // ← centar
+  textAlign: "center",        // ← centar
 });
 
-/* MOBILE tile – bez roze okvira */
+/* MOBILE tile – naziv u centru */
 const mobCatCard = (imgUrl) => ({
   position: "relative",
   display: "block",
@@ -382,19 +430,19 @@ const mobCatCard = (imgUrl) => ({
   WebkitMaskImage: "-webkit-radial-gradient(white, black)",
   isolation: "isolate",
 });
-// posle mobCatCard dodaj:
 const mobCatLabel = {
   position: "absolute",
-  right: 16,
+  left: "50%",
   top: "50%",
-  transform: "translateY(-50%)",
+  transform: "translate(-50%, -50%)", // ← centrirano
   background: "rgba(255,255,255,.92)",
   color: "#000",
-  padding: "10px 14px",
+  padding: "10px 16px",
   borderRadius: 14,
   fontWeight: 900,
-  letterSpacing: ".08em",
+  letterSpacing: ".06em",
   fontSize: 13,
+  textAlign: "center",
   boxShadow: "0 8px 18px rgba(0,0,0,.15)",
 };
 
@@ -406,23 +454,26 @@ const srvGrid = (mobile) => ({
 
 const srvCard = (checked) => ({
   borderRadius: 16,
-  border: "1px solid rgba(0,0,0,.15)",
-  background: checked ? "#ffb7d0" : "#ffffff", // jača boja kad je čekirano
+  border: "1px solid rgba(0,0,0,.12)",
+  background: checked
+    ? "linear-gradient(180deg, #ffc3d6, #ffd9e6)" // jače, elegantno
+    : "#fff",
   padding: 16,
   color: "#000",
-  boxShadow: checked ? "0 10px 22px rgba(0,0,0,.20)" : "0 6px 16px rgba(0,0,0,.12)",
+  boxShadow: checked
+    ? "0 12px 24px rgba(0,0,0,.18)"
+    : "0 6px 16px rgba(0,0,0,.10)",
   cursor: "pointer",
-  transition: "background .15s ease, box-shadow .15s ease",
+  transition: "transform .12s ease, box-shadow .12s ease, background .12s ease",
 });
-
 const badgeSale = {
-  background: "#ffe3ef",
+  background: "rgba(255, 214, 231, .8)",
   color: "#000",
   borderRadius: 999,
   padding: "2px 8px",
   fontSize: 11,
   fontWeight: 900,
-  border: "1px solid rgba(0,0,0,.1)",
+  border: "1px solid rgba(0,0,0,.08)",
 };
 
 const summaryRow = {
@@ -436,16 +487,18 @@ const summaryRow = {
 const primaryBtn = (on) => ({
   height: 40,
   borderRadius: 12,
-  border: "1px solid rgba(0,0,0,.15)",
+  border: "1px solid rgba(0,0,0,.12)",
   padding: "0 16px",
   fontWeight: 900,
   cursor: on ? "pointer" : "not-allowed",
-  background: on ? "#ffd6e7" : "#eee",
+  background: on
+    ? "linear-gradient(180deg,#ffd6e7,#ffc2da)"
+    : "#eee",
   color: "#000",
   boxShadow: on ? "0 8px 20px rgba(0,0,0,.15)" : "none",
 });
 
-/* MODAL styles */
+/* MODAL styles (kategorije) */
 const modalBack = {
   position: "fixed",
   inset: 0,
@@ -460,11 +513,12 @@ const modalCard = {
   width: "min(900px, 100%)",
   maxHeight: "85vh",
   overflow: "auto",
-  background: "rgba(255,255,255,.9)",
-  backdropFilter: "blur(8px)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,.90), rgba(255,255,255,.75))",
+  backdropFilter: "blur(12px)",
   borderRadius: 20,
-  border: "1px solid rgba(255,255,255,.6)",
-  boxShadow: "0 24px 60px rgba(0,0,0,.35)",
+  border: "1px solid rgba(255,255,255,.7)",
+  boxShadow: "0 28px 70px rgba(0,0,0,.35)",
   padding: 18,
   position: "relative",
 };
@@ -472,7 +526,7 @@ const modalClose = {
   position: "absolute",
   top: 8,
   right: 8,
-  border: "1px solid rgba(0,0,0,.15)",
+  border: "1px solid rgba(0,0,0,.12)",
   background: "#fff",
   borderRadius: 10,
   height: 36,
@@ -480,36 +534,59 @@ const modalClose = {
   cursor: "pointer",
 };
 
-const proceedStrip = {
-  marginTop: 8,
-  padding: 12,
-  borderRadius: 14,
-  background: "rgba(255, 214, 231, .7)",
-  border: "1px solid rgba(0,0,0,.1)",
+/* PROMPT styles (iznad modala) */
+const promptBack = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,.45)",
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-  flexWrap: "wrap",
+  justifyContent: "center",
+  padding: 16,
+  zIndex: 1100,
+};
+const promptCard = {
+  width: "min(520px, 100%)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.82))",
+  backdropFilter: "blur(14px)",
+  border: "1px solid rgba(255,255,255,.8)",
+  borderRadius: 18,
+  boxShadow: "0 30px 80px rgba(0,0,0,.40)",
+  padding: 20,
+  position: "relative",
+  textAlign: "center",
+};
+const promptClose = {
+  position: "absolute",
+  top: 8,
+  right: 8,
+  border: "1px solid rgba(0,0,0,.12)",
+  background: "#fff",
+  borderRadius: 10,
+  height: 36,
+  width: 36,
+  cursor: "pointer",
 };
 
-const proceedPrimary = {
-  height: 36,
-  padding: "0 14px",
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,.15)",
-  background: "#ffd6e7",
-  fontWeight: 800,
+const ctaPrimary = {
+  height: 40,
+  padding: "0 16px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,.12)",
+  background: "linear-gradient(180deg,#ffd6e7,#ffbfd3)",
+  fontWeight: 900,
   cursor: "pointer",
   color: "#000",
+  boxShadow: "0 12px 28px rgba(0,0,0,.18)",
 };
-const proceedSecondary = {
-  height: 36,
-  padding: "0 14px",
-  borderRadius: 10,
-  border: "1px solid rgba(0,0,0,.15)",
+const ctaSecondary = {
+  height: 40,
+  padding: "0 16px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,.12)",
   background: "#fff",
-  fontWeight: 800,
+  fontWeight: 900,
   cursor: "pointer",
   color: "#000",
 };
