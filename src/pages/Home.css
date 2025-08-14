@@ -12,7 +12,7 @@ html, body { margin:0; padding:0; }
 .home-screen{
   min-height:100vh;
   width:100%;
-  background:url("/slika2.webp") center/cover no-repeat;
+  background:url("/slika2.webp") center/cover no-repeat; /* desktop pozadina */
   overflow-x:hidden; /* spreči horizontalni scroll na mobilnom */
 }
 
@@ -112,7 +112,7 @@ html, body { margin:0; padding:0; }
 .hero-section{
   margin-top:100px;                      /* visina trake */
   height:calc(100vh - 100px);            /* full viewport bez trake */
-  background:url("/slika1.webp") center/cover no-repeat;
+  background:url("/slika1.webp") center/cover no-repeat; /* desktop hero */
   position:relative;
   padding-bottom:110px;
 }
@@ -242,15 +242,73 @@ html, body { margin:0; padding:0; }
 }
 
 /* ===========================
+   Splash (intro) — samo mobilni
+   =========================== */
+@media (min-width: 769px){
+  .splash{ display:none !important; }
+}
+
+/* zaključaj scroll dok je splash aktivan */
+.no-scroll{
+  overflow:hidden;
+  height:100vh;
+}
+
+.splash{
+  position:fixed;
+  inset:0;
+  z-index:2000; /* iznad top-bara */
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#000; /* fallback */
+  animation: splashFadeOut 0.5s ease forwards;
+  animation-delay: 1.2s; /* ~1.2s prikaza + 0.5s fade */
+  pointer-events:none;
+}
+
+/* Pozadina preko celog ekrana — stavi svoju splash sliku */
+.splash-bg{
+  position:absolute; inset:0;
+  background: url("/slikadobrodosli.webp") center/cover no-repeat;
+}
+
+/* Logo preko (po želji) */
+.splash-logo{
+  width:min(48vw, 180px);
+  height:auto;
+  opacity:0;
+  animation: logoIn 0.6s ease forwards;
+  animation-delay: 0.2s;
+}
+
+@keyframes splashFadeOut{
+  to { opacity:0; visibility:hidden; }
+}
+@keyframes logoIn{
+  from { transform:translateY(10px) scale(0.96); opacity:0; }
+  to   { transform:translateY(0)    scale(1);     opacity:1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash, .splash-logo{ animation: none !important; }
+}
+
+/* ===========================
    Responsive – MOBILE
    =========================== */
 @media (max-width: 768px){
+  /* globalna pozadina (ako želiš i nju mobilnu) */
+  .home-screen{
+    background:url("/slika2.webp") center/cover no-repeat; /* ili promeni na mobilnu */
+  }
+
   /* top bar */
   .top-bar{
     height:64px;
   }
   .logo{
-    height:120px;
+    height:150px; /* lepo popunjava header */
   }
   .top-right{
     right:10px;
@@ -265,13 +323,12 @@ html, body { margin:0; padding:0; }
     border-radius:999px;
   }
 
-  /* HERO na mobilnom: prikaži celu sliku (contain) */
-@media (max-width: 768px){
+  /* HERO na mobilnom — puna visina, slika od ivice do ivice */
   .hero-section{
     margin-top:64px;
     width:100%;
-    height:calc(100vh - 64px); /* puna visina ekrana umanjena za header */
-    background:url("/slika22.webp") center/cover no-repeat; /* cover umesto contain */
+    height:calc(100vh - 64px); /* puna visina umanjena za header */
+    background:url("/slika22.webp") center/cover no-repeat; /* MOBILNA slika */
     padding-bottom:0;
     position:relative;
   }
@@ -281,10 +338,8 @@ html, body { margin:0; padding:0; }
     background:linear-gradient(180deg, rgba(0,0,0,.10) 0%, rgba(0,0,0,.18) 100%);
     pointer-events:none;
   }
-}
 
-
-  /* Zakaži termin – VEĆE i isto kao Galerija */
+  /* Zakaži termin – veće dugme */
   .zakazi-btn{
     padding:18px 56px;
     font-size:1.25rem;
