@@ -263,7 +263,7 @@ html, body { margin:0; padding:0; }
   justify-content:center;
   background:#000; /* fallback */
   animation: splashFadeOut 0.5s ease forwards;
-  animation-delay: 1.2s; /* ~1.2s prikaza + 0.5s fade */
+  animation-delay: 2s; /* ~1.2s prikaza + 0.5s fade */
   pointer-events:none;
 }
 
@@ -328,7 +328,7 @@ html, body { margin:0; padding:0; }
     margin-top:64px;
     width:100%;
     height:calc(100vh - 64px); /* puna visina umanjena za header */
-    background:url("/slika33.webp") center/cover no-repeat; /* MOBILNA slika */
+    background:url("/slika22.webp") center/cover no-repeat; /* MOBILNA slika */
     padding-bottom:0;
     position:relative;
   }
