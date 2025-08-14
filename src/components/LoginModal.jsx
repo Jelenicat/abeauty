@@ -62,7 +62,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
 
         <div className="lm-header">
           <img src="/logo.png" alt="aBeauty" className="lm-logo" />
-          <h3 id="lm-title">Uloguj se da zakažeš termin</h3>
+          <h3 id="lm-title">Popuni podatke da zakažeš termin</h3>
         </div>
 
         <form className="lm-form" onSubmit={submit} noValidate>
