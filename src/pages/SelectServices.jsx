@@ -382,6 +382,21 @@ const mobCatCard = (imgUrl) => ({
   WebkitMaskImage: "-webkit-radial-gradient(white, black)",
   isolation: "isolate",
 });
+// posle mobCatCard dodaj:
+const mobCatLabel = {
+  position: "absolute",
+  right: 16,
+  top: "50%",
+  transform: "translateY(-50%)",
+  background: "rgba(255,255,255,.92)",
+  color: "#000",
+  padding: "10px 14px",
+  borderRadius: 14,
+  fontWeight: 900,
+  letterSpacing: ".08em",
+  fontSize: 13,
+  boxShadow: "0 8px 18px rgba(0,0,0,.15)",
+};
 
 const srvGrid = (mobile) => ({
   display: "grid",
