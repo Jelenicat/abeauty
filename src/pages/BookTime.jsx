@@ -330,7 +330,7 @@ export default function BookTime() {
     return (
       <div style={wrap(isMobile)}>
         <div style={panel(isMobile)}>
-          <h2 style={title}>Rezervacija</h2>
+   
 
           {/* 1) Usluge */}
           <div style={mobileServicesCol}>
@@ -779,31 +779,32 @@ function StylistsStrip({ employees, selectedId, onSelect }) {
   }
 
   // mali avatar sa fallbackom na inicijale
-  function Avatar({ emp }) {
-    const [err, setErr] = useState(false);
-    const src = photoSrcFor(emp);
-    const initials = String(emp.name || "?")
-      .split(" ")
-      .map((s) => s[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase();
+function Avatar({ emp, active }) {
+  const [err, setErr] = useState(false);
+  const src = photoSrcFor(emp);
+  const initials = String(emp.name || "?")
+    .split(" ")
+    .map((s) => s[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
-    return (
-      <div style={stylAvatar}>
-        {!src || err ? (
-          <div style={empInitials}>{initials}</div>
-        ) : (
-          <img
-            src={src}
-            alt={emp.name}
-            style={stylImg}
-            onError={() => setErr(true)}
-          />
-        )}
-      </div>
-    );
-  }
+  return (
+    <div
+      style={{
+        ...stylAvatar,
+        border: active ? "2px solid #f68fa9" : "2px solid transparent",
+      }}
+    >
+      {!src || err ? (
+        <div style={empInitials}>{initials}</div>
+      ) : (
+        <img src={src} alt={emp.name} style={stylImg} onError={() => setErr(true)} />
+      )}
+    </div>
+  );
+}
+
 
   return (
     <div style={stylStripWrap}>
@@ -829,7 +830,8 @@ function StylistsStrip({ employees, selectedId, onSelect }) {
               style={stylItem(active)}
               title={e.name}
             >
-              <Avatar emp={e} />
+             <Avatar emp={e} active={active} />
+
               <div style={stylName}>{e.name}</div>
             </button>
           );
@@ -1025,7 +1027,15 @@ const modeBtn = (active) => ({
   boxShadow: active ? "0 6px 16px rgba(255,127,181,.25)" : "none",
   fontWeight: 800,
   cursor: "pointer",
+
+  /* ↓↓↓ ovo sprečava plavu boju teksta i iOS stilizaciju */
+  color: "#000",
+  WebkitAppearance: "none",
+  appearance: "none",
+  outline: "none",
+  WebkitTapHighlightColor: "transparent",
 });
+
 
 /* --- Stylists strip --- */
 const sectionTitleMobile = { color: "#000", fontWeight: 900, margin: "6px 2px" };
@@ -1050,37 +1060,43 @@ const stylItem = (active) => ({
   gridTemplateRows: "auto auto",
   placeItems: "center",
   gap: 6,
-  padding: "10px 8px",
-  minWidth: 160,
-  borderRadius: 14,
-  border: active ? "1px solid #ffcfde" : "1px solid rgba(255,255,255,.35)",
-  background: active ? "linear-gradient(135deg,#ffffff,#ffe3ef)" : "rgba(255,255,255,.12)",
-  boxShadow: active ? "0 6px 16px rgba(255,127,181,.25)" : "none",
+  padding: 6,                 // malo prostora da se lakše klikne
+  minWidth: 120,              // uži element – staje više u red
+  borderRadius: 8,
+  border: "none",             // bez ivice kvadrata
+  background: "transparent",  // nema kartice
+  boxShadow: "none",
   color: "#fff",
   cursor: "pointer",
-  transition: "transform .15s ease, box-shadow .15s ease",
   transform: active ? "translateY(-1px)" : "none",
 });
+
 const stylAvatar = {
-  height: 52,
-  width: 52,
+  height: 70,
+  width: 70,
   borderRadius: "50%",
-  background: "linear-gradient(135deg,#ffe3ef,#ffffff)",
+  background: "transparent",     // bez gradijenta
   display: "grid",
   placeItems: "center",
-  boxShadow: "0 6px 16px rgba(0,0,0,.10)",
+  boxShadow: "none",
   overflow: "hidden",
 };
-const stylImg = { width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" };
+const stylImg = {
+  width: "100%",
+  height: "100%",
+  objectFit: "cover",
+  borderRadius: "50%",
+};
 const empInitials = { fontWeight: 900, color: "#b15b78", fontSize: 20, letterSpacing: 0.5 };
 const stylName = {
-  fontWeight: 900,
-  fontSize: 12,
-  color: "#000",
-  background: "#fff",
-  padding: "2px 8px",
-  borderRadius: 999,
+  fontWeight: 800,
+  fontSize: 13,
+  color: "#fff",            // bela slova jer je pozadina tamna u desnoj koloni
+  background: "transparent",
+  padding: 0,
+  borderRadius: 0,
 };
+
 
 /* --- Pil dugmići vremena --- */
 const pillsGrid = {
