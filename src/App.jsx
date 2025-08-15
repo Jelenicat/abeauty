@@ -9,6 +9,8 @@ import AdminEmployees from "./pages/AdminEmployees";
 import AdminCalendar from "./pages/AdminCalendar";
 import SelectServices from "./pages/SelectServices";
 import BookTime from "./pages/BookTime";
+import AdminFinansije from "./pages/AdminFinansije";
+import AdminKlijenti from "./pages/AdminKlijenti";
 
 function RezervacijePlaceholder() {
   return (
@@ -43,9 +45,11 @@ export default function App() {
       {/* KORISNIČKE */}
       <Route path="/usluge" element={<SelectServices />} />
       <Route path="/rezervisi" element={<BookTime />} />
-
+<Route path="/admin/finansije" element={<AdminFinansije />} />
+<Route path="/admin/klijenti" element={<AdminKlijenti />} />
       {/* 404 */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    
   );
 }

@@ -31,22 +31,26 @@ export default function AdminHome() {
       </button>
 
       <div className="admin-panel">
-        <h2 className="admin-title">Admin panel</h2>
+        
 
-        <div className="admin-grid">
-          <button className="admin-card" onClick={() => navigate("/admin/katalog")}>
-            Katalog usluga
-          </button>
-          <button className="admin-card" onClick={() => navigate("/admin/kalendar")}>
-            Kalendar
-          </button>
-          <button className="admin-card" onClick={() => navigate("/admin/finansije")}>
-            Troškovi i zarada
-          </button>
-          <button className="admin-card" onClick={() => navigate("/admin/zaposleni")}>
-            Zaposleni
-          </button>
-        </div>
+  <div className="admin-grid">
+  <button className="admin-card" onClick={() => navigate("/admin/katalog")}>
+    Katalog usluga
+  </button>
+  <button className="admin-card" onClick={() => navigate("/admin/kalendar")}>
+    Kalendar
+  </button>
+  <button className="admin-card" onClick={() => navigate("/admin/finansije")}>
+    Troškovi i zarada
+  </button>
+  <button className="admin-card" onClick={() => navigate("/admin/zaposleni")}>
+    Zaposleni
+  </button>
+  <button className="admin-card" onClick={() => navigate("/admin/klijenti")}>
+    Klijenti
+  </button>
+</div>
+
       </div>
     </div>
   );

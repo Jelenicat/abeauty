@@ -9,7 +9,7 @@ import {
 
 export default function AdminCategory() {
   const { categoryId } = useParams();
-  const catId = categoryId; // koristimo catId niže
+  const catId = categoryId;
   const nav = useNavigate();
 
   const [catName, setCatName] = useState("");
@@ -29,28 +29,44 @@ export default function AdminCategory() {
     return Math.max(0, Math.round(p * (1 - d / 100)));
   }, [price, discount]);
 
-  // učitaj kategoriju + njene usluge
+  // učitaj kategoriju + njene usluge (poseban branch za "discounts")
   useEffect(() => {
     if (!catId) return;
 
     let off = () => {};
-    (async () => {
-      const snap = await getDoc(doc(db, "categories", catId));
-      if (snap.exists()) setCatName(snap.data().name || "");
+    if (catId === "discounts") {
+      // Virtuelna kategorija "Na popustu"
+      setCatName("Na popustu");
       setLoading(false);
-
       off = onSnapshot(
         query(
           collection(db, "services"),
-          where("categoryId", "==", catId),
-          orderBy("order", "asc")
+          where("discountPercent", ">", 0),
+          orderBy("name", "asc")
         ),
         (s) => {
-          const arr = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setServices(arr);
+          setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })));
         }
       );
-    })();
+    } else {
+      (async () => {
+        const snap = await getDoc(doc(db, "categories", catId));
+        if (snap.exists()) setCatName(snap.data().name || "");
+        setLoading(false);
+
+        off = onSnapshot(
+          query(
+            collection(db, "services"),
+            where("categoryId", "==", catId),
+            orderBy("order", "asc")
+          ),
+          (s) => {
+            const arr = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setServices(arr);
+          }
+        );
+      })();
+    }
 
     return () => off();
   }, [catId]);
@@ -64,6 +80,7 @@ export default function AdminCategory() {
   };
 
   const saveCategoryName = async () => {
+    if (catId === "discounts") return; // ne dozvoli preimenovanje virtuelne
     const n = catName.trim();
     if (!n) return;
     await updateDoc(doc(db, "categories", catId), { name: n, updatedAt: serverTimestamp() });
@@ -71,6 +88,7 @@ export default function AdminCategory() {
   };
 
   const deleteCategory = async () => {
+    if (catId === "discounts") return; // ne briši virtuelnu
     if (services.length) {
       if (!confirm(`Kategorija ima ${services.length} usluga. Obrisaćeš SAMO kategoriju (usluge ostaju). Nastavi?`)) return;
     } else {
@@ -85,18 +103,17 @@ export default function AdminCategory() {
     setName(srv.name || "");
     setDurationMin(String(srv.durationMin || ""));
     setPrice(String(srv.basePrice || ""));
-    // čitamo discountPercent (ili fallback na staro ime ako postoji)
     setDiscount(String(srv.discountPercent ?? srv.discount ?? ""));
   };
 
   const saveService = async (e) => {
     e?.preventDefault?.();
     const payload = {
-      categoryId: catId,
+      categoryId: catId === "discounts" ? "" : catId, // kod "discounts" ne menjamo kategoriju
       name: name.trim(),
       durationMin: Number(durationMin) || 0,
       basePrice: Number(price) || 0,
-      discountPercent: Number(discount) || 0, // ← polje kao u bazi
+      discountPercent: Number(discount) || 0,
       finalPrice,
       updatedAt: serverTimestamp(),
     };
@@ -125,15 +142,17 @@ export default function AdminCategory() {
       <div style={panel}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
           <button style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
-          <h2 style={title}>Kategorija</h2>
+          <h2 style={title}>{catName || "Kategorija"}</h2>
         </div>
 
-        {/* preimenovanje / brisanje kategorije */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
-          <input style={inp} value={catName} onChange={e => setCatName(e.target.value)} placeholder="Naziv kategorije" />
-          <button style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
-          <button style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
-        </div>
+        {/* preimenovanje / brisanje kategorije (sakrij za "Na popustu") */}
+        {catId !== "discounts" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
+            <input style={inp} value={catName} onChange={e => setCatName(e.target.value)} placeholder="Naziv kategorije" />
+            <button style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
+            <button style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
+          </div>
+        )}
 
         {/* forma za uslugu */}
         <form onSubmit={saveService} style={form}>
@@ -148,24 +167,34 @@ export default function AdminCategory() {
 
         {/* lista usluga */}
         <div style={list}>
-          {services.map(s => (
-            <div key={s.id} style={row}>
-              <div>
-                <div style={{ fontWeight: 900 }}>{s.name}</div>
-                <div style={{ opacity: .8, fontSize: 13 }}>
-                  {s.durationMin} min · {s.basePrice} RSD{" "}
-                  {s.discountPercent
-                    ? `· popust ${s.discountPercent}% → ${s.finalPrice} RSD`
-                    : ""}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
-                <button style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
-              </div>
-            </div>
-          ))}
-          {!services.length && !loading && <div style={{ color: "#fff" }}>Još nema usluga u ovoj kategoriji.</div>}
+   {services.map(s => {
+  const isEditing = editing === s.id;
+  const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
+  const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
+  const currentFinal = isEditing 
+    ? Math.max(0, Math.round(currentPrice * (1 - currentDiscount / 100)))
+    : s.finalPrice;
+
+  return (
+    <div key={s.id} style={row}>
+      <div>
+        <div style={{ fontWeight: 900 }}>{s.name}</div>
+        <div style={{ opacity: .8, fontSize: 13 }}>
+          {s.durationMin} min · {currentPrice} RSD{" "}
+          {currentDiscount
+            ? `· popust ${currentDiscount}% → ${currentFinal} RSD`
+            : ""}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
+        <button style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
+      </div>
+    </div>
+  );
+})}
+
+          {!services.length && !loading && <div style={{ color: "#fff" }}>Nema usluga.</div>}
         </div>
       </div>
     </div>
@@ -173,7 +202,7 @@ export default function AdminCategory() {
 }
 
 /* === styles === */
-const wrap = { minHeight: "100vh", background: 'url("/slika7.webp") center/cover no-repeat fixed', padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" };
+const wrap = { minHeight: "100vh", background: 'url("/slika1.webp") center/cover no-repeat fixed', padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" };
 const panel = { width: "min(1250px,100%)", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.35)", backdropFilter: "blur(10px)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.25)", padding: "clamp(18px,4vw,28px)" };
 const title = { margin: 0, color: "#fff", fontWeight: 900, fontSize: "clamp(18px,3vw,28px)" };
 const inp = { height: 42, borderRadius: 12, border: "1px solid #ececec", padding: "0 12px", background: "#fff" };

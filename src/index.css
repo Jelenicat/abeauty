@@ -9,4 +9,5 @@ body {
   display: block;    /* ukloni Vite-ov flex */
   min-width: 0;      /* bez prisilnog min width-a */
   min-height: 100%;  /* visina tela = visina stranice */
+  font-family: 'Poppins', sans-serif;
 }

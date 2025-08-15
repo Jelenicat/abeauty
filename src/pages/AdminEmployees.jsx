@@ -1,8 +1,9 @@
+// src/pages/AdminEmployees.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../firebase";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc,
-  onSnapshot, query, orderBy, serverTimestamp, where, getDocs
+  onSnapshot, query, orderBy, serverTimestamp
 } from "firebase/firestore";
 
 export default function AdminEmployees() {
@@ -16,18 +17,19 @@ export default function AdminEmployees() {
   const [name, setName] = useState("");
   const [selectedCats, setSelectedCats] = useState(new Set());      // category ids
   const [selectedServices, setSelectedServices] = useState(new Set()); // service ids
-
   const [loading, setLoading] = useState(true);
 
   // --- učitavanje realtime ---
   useEffect(() => {
-    const offEmp = onSnapshot(query(collection(db, "employees"), orderBy("name", "asc")), (snap) => {
-      setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    const offEmp = onSnapshot(
+      query(collection(db, "employees"), orderBy("name", "asc")),
+      (snap) => setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
 
-    const offCats = onSnapshot(query(collection(db, "categories"), orderBy("order", "asc")), (snap) => {
-      setCats(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    const offCats = onSnapshot(
+      query(collection(db, "categories"), orderBy("order", "asc")),
+      (snap) => setCats(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
 
     const offServices = onSnapshot(collection(db, "services"), (snap) => {
       const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -49,6 +51,19 @@ export default function AdminEmployees() {
     return map;
   }, [allServices]);
 
+  // util: slug iz imena -> /public/employees/<slug>.jpg
+  const slugify = (str) =>
+    String(str || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .toLowerCase();
+
+  // Ako doc ima photoUrl koristi njega; inače pretpostavi /employees/<slug>.jpg
+  const photoSrcFor = (emp) =>
+    (emp.photoUrl && String(emp.photoUrl)) || `/employees/${slugify(emp.name)}.jpg`;
+
   // --- handlers ---
   const resetForm = () => {
     setEditing(null);
@@ -62,18 +77,25 @@ export default function AdminEmployees() {
     setName(emp.name || "");
     setSelectedCats(new Set(emp.categories || []));
     setSelectedServices(new Set(emp.services || []));
+    // auto-scroll blago prema editoru
+    setTimeout(() => {
+      document.getElementById(`emp-${emp.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 0);
   };
 
   const saveEmployee = async (e) => {
     e?.preventDefault?.();
+    if (!name.trim()) return;
+
     const payload = {
       name: name.trim(),
       categories: Array.from(selectedCats),
       services: Array.from(selectedServices),
       updatedAt: serverTimestamp(),
-      createdAt: editing ? (employees.find(x=>x.id===editing.id)?.createdAt ?? serverTimestamp()) : serverTimestamp(),
+      createdAt: editing
+        ? (employees.find(x => x.id === editing.id)?.createdAt ?? serverTimestamp())
+        : serverTimestamp(),
     };
-    if (!payload.name) return;
 
     if (editing) {
       await updateDoc(doc(db, "employees", editing.id), payload);
@@ -95,7 +117,7 @@ export default function AdminEmployees() {
     if (next.has(catId)) next.delete(catId); else next.add(catId);
     setSelectedCats(next);
 
-    // ako je kategorija uključena — ukloni pojedinačne usluge te kategorije (postaju višak)
+    // ako je kategorija uključena — ukloni pojedinačne usluge te kategorije
     if (next.has(catId)) {
       const nextServices = new Set(selectedServices);
       (servicesByCat.get(catId) || []).forEach(s => nextServices.delete(s.id));
@@ -105,18 +127,34 @@ export default function AdminEmployees() {
 
   // klik na uslugu (radi samo ako kategorija NIJE čekirana)
   const toggleService = (srv) => {
-    if (selectedCats.has(srv.categoryId)) return; // zaključano jer je cela kategorija uključena
+    if (selectedCats.has(srv.categoryId)) return;
     const next = new Set(selectedServices);
     if (next.has(srv.id)) next.delete(srv.id); else next.add(srv.id);
     setSelectedServices(next);
   };
 
+  // fallback za <img> — ako slika ne postoji u /public, vrati inicijale
+  const ImgOrFallback = ({ src, name }) => {
+    const [error, setError] = useState(false);
+    if (!src || error) {
+      return (
+        <div style={squareFallback}>
+          <div style={initialsInSquare}>
+            {String(name || "?").split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase()}
+          </div>
+        </div>
+      );
+    }
+    return <img src={src} alt={name} style={squareImg} onError={()=>setError(true)} />;
+  };
+
+  /* ===== RENDER ===== */
   return (
     <div style={wrap}>
       <div style={panel}>
-        <h2 style={title}>Zaposleni</h2>
+   
 
-        {/* forma za dodavanje/izmene */}
+        {/* forma za dodavanje/izmene (ime) */}
         <form onSubmit={saveEmployee} style={form}>
           <input
             value={name}
@@ -124,86 +162,113 @@ export default function AdminEmployees() {
             placeholder="Ime i prezime zaposlenog"
             style={inp}
           />
-          <div style={{display:"flex", gap:8}}>
+          <div style={{display:"flex", gap:8, alignItems:"flex-end"}}>
             {editing && <button type="button" onClick={resetForm} style={ghostBtn}>Otkaži</button>}
             <button type="submit" style={btn}>{editing ? "Sačuvaj izmene" : "Dodaj zaposlenog"}</button>
           </div>
         </form>
 
-        {/* lista zaposlenih */}
-        <div style={empList}>
-          {employees.map(emp => (
-            <div key={emp.id} style={empRow}>
-              <div style={{fontWeight:700}}>{emp.name}</div>
-              <div style={{display:"flex", gap:8}}>
-                <button style={smBtn} onClick={()=>startEdit(emp)}>Izmeni</button>
-                <button style={smDel} onClick={()=>removeEmployee(emp.id)}>Obriši</button>
-              </div>
-            </div>
-          ))}
-          {!employees.length && !loading && <div style={{color:"#fff"}}>Još nema zaposlenih.</div>}
-        </div>
+        {/* GRID kartice radnica (klik otvara inline editor ispod) */}
+        <div style={empGrid}>
+          {employees.map((emp) => {
+            const isSel = editing?.id === emp.id;
+            return (
+              <React.Fragment key={emp.id}>
+                <div
+                  id={`emp-${emp.id}`}
+                  style={empCard(isSel)}
+                  onClick={() => startEdit(emp)}
+                  title="Klikni za izmenu"
+                >
+                  <div style={square}>
+                    <ImgOrFallback src={photoSrcFor(emp)} name={emp.name} />
+                  </div>
+                  <div style={empName}>{emp.name}</div>
 
-        {/* dodela kategorija/usluga */}
-        <h3 style={subTitle}>Dodela kategorija i usluga {editing ? `— ${editing.name}` : ""}</h3>
-        <p style={{color:"#fff", marginTop:-6, marginBottom:10, opacity:.9}}>
-          Možeš čekirati **celu kategoriju** ili pojedinačne usluge. Ako je kategorija uključena, njene usluge su automatski pokrivene.
-        </p>
+                  {isSel && (
+                    <div style={cardActions}>
+                      <button
+                        style={smDel}
+                        onClick={(e)=>{ e.stopPropagation(); removeEmployee(emp.id); }}
+                      >
+                        Obriši
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-        <div style={grid}>
-         {cats.map(cat => {
-  const catChecked = selectedCats.has(cat.id);
-  const services = servicesByCat.get(cat.id) || [];
-  return (
-    <div key={cat.id} style={catCard}>
-      {/* zaglavlje kartice */}
-      <div style={catHead}>
-        <label style={{display:"flex", alignItems:"center", gap:10}}>
-          <input
-            type="checkbox"
-            checked={catChecked}
-            onChange={()=>toggleCategory(cat.id)}
-          />
-          <span style={{fontWeight:900, letterSpacing:.2}}>{cat.name}</span>
-        </label>
-        <span style={catHint}>
-          {catChecked ? "• uključene sve usluge" : "odaberi pojedinačno"}
-        </span>
-      </div>
+                {/* INLINE editor: dodela kategorija/usluga ispod selektovane kartice */}
+                {isSel && (
+                  <div style={inlineEditor}>
+                    <div style={inlineHeader}>
+                      <div style={{fontWeight:900}}>
+                        Dodela kategorija i usluga — {editing?.name}
+                      </div>
+                      <div style={{display:"flex", gap:8}}>
+                        <button type="button" onClick={resetForm} style={ghostBtn}>Otkaži</button>
+                        <button type="button" onClick={saveEmployee} style={btn}>Sačuvaj izmene</button>
+                      </div>
+                    </div>
 
-      {/* list/čipovi usluga */}
-      <div style={srvList}>
-        {services.map(s => {
-          const disabled = catChecked;
-          const checked = disabled ? true : selectedServices.has(s.id);
-          return (
-            <label
-              key={s.id}
-              style={srvItem(!!checked, disabled)}
-              title={disabled ? "Pokriveno kategorijom" : ""}
-            >
-              <input
-                type="checkbox"
-                disabled={disabled}
-                checked={!!checked}
-                onChange={()=>toggleService(s)}
-                style={{display:"none"}}
-              />
-              <span style={srvDot(!!checked)} />
-              <span style={{flex:1}}>{s.name}</span>
-            </label>
-          );
-        })}
-        {!services.length && <div style={{fontSize:12, color:"#888"}}>Nema usluga u ovoj kategoriji.</div>}
-      </div>
-    </div>
-  );
-})}
+                    <div style={grid}>
+                      {cats.map(cat => {
+                        const catChecked = selectedCats.has(cat.id);
+                        const services = servicesByCat.get(cat.id) || [];
+                        return (
+                          <div key={cat.id} style={catCard}>
+                            <div style={catHead}>
+                              <label style={{display:"flex", alignItems:"center", gap:10}}>
+                                <input
+                                  type="checkbox"
+                                  checked={catChecked}
+                                  onChange={()=>toggleCategory(cat.id)}
+                                />
+                                <span style={{fontWeight:900, letterSpacing:.2}}>{cat.name}</span>
+                              </label>
+                              <span style={catHint}>
+                                {catChecked ? "• uključene sve usluge" : "odaberi pojedinačno"}
+                              </span>
+                            </div>
 
-        </div>
-
-        <div style={{display:"flex", justifyContent:"flex-end", marginTop:14}}>
-          <button style={btn} onClick={saveEmployee}>{editing ? "Sačuvaj izmene" : "Sačuvaj"}</button>
+                            {/* >>> ispravka: uklonjena suvišna viticaste } <<< */}
+                            <div style={srvList}>
+                              {services.map(s => {
+                                const disabled = catChecked;
+                                const checked = disabled ? true : selectedServices.has(s.id);
+                                return (
+                                  <label
+                                    key={s.id}
+                                    style={srvItem(!!checked, disabled)}
+                                    title={disabled ? "Pokriveno kategorijom" : ""}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      disabled={disabled}
+                                      checked={!!checked}
+                                      onChange={()=>toggleService(s)}
+                                      style={{display:"none"}}
+                                    />
+                                    <span style={srvDot(!!checked)} />
+                                    <span style={{flex:1}}>{s.name}</span>
+                                  </label>
+                                );
+                              })}
+                              {!services.length && (
+                                <div style={{fontSize:12, color:"#888"}}>Nema usluga u ovoj kategoriji.</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+          {!employees.length && !loading && (
+            <div style={{color:"#fff"}}>Još nema zaposlenih.</div>
+          )}
         </div>
       </div>
     </div>
@@ -211,17 +276,10 @@ export default function AdminEmployees() {
 }
 
 /* ===== styles ===== */
-// panel i naslov malo moderniji
 const wrap = {
   minHeight:"100vh",
   background:'url("/slika7.webp") center/cover no-repeat fixed',
   padding:24, display:"flex", justifyContent:"center", alignItems:"flex-start"
-};
-const subTitle = {
-  margin: "16px 0 8px",
-  color: "#fff",
-  fontWeight: 900,
-  letterSpacing: 0.2
 };
 
 const panel = {
@@ -233,25 +291,84 @@ const panel = {
   boxShadow:"0 24px 70px rgba(0,0,0,.28)",
   padding:"clamp(18px,4vw,36px)", marginTop:16
 };
+
 const title = {
   margin:"0 0 18px",
-  color:"#fff",
+  color:"#000",
   textAlign:"center",
   fontWeight:900,
   fontSize:"clamp(20px,3.4vw,32px)",
   letterSpacing:.3
 };
+
 const form = { display:"grid", gridTemplateColumns:"1fr auto", gap:12, margin:"10px 0 18px" };
 const inp  = { height:46, borderRadius:14, border:"1px solid #eaeaea", padding:"0 14px", fontSize:15, background:"#fff", boxShadow:"0 6px 18px rgba(0,0,0,.06)" };
 const btn  = { height:46, border:"none", borderRadius:14, background:"linear-gradient(135deg,#ff5fa2,#ff7fb5)", color:"#fff", fontWeight:800, cursor:"pointer", padding:"0 18px", boxShadow:"0 10px 22px rgba(255,127,181,.35)" };
 const ghostBtn = { height:46, borderRadius:14, border:"1px solid rgba(255,255,255,.7)", background:"transparent", color:"#fff", fontWeight:800, padding:"0 16px", cursor:"pointer" };
 
-const empList = { display:"grid", gap:10, marginBottom:10 };
-const empRow  = { display:"flex", justifyContent:"space-between", alignItems:"center", background:"#fff", borderRadius:14, padding:"10px 12px", boxShadow:"0 10px 20px rgba(0,0,0,.06)" };
-const smBtn   = { height:36, padding:"0 12px", border:"none", borderRadius:10, background:"#efefef", cursor:"pointer", fontWeight:800 };
+const smBtn   = { height:32, padding:"0 10px", border:"none", borderRadius:10, background:"#efefef", cursor:"pointer", fontWeight:800 };
 const smDel   = { ...smBtn, background:"#ffe1e1", color:"#7a1b1b" };
 
-// GRID sa karticama
+/* === GRID sa kvadratnim karticama === */
+const empGrid = {
+  display:"grid",
+  gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))",
+  gap:12,
+  margin:"6px 0 16px"
+};
+const empCard = (active) => ({
+  background: "rgba(255,255,255,.35)",
+  border: "1px solid rgba(255,255,255,.45)",
+  backdropFilter: "blur(8px)",
+  WebkitBackdropFilter: "blur(8px)",
+  borderRadius: 16,
+  padding: 10,
+  display: "grid",
+  justifyItems: "center",
+  gap: 8,
+  cursor: "pointer",
+  boxShadow: active
+    ? "0 12px 28px rgba(0,0,0,.14)"
+    : "0 8px 18px rgba(0,0,0,.10)",
+  outline: active ? "2px solid #ffb6d0" : "none",
+  transition: "box-shadow .15s ease, outline-color .15s ease, background .15s ease",
+});
+const square = {
+  width:110,
+  height:110,
+  borderRadius:12,
+  overflow:"hidden",
+  background:"linear-gradient(135deg,#ffe3ef,#ffffff)",
+  boxShadow:"0 6px 16px rgba(0,0,0,.10)",
+  display:"grid",
+  placeItems:"center"
+};
+const squareImg = { width:"100%", height:"100%", objectFit:"cover" };
+const squareFallback = { ...square, background:"#f8f8f8" };
+const initialsInSquare = { fontWeight:900, color:"#b15b78", fontSize:22, letterSpacing:.6 };
+const empName = { fontWeight:800, fontSize:13, textAlign:"center", color:"#222", minHeight:36, lineHeight:1.2 };
+const cardActions = { display:"flex", gap:8 };
+
+/* === INLINE editor ispod kartice === */
+const inlineEditor = {
+  gridColumn: "1 / -1",
+  background: "rgba(255,255,255,.45)",
+  border: "1px solid rgba(255,255,255,.55)",
+  borderRadius: 18,
+  padding: 12,
+  margin: "-4px 0 14px",
+  boxShadow: "0 12px 28px rgba(0,0,0,.10)",
+  backdropFilter: "blur(6px)"
+};
+const inlineHeader = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 8,
+  color: "#000"
+};
+
+/* --- sekcija dodela usluga/kategorija --- */
 const grid   = { display:"grid", gap:18, gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))" };
 const catCard = {
   background:"#fff",
@@ -274,7 +391,6 @@ const catHead = {
 };
 const catHint = { fontSize:12, color:"#888", fontWeight:700 };
 
-// list sa custom skrolom
 const srvList = {
   display:"grid",
   gap:10,
@@ -283,14 +399,13 @@ const srvList = {
   padding:12
 };
 
-// jedan “čip”/stavka usluge
 const srvItem = (checked, disabled) => ({
   display:"flex",
   alignItems:"center",
   gap:10,
   padding:"10px 12px",
   borderRadius:14,
-  background: checked ? "#fff" : "#fff",
+  background: "#fff",
   border: checked ? "2px solid #ff79ad" : "1px solid #ededed",
   boxShadow: checked ? "0 10px 16px rgba(255,121,173,.15)" : "0 6px 14px rgba(0,0,0,.05)",
   transition:"transform .12s ease, box-shadow .12s ease, border-color .12s ease",
@@ -304,4 +419,3 @@ const srvDot = (checked) => ({
   boxShadow: checked ? "0 0 0 4px rgba(255,121,173,.16)" : "none",
   flex:"0 0 auto"
 });
-

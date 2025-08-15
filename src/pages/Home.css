@@ -144,6 +144,114 @@ html, body { margin:0; padding:0; }
   transform:translate(-50%, -50%) scale(1.05);
   box-shadow:0 16px 32px rgba(0,0,0,0.3);
 }
+/* ===========================
+   GALLERY (lightbox)
+   =========================== */
+.gallery-overlay{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.88);
+  backdrop-filter:saturate(120%) blur(4px);
+  display:flex; align-items:center; justify-content:center;
+  z-index:2500;
+  padding:24px;
+}
+
+.gallery-dialog{
+  position:relative;
+  width:min(1000px, 96vw);
+  max-height:92vh;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:16px;
+  box-shadow:0 24px 80px rgba(0,0,0,.55);
+  overflow:hidden;
+}
+
+/* Gornja traka: close + brojač */
+.gallery-topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 12px;
+  background:linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,0));
+  color:#fff; font-weight:800; letter-spacing:.02em;
+}
+.gallery-counter{ opacity:.9; font-size:.95rem; }
+
+/* Glavna slika */
+.gallery-stage{
+  position:relative;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.35);
+  min-height:52vh;
+  max-height:68vh;     /* da ostane mesta za thumbove */
+}
+.gallery-image{
+  max-width:100%;
+  max-height:calc(68vh - 16px);
+  width:auto; height:auto;
+  object-fit:contain;
+  border-radius:10px;
+  box-shadow:0 12px 40px rgba(0,0,0,.35);
+}
+
+/* Prev/Next strelice */
+.gallery-nav{
+  position:absolute; top:50%; transform:translateY(-50%);
+  display:flex; align-items:center; justify-content:center;
+  width:48px; height:48px; border-radius:999px;
+  background:rgba(0,0,0,.55);
+  border:1px solid rgba(255,255,255,.2);
+  color:#fff; font-size:26px; font-weight:900;
+  cursor:pointer; user-select:none;
+  transition:transform .15s ease, background .15s ease;
+}
+.gallery-nav:hover{ transform:translateY(-50%) scale(1.06); background:rgba(0,0,0,.7); }
+.gallery-prev{ left:12px; }
+.gallery-next{ right:12px; }
+
+/* Close dugme */
+.gallery-close{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:38px; height:38px; border-radius:999px;
+  background:linear-gradient(135deg,#f4829f,#f68fa9);
+  color:#fff; border:none; cursor:pointer; box-shadow:0 8px 20px rgba(255,127,181,.28);
+}
+.gallery-close:hover{ filter:brightness(1.05); }
+
+/* Thumbnail traka */
+.gallery-thumbs{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(72px, 1fr));
+  gap:10px;
+  padding:12px;
+  background:rgba(0,0,0,.35);
+  border-top:1px solid rgba(255,255,255,.12);
+}
+.gallery-thumb{
+  position:relative; aspect-ratio:1/1;
+  border-radius:10px; overflow:hidden; cursor:pointer;
+  border:2px solid transparent;
+  transition:transform .15s ease, border-color .15s ease;
+  background:#111;
+}
+.gallery-thumb img{
+  width:100%; height:100%; object-fit:cover; display:block;
+}
+.gallery-thumb:hover{ transform:translateY(-2px); }
+.gallery-thumb.active{ border-color:#f68fa9; }
+
+/* Zaključavanje skrola kada je galerija otvorena */
+body.gallery-open{ overflow:hidden; }
+
+/* Mobilne dorade */
+@media (max-width: 768px){
+  .gallery-dialog{ width:96vw; max-height:92vh; border-radius:14px; }
+  .gallery-topbar{ padding:8px 10px; }
+  .gallery-stage{ min-height:46vh; max-height:62vh; }
+  .gallery-image{ max-height:calc(62vh - 12px); }
+  .gallery-nav{ width:42px; height:42px; font-size:22px; }
+  .gallery-thumbs{ gap:8px; grid-template-columns:repeat(auto-fit, minmax(60px,1fr)); }
+}
+
 
 /* animacija */
 @keyframes floaty{
@@ -187,7 +295,7 @@ html, body { margin:0; padding:0; }
    =========================== */
 .o-nama-section{
   text-align:center;
-  max-width:900px;
+  max-width:600px;
   margin:40px auto 0;
   padding:0 16px;
 }
@@ -195,7 +303,7 @@ html, body { margin:0; padding:0; }
   font-size:2.4rem;
   color:#f68fa9;
   margin:0 0 16px;
-  font-weight:700;
+  font-weight:500;
 }
 .o-nama-text{
   font-size:1.15rem;
@@ -217,6 +325,7 @@ html, body { margin:0; padding:0; }
   font-size:2.5rem;
   color:#f68fa9;
   margin-bottom:20px;
+  font-weight:500;
 }
 .lokacija-mapa iframe{
   border-radius:12px;
@@ -286,6 +395,127 @@ html, body { margin:0; padding:0; }
 
 /* Logo preko (po želji) */
 .splash-logo { display:none; }
+
+/* ===========================
+   SERVICES v2 (kategorije -> usluge)
+   =========================== */
+.services2-dialog{
+  position:relative;
+  width:min(1100px, 96vw);
+  max-height:92vh;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:16px;
+  box-shadow:0 24px 80px rgba(0,0,0,.55);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+.services2-topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 16px;
+  color:#fff;
+  background:linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,0));
+}
+.services2-topbar h3{ margin:0; font-size:1.15rem; letter-spacing:.02em; }
+
+.services2-body{
+  display:grid;
+  grid-template-columns: 280px 1fr; /* sidebar + content */
+  gap:0;
+  min-height:0; /* da scrolleri rade */
+}
+
+.services2-cats{
+  padding:12px;
+  background:rgba(0,0,0,.35);
+  border-right:1px solid rgba(255,255,255,.12);
+  overflow:auto;
+}
+.services2-loading,
+.services2-empty{ color:#fff; opacity:.9; padding:12px; }
+
+.services2-catbtn{
+  width:100%;
+  text-align:left;
+  margin-bottom:8px;
+  padding:12px 14px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.06);
+  color:#fff;
+  font-weight:800;
+  cursor:pointer;
+  transition:transform .15s ease, background .15s ease, border-color .15s ease;
+}
+.services2-catbtn:hover{ transform:translateY(-1px); }
+.services2-catbtn.active{
+  background:linear-gradient(135deg,#f4829f,#f68fa9);
+  border-color:transparent;
+  color:#fff;
+}
+
+.services2-list{
+  padding:12px;
+  overflow:auto;
+  backdrop-filter:saturate(120%);
+}
+.services2-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:12px;
+}
+.lokacija-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 1rem;
+  color: #000;
+  gap: 6px;
+}
+
+.lokacija-icon {
+  font-size: 1.2rem; /* malo veća ikonica */
+}
+
+.lokacija-adresa {
+  font-weight: 500;
+}
+
+@media (max-width: 840px){
+  .services2-body{ grid-template-columns: 1fr; }
+  .services2-cats{
+    display:flex; gap:8px; overflow:auto; border-right:none; border-bottom:1px solid rgba(255,255,255,.12);
+  }
+  .services2-catbtn{ width:auto; white-space:nowrap; }
+  .services2-grid{ grid-template-columns: 1fr; }
+}
+
+.svc2-item{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:12px;
+  padding:12px;
+  color:#fff;
+  box-shadow:0 8px 24px rgba(0,0,0,.25);
+}
+.svc2-header{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; margin-bottom:6px; flex-wrap:wrap;
+}
+.svc2-name{ font-weight:900; font-size:1rem; }
+.svc2-price{ font-weight:800; opacity:.95; display:flex; align-items:center; gap:8px; }
+.svc2-dot{ opacity:.6; }
+.svc2-dur{ opacity:.9; font-weight:700; }
+.svc2-desc{ opacity:.95; line-height:1.5; font-size:.95rem; }
+
+.services2-footer{
+  padding:12px 16px;
+  border-top:1px solid rgba(255,255,255,.12);
+  background:rgba(0,0,0,.25);
+}
 
 
 @keyframes splashFadeOut{
