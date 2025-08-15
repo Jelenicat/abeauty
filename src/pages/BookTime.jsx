@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useBooking } from "../context/BookingContext";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase";
+import { useNavigate } from "react-router-dom";
+
 import {
   collection,
   onSnapshot,
@@ -106,6 +108,8 @@ function useIsMobile(breakpoint = 820) {
 export default function BookTime() {
   const { selectedServices } = useBooking();
   const { user } = useAuth();
+  const nav = useNavigate();
+
   const isMobile = useIsMobile();
 
   const [employees, setEmployees] = useState([]);
@@ -307,8 +311,14 @@ export default function BookTime() {
 
       alert("Termin je uspešno rezervisan ❤️");
 
-      const remaining = selectedServices.find((s) => !(next.get(s.id)?.booked));
-      if (remaining) setActiveId(remaining.id);
+    const remaining = selectedServices.find((s) => !(next.get(s.id)?.booked));
+if (remaining) {
+  setActiveId(remaining.id);
+} else {
+  alert("Sve izabrane usluge su uspešno zakazane ❤️");
+  nav("/"); // preusmeravanje na home
+}
+
     } catch (err) {
       console.error("Booking error:", err);
       const msg = String(err?.message || "Greška pri rezervaciji.");
@@ -390,22 +400,19 @@ export default function BookTime() {
           {/* 4) Radnice – samo za "specific" */}
           {p.mode === "specific" && (
             <>
-              <div style={sectionTitleMobile}>Hair Stylish</div>
-              <StylistsStrip
-                employees={eligible}
-                selectedId={p.empId}
-                onSelect={(empId) =>
-                  setPrefs(
-                    new Map(
-                      prefs.set(activeService.id, {
-                        ...p,
-                        mode: "specific",
-                        empId,
-                      })
-                    )
-                  )
-                }
-              />
+            
+           {/* MOBILE grana */}
+<StylistsStrip
+  employees={eligible}
+  selectedId={p.empId}
+  onSelect={(empId) =>
+    setPrefs(new Map(prefs.set(activeService.id, { ...p, mode: "specific", empId })))
+  }
+  mobile={true}
+/>
+
+
+
             </>
           )}
 
@@ -599,21 +606,17 @@ export default function BookTime() {
                 >
                   Hair Stylish
                 </div>
-                <StylistsStrip
-                  employees={eligible}
-                  selectedId={p.empId}
-                  onSelect={(empId) =>
-                    setPrefs(
-                      new Map(
-                        prefs.set(activeService.id, {
-                          ...p,
-                          mode: "specific",
-                          empId,
-                        })
-                      )
-                    )
-                  }
-                />
+
+
+{/* DESKTOP grana */}
+<StylistsStrip
+  employees={eligible}
+  selectedId={p.empId}
+  onSelect={(empId) =>
+    setPrefs(new Map(prefs.set(activeService.id, { ...p, mode: "specific", empId })))
+  }
+/>
+
               </>
             )}
 
@@ -769,7 +772,8 @@ function ModeToggle({ mode, onChange }) {
 }
 
 /* Stylists strip (horizontalna traka kao datumi) — SA FOTKAMA */
-function StylistsStrip({ employees, selectedId, onSelect }) {
+/* Stylists strip (horizontalna traka kao datumi) — SA FOTKAMA */
+function StylistsStrip({ employees, selectedId, onSelect, mobile = false }) {
   if (!employees?.length) {
     return (
       <div style={{ color: "#fff", opacity: 0.85, padding: 8 }}>
@@ -778,48 +782,118 @@ function StylistsStrip({ employees, selectedId, onSelect }) {
     );
   }
 
+  // === mobilne varijante dimenzija ===
+  const AV = mobile ? 88 : 70;                // VEĆI kružići na telefonu
+  const GAP = mobile ? 4 : 8;                 // MANJI razmak
+  const MINW = mobile ? 110 : 160;            // Uži item da stane više njih
+  const PAD = mobile ? 4 : 10;
+
+  const stripWrap = {
+    display: "grid",
+    gridTemplateColumns: "36px 1fr 36px",
+    alignItems: "center",
+    gap: GAP,
+    margin: "6px 0 10px",
+  };
+  const stripScroller = {
+    display: "grid",
+    gridAutoFlow: "column",
+    gridAutoColumns: `minmax(${MINW}px, 1fr)`,
+    gap: GAP,
+    overflowX: "auto",
+    padding: "2px 2px",
+    scrollbarWidth: "none",
+  };
+  const item = (active) => ({
+    display: "grid",
+    gridTemplateRows: "auto auto",
+    placeItems: "center",
+    gap: mobile ? 4 : 6,
+    padding: PAD,
+    minWidth: MINW,
+    borderRadius: 8,
+    border: "none",
+    background: "transparent",
+    boxShadow: "none",
+    color: "#fff",
+    cursor: "pointer",
+    transform: active ? "translateY(-1px)" : "none",
+  });
+  const avatar = {
+    height: AV,
+    width: AV,
+    borderRadius: "50%",
+    background: "transparent",
+    display: "grid",
+    placeItems: "center",
+    boxShadow: "none",
+    overflow: "hidden",
+    border: "2px solid transparent",
+  };
+  const img = {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    borderRadius: "50%",
+  };
+  const name = {
+    fontWeight: 800,
+    fontSize: mobile ? 12 : 13,
+    color: "#fff",
+    background: "transparent",
+    padding: 0,
+    borderRadius: 0,
+    textAlign: "center",
+  };
+  const arrowBtn = {
+    height: 36,
+    width: 36,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.35)",
+    background: "rgba(255,255,255,.15)",
+    color: "#fff",
+    fontSize: 18,
+    cursor: "pointer",
+  };
+
   // mali avatar sa fallbackom na inicijale
-function Avatar({ emp, active }) {
-  const [err, setErr] = useState(false);
-  const src = photoSrcFor(emp);
-  const initials = String(emp.name || "?")
-    .split(" ")
-    .map((s) => s[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+  function Avatar({ emp, active }) {
+    const [err, setErr] = useState(false);
+    const src = photoSrcFor(emp);
+    const initials = String(emp.name || "?")
+      .split(" ")
+      .map((s) => s[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+
+    return (
+      <div style={{ ...avatar, borderColor: active ? "#f68fa9" : "transparent" }}>
+        {!src || err ? (
+          <div style={{ fontWeight: 900, color: "#b15b78", fontSize: 20, letterSpacing: .5 }}>
+            {initials}
+          </div>
+        ) : (
+          <img src={src} alt={emp.name} style={img} onError={() => setErr(true)} />
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div
-      style={{
-        ...stylAvatar,
-        border: active ? "2px solid #f68fa9" : "2px solid transparent",
-      }}
-    >
-      {!src || err ? (
-        <div style={empInitials}>{initials}</div>
-      ) : (
-        <img src={src} alt={emp.name} style={stylImg} onError={() => setErr(true)} />
-      )}
-    </div>
-  );
-}
-
-
-  return (
-    <div style={stylStripWrap}>
+    <div style={stripWrap}>
       <button
         type="button"
         onClick={(e) => {
           e.currentTarget.nextSibling.scrollBy({ left: -250, behavior: "smooth" });
         }}
-        style={stripArrow}
+        style={arrowBtn}
         aria-label="Levo"
       >
         ‹
       </button>
 
-      <div style={stylStripScroller}>
+      <div style={stripScroller}>
         {employees.map((e) => {
           const active = e.id === selectedId;
           return (
@@ -827,12 +901,11 @@ function Avatar({ emp, active }) {
               key={e.id}
               type="button"
               onClick={() => onSelect(e.id)}
-              style={stylItem(active)}
+              style={item(active)}
               title={e.name}
             >
-             <Avatar emp={e} active={active} />
-
-              <div style={stylName}>{e.name}</div>
+              <Avatar emp={e} active={active} />
+              <div style={name}>{e.name}</div>
             </button>
           );
         })}
@@ -843,7 +916,7 @@ function Avatar({ emp, active }) {
         onClick={(e) => {
           e.currentTarget.previousSibling.scrollBy({ left: 250, behavior: "smooth" });
         }}
-        style={stripArrow}
+        style={arrowBtn}
         aria-label="Desno"
       >
         ›
@@ -851,6 +924,7 @@ function Avatar({ emp, active }) {
     </div>
   );
 }
+
 
 /* =============== MODAL ZA POTVRDU =============== */
 function ConfirmModal({ data, onCancel, onConfirm }) {
@@ -962,15 +1036,18 @@ const inp = {
   width: "100%",
 };
 const inpMobile = {
-  height: 40,
+  height: 36,
   borderRadius: 12,
   border: "1px solid #e8e8e8",
   background: "#fff",
   padding: "0 10px",
   fontSize: 14,
   color: "#222",
-  width: "100%",
+  width: "140px",           // uži
+  maxWidth: "50vw",
+  alignSelf: "start",       // da ne širi grid
 };
+
 
 /* --- Date strip --- */
 const stripWrap = {

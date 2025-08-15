@@ -4,13 +4,16 @@ import { useAuth } from "../context/AuthContext";
 import "./Home.css";
 import LoginModal from "../components/LoginModal";
 
-/* Firestore za čitanje usluga */
+/* Firestore */
 import { db } from "../firebase";
 import {
   collection,
   onSnapshot,
   orderBy,
   query,
+  where,
+  updateDoc,
+  doc,
 } from "firebase/firestore";
 
 export default function Home() {
@@ -40,10 +43,14 @@ export default function Home() {
   const [loadingServices, setLoadingServices] = useState(false);
   const [selectedCatId, setSelectedCatId] = useState(null);
 
+  // Moji zakazani termini (+ modal za otkazivanje)
+  const [myAppointments, setMyAppointments] = useState([]);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
   const navigate = useNavigate();
   const { user, isLoggedIn, logout } = useAuth();
 
-  /* ===== UI helpers ===== */
+  /* ===== Helpers ===== */
   const money = (v) =>
     v == null || v === ""
       ? ""
@@ -57,6 +64,13 @@ export default function Home() {
     const n = Number(min || 0);
     return n ? `${n} min` : "";
   };
+
+  const dateKeyTimeToLocalDate = (dateKey, hhmm) => {
+    // Local time; primer: "2025-01-20T14:30"
+    return new Date(`${dateKey}T${hhmm}`);
+  };
+  const diffHours = (futureDate, base = new Date()) =>
+    (futureDate.getTime() - base.getTime()) / 36e5; // milisekunde u sate
 
   /* ===== Scroll top bar ===== */
   useEffect(() => {
@@ -197,10 +211,66 @@ export default function Home() {
     );
   }, [services, selectedCatId]);
 
+  /* ===== Moji budući termini (za dugme "Otkaži termin") ===== */
+  useEffect(() => {
+    if (!isLoggedIn || !user?.phone) {
+      setMyAppointments([]);
+      return;
+    }
+
+    // Čitamo samo "booked" statuse za ovog korisnika
+    const qAppt = query(
+      collection(db, "appointments"),
+      where("clientPhone", "==", user.phone),
+      where("status", "==", "booked")
+    );
+
+    const unsub = onSnapshot(qAppt, (snap) => {
+      const now = new Date();
+      const future = [];
+      snap.forEach((d) => {
+        const a = d.data();
+        if (!a?.dateKey || !a?.startHHMM) return;
+        const dateObj = dateKeyTimeToLocalDate(a.dateKey, a.startHHMM);
+        if (dateObj > now) {
+          future.push({ id: d.id, ...a, dateObj });
+        }
+      });
+
+      // sortiraj po najskorijem
+      future.sort((x, y) => x.dateObj - y.dateObj);
+      setMyAppointments(future);
+    });
+
+    return unsub;
+  }, [isLoggedIn, user?.phone]);
+
+  async function cancelAppointment(appt) {
+    try {
+      const hours = diffHours(appt.dateObj, new Date());
+      const lateCancel = hours < 6; // manje od 6 sati do termina
+
+      await updateDoc(doc(db, "appointments", appt.id), {
+        status: "cancelled",
+        cancelledAt: new Date(),
+        lateCancel,
+      });
+
+      alert(
+        lateCancel
+          ? "Termin je otkazan. 50% iznosa biće naplaćeno pri sledećem terminu."
+          : "Termin je otkazan bez naplate."
+      );
+      setCancelModalOpen(false);
+    } catch (e) {
+      console.error(e);
+      alert("Greška pri otkazivanju termina.");
+    }
+  }
+
   /* ===== Dugmad ===== */
   const goUsluge = () => {
-    // otvori read-only modal
-    openServices();
+    openServices(); // read-only modal
   };
 
   const handleZakazi = () => {
@@ -242,6 +312,26 @@ export default function Home() {
         <button className="zakazi-btn" onClick={handleZakazi}>
           Zakaži termin
         </button>
+
+        {/* DODATO: Otkaži termin (vidljivo samo za korisnika koji nije admin i ima buduće termine) */}
+        {isLoggedIn && !user?.isAdmin && myAppointments.length > 0 && (
+          <button
+            className="cancel-btn"
+            onClick={() => setCancelModalOpen(true)}
+            style={{
+              marginTop: 10,
+              background: "#ff6b81",
+              color: "#fff",
+              padding: "10px 16px",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              boxShadow: "0 8px 18px rgba(255,107,129,.28)",
+            }}
+          >
+            Otkaži termin
+          </button>
+        )}
       </section>
 
       {/* O NAMA */}
@@ -263,27 +353,26 @@ export default function Home() {
       </section>
 
       {/* LOKACIJA */}
-  <section className="lokacija-section" id="lokacija">
-  <h2 className="lokacija-title">Gde se nalazimo?</h2>
-  <div className="lokacija-mapa">
-    <iframe
-      title="Mapa salona"
-      src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2830.9182505!2d20.4721163!3d44.7925747!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x475a716f054f6fd7%3A0xd396688a3e8a9117!2sJu%C5%BEni%20bulevar%2019%2C%20Beograd!5e0!3m2!1ssr!2srs!4v1691234567890!5m2!1ssr!2srs"
-      width="80%"
-      height="250"
-      style={{ border: 0 }}
-      allowFullScreen
-      loading="lazy"
-      referrerPolicy="no-referrer-when-downgrade"
-    />
-  </div>
+      <section className="lokacija-section" id="lokacija">
+        <h2 className="lokacija-title">Gde se nalazimo?</h2>
+        <div className="lokacija-mapa">
+          <iframe
+            title="Mapa salona"
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2830.9182505!2d20.4721163!3d44.7925747!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x475a716f054f6fd7%3A0xd396688a3e8a9117!2sJu%C5%BEni%20bulevar%2019%2C%20Beograd!5e0!3m2!1ssr!2srs!4v1691234567890!5m2!1ssr!2srs"
+            width="80%"
+            height="250"
+            style={{ border: 0 }}
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
 
-  <div className="lokacija-info">
-    <span className="lokacija-icon">📍</span>
-    <span className="lokacija-adresa">Južni bulevar 19, Beograd 11000</span>
-  </div>
-</section>
-
+        <div className="lokacija-info">
+          <span className="lokacija-icon">📍</span>
+          <span className="lokacija-adresa">Južni bulevar 19, Beograd 11000</span>
+        </div>
+      </section>
 
       {/* GALLERY MODAL */}
       {galleryOpen && (
@@ -391,6 +480,93 @@ export default function Home() {
                 Ovo je pregled po kategorijama. Zakazivanje nije omogućeno u ovom prikazu.
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CANCEL MODAL */}
+      {cancelModalOpen && (
+        <div className="gallery-overlay" onClick={() => setCancelModalOpen(false)}>
+          <div
+            className="cancel-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              padding: 20,
+              borderRadius: 16,
+              maxWidth: 420,
+              width: "calc(100% - 32px)",
+              color: "#000",
+              boxShadow: "0 8px 30px rgba(0,0,0,.3)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ margin: 0 }}>Moji termini</h3>
+              <button className="gallery-close" onClick={() => setCancelModalOpen(false)} aria-label="Zatvori">
+                ✕
+              </button>
+            </div>
+
+            <p style={{ marginTop: 8, marginBottom: 12, fontSize: 13, lineHeight: 1.4 }}>
+              Besplatno otkazivanje je moguće do <b>6 sati</b> pre termina. Nakon toga,
+              biće naplaćeno <b>50%</b> iznosa pri sledećem zakazivanju.
+            </p>
+
+            {!myAppointments.length ? (
+              <div style={{ opacity: 0.8 }}>Nema budućih termina.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {myAppointments.map((a) => {
+                  const dstr = new Intl.DateTimeFormat("sr-RS", {
+                    weekday: "short",
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                  }).format(a.dateObj);
+                  const hoursLeft = Math.max(0, Math.floor(diffHours(a.dateObj)));
+                  return (
+                    <div
+                      key={a.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto",
+                        gap: 8,
+                        alignItems: "center",
+                        padding: "10px 12px",
+                        border: "1px solid #eee",
+                        borderRadius: 12,
+                        background: "#fafafa",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 800 }}>
+                          {dstr} u {a.startHHMM} — {a.serviceName || "Usluga"}
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.8 }}>
+                          {a.employeeName ? `Radnica: ${a.employeeName}` : ""}
+                          {a.price ? ` • Cena: ${money(a.price)}` : ""}
+                          {` • Preostalo ~ ${hoursLeft}h`}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => cancelAppointment(a)}
+                        style={{
+                          background: "#ff6b81",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Otkaži
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -104,7 +104,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
           </label>
 
           <button className="lm-submit" type="submit" disabled={!canSubmit}>
-            {loading ? "Sačuvavam…" : "Nastavi i zakaži"}
+            {loading ? "Sačuvano" : "Nastavi i zakaži"}
           </button>
         </form>
       </div>
