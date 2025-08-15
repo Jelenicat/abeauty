@@ -230,7 +230,8 @@ export default function AdminFinansije() {
     <div style={wrap} className="fin-wrap">
       <style>{css}</style>
       <div style={panel} className="fin-panel">
-        <div style={header}>
+       <div style={header} className="fin-sticky">
+
           <h2 style={title}>Troškovi i zarada</h2>
           <input
             type="month"
@@ -430,23 +431,37 @@ const monthInp = { height: 40, borderRadius: 12, border: "1px solid #eaeaea", pa
 const tabs = { display: "flex", gap: 8, marginBottom: 10 };
 
 const css = `
+/* Osnovno */
 .fin-wrap, .fin-wrap * { font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-.fin-tab {
-  height: 38px; padding: 0 14px; border-radius: 12px; border: 1px solid #e7e7e7;
-  background:#fff; font-weight:800; cursor:pointer;
-}
-.fin-tab.active { background: linear-gradient(135deg,#ff5fa2,#ff7fb5); color:#fff; border-color: transparent; }
+.fin-panel { position: relative; }
 
-.fin-cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:10px; margin: 10px 0 14px; }
+/* Tabs */
+.fin-tab {
+  height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid #e7e7e7;
+  background:#fff; font-weight:800; cursor:pointer; color:#222;
+  -webkit-appearance:none; appearance:none; outline:none; -webkit-tap-highlight-color:transparent;
+}
+.fin-tab.active {
+  background: linear-gradient(135deg,#ff5fa2,#ff7fb5); color:#fff; border-color: transparent;
+}
+
+/* Kartice — sumarni pregled */
+.fin-cards {
+  display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+  gap:10px; margin: 10px 0 14px;
+}
 .fin-card{
-  background:#fff; border:1px solid #f0f0f0; border-radius:18px; padding:14px; box-shadow:0 12px 24px rgba(0,0,0,.08);
+  background:#fff; border:1px solid #f0f0f0; border-radius:18px; padding:14px;
+  box-shadow:0 12px 24px rgba(0,0,0,.08);
 }
 .fin-card-title{ font-size:13px; color:#666; font-weight:700; margin-bottom:6px; }
 .fin-card-amount{ font-weight:900; font-size:22px; color:#222; }
 
+/* Grid: levo desno (desktop) */
 .fin-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
 @media (max-width: 900px){ .fin-grid{ grid-template-columns: 1fr; } }
 
+/* Box-evi */
 .fin-box{
   background:rgba(255,255,255,.96); border-radius:20px; border:1px solid #efefef;
   box-shadow:0 16px 28px rgba(0,0,0,.10); overflow:hidden;
@@ -457,51 +472,114 @@ const css = `
 }
 .fin-box-title{ font-weight:900; color:#222; letter-spacing:.2px; }
 
-.fin-row{ display:grid; grid-template-columns: 1fr 140px auto; gap:8px; padding:12px; border-bottom:1px dashed #eee; }
+/* Forme u box-u */
+.fin-row{
+  display:grid; grid-template-columns: 1fr 140px auto;
+  gap:8px; padding:12px; border-bottom:1px dashed #eee;
+}
 @media (max-width: 700px){
-  .fin-row{ grid-template-columns: 1fr 1fr; }
-  .fin-row .fin-btn{ grid-column: 1 / -1; }
+  .fin-row{ grid-template-columns: 1fr; }
+  .fin-row .fin-btn{ width:100%; }
 }
 .fin-input{
-  height:40px; border-radius:12px; border:1px solid #e7e7e7; padding:0 12px; background:#fff;
-  box-shadow:0 6px 12px rgba(0,0,0,.05);
+  height:44px; border-radius:12px; border:1px solid #e7e7e7; padding:0 12px; background:#fff;
+  box-shadow:0 6px 12px rgba(0,0,0,.05); font-size:14px;
 }
 .fin-btn{
-  height:40px; border:none; border-radius:12px; font-weight:800; cursor:pointer; padding:0 14px;
+  height:44px; border:none; border-radius:12px; font-weight:800; cursor:pointer; padding:0 14px;
   background:linear-gradient(135deg,#ff5fa2,#ff7fb5); color:#fff; box-shadow:0 10px 22px rgba(255,127,181,.35);
+  -webkit-appearance:none; appearance:none; outline:none; -webkit-tap-highlight-color:transparent;
 }
 .fin-btn.ghost{ background:#efefef; color:#222; box-shadow:none; }
 .fin-btn.danger{ background:#ff6b6b; }
 
+/* Liste */
 .fin-list{ display:grid; gap:8px; padding:12px; }
 .fin-item{
-  display:flex; align-items:center; justify-content:space-between;
-  background:#fff; border:1px solid #f1f1f1; border-radius:14px; padding:10px 12px; box-shadow:0 10px 18px rgba(0,0,0,.06);
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  background:#fff; border:1px solid #f1f1f1; border-radius:14px; padding:12px; box-shadow:0 10px 18px rgba(0,0,0,.06);
 }
 .fin-item.emp { width:100%; text-align:left; cursor:pointer; }
 .fin-item.emp.open { outline:2px solid #ffd3e6; }
 
 .fin-item-name{ font-weight:800; color:#222; }
 .fin-item-right{ display:flex; align-items:center; gap:10px; }
-.fin-item-amount{ font-weight:900; color:#333; }
+.fin-item-amount{ font-weight:900; color:#333; white-space:nowrap; }
 
+/* Sublista termina po radnici */
 .fin-sublist{
   display:grid; gap:8px; margin:8px 0 4px 0; padding:8px 10px;
   background:rgba(255,255,255,.6); border:1px dashed #ead7df; border-radius:12px;
 }
 .fin-subitem{
-  display:flex; align-items:center; justify-content:space-between;
-  background:#fff; border:1px solid #eee; border-radius:12px; padding:8px 10px;
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:#fff; border:1px solid #eee; border-radius:12px; padding:10px 12px;
   box-shadow:0 6px 12px rgba(0,0,0,.05);
 }
-.fin-sub-main{ display:grid; gap:4px; }
-.fin-sub-line{ display:flex; align-items:center; gap:8px; color:#333; }
+.fin-sub-main{ display:grid; gap:4px; min-width:0; }
+.fin-sub-line{ display:flex; align-items:center; gap:8px; color:#333; flex-wrap:wrap; }
 .fin-sub-line .dot{ width:4px; height:4px; border-radius:999px; background:#bbb; }
-.fin-sub-service{ font-weight:700; color:#444; }
-.fin-sub-right{ text-align:right; }
+.fin-sub-service{ font-weight:700; color:#444; overflow:hidden; text-overflow:ellipsis; }
+.fin-sub-right{ text-align:right; white-space:nowrap; }
 .fin-sub-amount{ font-weight:900; }
 .fin-sub-client{ font-size:12px; color:#666; }
 
 .fin-empty{ padding:10px; color:#888; font-size:13px; }
 .fin-error{ color:#ff5fa2; font-weight:700; text-align:center; margin:8px 0; }
+
+/* =========================
+   MOBILNE DORADЕ
+   ========================= */
+@media (max-width: 680px){
+  /* wrap/panel spacing */
+  .fin-wrap { padding: 14px; }
+  .fin-panel { border-radius: 22px; }
+
+  /* sticky header: naslov + month + tabs */
+  .fin-sticky{ position: sticky; top: 8px; z-index: 5; }
+  .fin-sticky + * { margin-top: 8px; }
+
+  /* header unutra */
+  .fin-sticky h2 { font-size: 20px !important; }
+  .fin-sticky input[type="month"]{
+    height: 42px; border-radius: 12px; padding: 0 10px;
+  }
+
+  /* tabs kao full width i veća tap meta */
+  .fin-tab { flex:1; height: 44px; border-radius: 14px; font-size:14px; }
+  .fin-tab + .fin-tab { margin-left: 6px; }
+  /* kontejner tabs-a već ima display:flex u JSX; ovo centriranje */
+  .fin-panel > div:nth-of-type(2){ display:flex; gap:6px; }
+
+  /* kartice sa sumama — 1 kolona */
+  .fin-cards { grid-template-columns: 1fr; gap:8px; }
+  .fin-card { padding: 12px; border-radius:16px; }
+  .fin-card-amount{ font-size: 20px; }
+
+  /* forme: 1 kolona, full width dugme */
+  .fin-row{ grid-template-columns: 1fr; gap:8px; padding:10px; }
+  .fin-input{ height: 44px; font-size: 15px; }
+  .fin-btn{ height: 44px; width: 100%; border-radius: 14px; }
+
+  /* stavke lista kompaktnije i „klikabilnije” */
+  .fin-item{ padding: 12px; border-radius: 14px; }
+  .fin-item-right{ gap: 8px; }
+  .fin-item-amount{ font-size: 15px; }
+
+  /* sub-items: u dve linije na uskim ekranima */
+  .fin-subitem{
+    flex-direction: column; align-items: stretch; gap: 8px;
+  }
+  .fin-sub-right{ text-align: left; }
+}
+
+/* veoma uski telefoni */
+@media (max-width: 380px){
+  .fin-wrap { padding: 10px; }
+  .fin-card-amount{ font-size: 18px; }
+  .fin-item{ padding: 10px; }
+  .fin-subitem{ padding: 10px; }
+  .fin-tab{ height: 42px; font-size: 13px; }
+}
 `;
+
