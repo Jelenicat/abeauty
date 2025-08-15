@@ -251,88 +251,89 @@ const { selectedServices, clearServices } = useBooking();
     });
   }
 
-  async function book(slot) {
-    if (busyAction) return; // blokiraj dupli klik
+ async function book(slot) {
+  if (busyAction) return; // blokiraj dupli klik
 
-    // safety check – tražimo radnicu iz slota
-    const emp = employees.find((e) => e.id === slot.employeeId);
-    if (!emp) {
-      alert("Radnica nije pronađena.");
+  const emp = employees.find((e) => e.id === slot.employeeId);
+  if (!emp) {
+    alert("Radnica nije pronađena.");
+    return;
+  }
+
+  try {
+    setBusyAction(true);
+
+    const dk = dateKey(selectedDay);
+
+    // re-check preklapanja
+    const qA = query(
+      collection(db, "appointments"),
+      where("dateKey", "==", dk),
+      where("employeeId", "==", emp.id)
+    );
+    const aSnap = await getDocs(qA);
+    const busy = aSnap.docs.map((d) => d.data());
+    if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))) {
+      alert("Termin je upravo zauzet. Izaberi drugi.");
       return;
     }
 
-    try {
-      setBusyAction(true);
+    const payload = {
+      type: "booking",
+      status: "booked",
+      employeeId: emp.id,
+      employeeName: emp.name || "",
+      dateKey: dk,
+      startHHMM: minToTime(slot.startMin),
+      endHHMM: minToTime(slot.endMin),
+      startMin: slot.startMin,
+      endMin: slot.endMin,
+      durationMin: Number(activeService.durationMin || 0),
+      serviceId: activeService.id,
+      serviceName: activeService.name,
+      price: finalPriceOf(activeService) ?? null,
+      clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+      clientPhone: user?.phone || "",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ...(activeService.color ? { color: activeService.color } : {}),
+    };
 
-      const dk = dateKey(selectedDay);
+    // upis termina
+    const docRef = await addDoc(collection(db, "appointments"), payload);
 
-      // re-check preklapanja
-      const qA = query(
-        collection(db, "appointments"),
-        where("dateKey", "==", dk),
-        where("employeeId", "==", emp.id)
-      );
-      const aSnap = await getDocs(qA);
-      const busy = aSnap.docs.map((d) => d.data());
-      if (
-        busy.some((b) =>
-          overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin)
-        )
-      ) {
-        alert("Termin je upravo zauzet. Izaberi drugi.");
-        return;
-      }
-
-      const payload = {
-        type: "booking",
-        status: "booked",
-        employeeId: emp.id,
-        employeeName: emp.name || "",
-        dateKey: dk,
-        startHHMM: minToTime(slot.startMin),
-        endHHMM: minToTime(slot.endMin),
-        startMin: slot.startMin,
-        endMin: slot.endMin,
-        durationMin: Number(activeService.durationMin || 0),
-        serviceId: activeService.id,
-        serviceName: activeService.name,
-        price: finalPriceOf(activeService) ?? null,
-        clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
-        clientPhone: user?.phone || "",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        ...(activeService.color ? { color: activeService.color } : {}),
-      };
-
-      await addDoc(collection(db, "appointments"), payload);
-
-      const next = new Map(prefs);
-      next.set(activeService.id, { ...p, booked: true });
-      setPrefs(next);
-
-      alert("Termin je uspešno rezervisan ❤️");
+    // osveži prefs da označi da je zakazano
+    const next = new Map(prefs);
+    next.set(activeService.id, { ...p, booked: true });
+    setPrefs(next);
 
     const remaining = selectedServices.find((s) => !(next.get(s.id)?.booked));
-if (remaining) {
-  setActiveId(remaining.id);
-} else {
-  alert("Sve izabrane usluge su uspešno zakazane ❤️");
-  clearServices();
-  nav("/"); // preusmeravanje na home
-}
+    if (remaining) {
+      setActiveId(remaining.id);
+      alert("Termin je uspešno rezervisan ❤️");
+    } else {
+      alert("Sve izabrane usluge su uspešno zakazane ❤️");
 
-    } catch (err) {
-      console.error("Booking error:", err);
-      const msg = String(err?.message || "Greška pri rezervaciji.");
-      alert(
-        msg.includes("index")
-          ? "Upit traži Firestore indeks. Otvori konzolu i klikni na link koji je Firestore generisao da napraviš indeks, pa pokušaj ponovo."
-          : msg
-      );
-    } finally {
-      setBusyAction(false);
+      // ⚡ odmah ažuriraj status da se ne vidi dugme Otkaži u Home.jsx
+      await updateDoc(docRef, { status: "confirmed" }); 
+      // možeš staviti i "done" ili "pending" ako želiš da ih potpuno sakriješ
+
+      clearServices();
+      nav("/"); // odmah preusmeri na početnu
     }
+
+  } catch (err) {
+    console.error("Booking error:", err);
+    const msg = String(err?.message || "Greška pri rezervaciji.");
+    alert(
+      msg.includes("index")
+        ? "Upit traži Firestore indeks. Otvori konzolu i klikni na link koji je Firestore generisao da napraviš indeks, pa pokušaj ponovo."
+        : msg
+    );
+  } finally {
+    setBusyAction(false);
   }
+}
 
   const allBooked = selectedServices.every((s) => prefs.get(s.id)?.booked);
 
