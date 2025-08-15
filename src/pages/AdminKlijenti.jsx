@@ -3,9 +3,23 @@ import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../firebase";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 
+/* mali hook za responsive */
+function useIsMobile(bp = 700) {
+  const [m, setM] = useState(
+    typeof window !== "undefined" ? window.innerWidth <= bp : true
+  );
+  useEffect(() => {
+    const onR = () => setM(window.innerWidth <= bp);
+    window.addEventListener("resize", onR);
+    return () => window.removeEventListener("resize", onR);
+  }, [bp]);
+  return m;
+}
+
 export default function AdminKlijenti() {
   const [clients, setClients] = useState([]);
   const [search, setSearch] = useState("");
+  const isMobile = useIsMobile(700);
 
   // učitaj jedinstvene klijente iz appointments (bez duplikata po name+phone)
   useEffect(() => {
@@ -49,13 +63,16 @@ export default function AdminKlijenti() {
 
   return (
     <div style={wrap}>
+      {/* malo CSS-a samo za kartice i wrap tabele */}
+      <style>{css}</style>
+
       <div style={panel}>
         {/* NASLOV + PRETRAGA */}
-        <div style={headRow}>
+        <div style={headRow(isMobile)}>
           <h2 style={title}>Klijenti</h2>
           <div style={searchBox}>
             <input
-              style={searchInput}
+              style={searchInput(isMobile)}
               placeholder="Pretraga: ime, prezime ili broj"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -64,30 +81,61 @@ export default function AdminKlijenti() {
           </div>
         </div>
 
-        <div style={{ background: "#fff", borderRadius: 16, padding: 16, boxShadow: "0 10px 24px rgba(0,0,0,.06)" }}>
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: 16,
+            padding: isMobile ? 12 : 16,
+            boxShadow: "0 10px 24px rgba(0,0,0,.06)",
+          }}
+        >
           {filtered.length === 0 ? (
             <p style={{ margin: 0, color: "#777" }}>Nema klijenata za zadatu pretragu.</p>
+          ) : isMobile ? (
+            // 📱 MOBILNI PRIKAZ — kartice
+            <div className="clients-cards">
+              {filtered.map((c, i) => (
+                <div key={`${c.phone}-${i}`} className="client-card">
+                  <div className="client-name">{c.name}</div>
+                  <div className="client-row">
+                    <span className="label">Telefon</span>
+                    <span className="value">{c.phone || "—"}</span>
+                  </div>
+                  <div className="client-row">
+                    <span className="label">Usluga</span>
+                    <span className="value">{c.lastService || "—"}</span>
+                  </div>
+                  <div className="client-row">
+                    <span className="label">Datum</span>
+                    <span className="value">{c.lastDate || "—"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#f6f6f6" }}>
-                  <th style={th}>Ime</th>
-                  <th style={th}>Telefon</th>
-                  <th style={th}>Poslednja usluga</th>
-                  <th style={th}>Datum</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c, i) => (
-                  <tr key={`${c.phone}-${i}`} style={i % 2 ? { background: "#fafafa" } : undefined}>
-                    <td style={tdBold}>{c.name}</td>
-                    <td style={td}>{c.phone}</td>
-                    <td style={td}>{c.lastService}</td>
-                    <td style={td}>{c.lastDate}</td>
+            // 💻 DESKTOP — tabela kao do sada
+            <div className="clients-table-wrap">
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
+                <thead>
+                  <tr style={{ background: "#f6f6f6" }}>
+                    <th style={th}>Ime</th>
+                    <th style={th}>Telefon</th>
+                    <th style={th}>Poslednja usluga</th>
+                    <th style={th}>Datum</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filtered.map((c, i) => (
+                    <tr key={`${c.phone}-${i}`} style={i % 2 ? { background: "#fafafa" } : undefined}>
+                      <td style={tdBold}>{c.name}</td>
+                      <td style={td}>{c.phone}</td>
+                      <td style={td}>{c.lastService}</td>
+                      <td style={td}>{c.lastDate}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
@@ -115,27 +163,30 @@ const panel = {
   padding: "clamp(16px,4vw,28px)",
 };
 
-const headRow = {
+const headRow = (mobile) => ({
   display: "grid",
-  gridTemplateColumns: "1fr 320px",
+  gridTemplateColumns: mobile ? "1fr" : "1fr 320px",
   gap: 10,
   marginBottom: 12,
-};
+});
 const title = { margin: 0, color: "#000", fontWeight: 900, fontSize: "clamp(20px,3vw,28px)" };
 
 const searchBox = { display: "grid", alignItems: "center" };
-const searchInput = {
-  height: 40,
+const searchInput = (mobile) => ({
+  height: mobile ? 44 : 40,
   borderRadius: 12,
   border: "1px solid #e7e7e7",
   padding: "0 12px",
   background: "#fff",
   outline: "none",
   boxShadow: "0 6px 12px rgba(0,0,0,.05)",
-  fontSize: 14,
+  fontSize: mobile ? 15 : 14,
   width: "100%",
-};
+  WebkitAppearance: "none",
+  appearance: "none",
+});
 
+/* tabela */
 const th = {
   textAlign: "left",
   padding: "10px 12px",
@@ -147,7 +198,36 @@ const th = {
 const td = { padding: "10px 12px", borderBottom: "1px solid #f1f1f1", color: "#222" };
 const tdBold = { ...td, fontWeight: 800 };
 
-/* responsive: stack naslov i pretragu */
-if (typeof window !== "undefined" && window.innerWidth < 700) {
-  headRow.gridTemplateColumns = "1fr";
+/* malo CSS-a za mobile kartice i wrap tabele */
+const css = `
+.clients-table-wrap { overflow-x: auto; }
+
+.clients-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
+.client-card {
+  border: 1px solid #efefef;
+  border-radius: 14px;
+  background: #fff;
+  padding: 12px;
+  box-shadow: 0 8px 18px rgba(0,0,0,.06);
+}
+.client-name {
+  font-weight: 900;
+  font-size: 16px;
+  margin-bottom: 6px;
+  color: #222;
+}
+.client-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px dashed #eee;
+}
+.client-row:first-of-type { border-top: 0; }
+.client-row .label { color: #666; font-weight: 700; font-size: 12px; }
+.client-row .value { color: #222; font-weight: 700; font-size: 13px; }
+`;

@@ -12,7 +12,7 @@ import {
   orderBy,
   serverTimestamp,
 } from "firebase/firestore";
-import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck } from "react-icons/fi";
+import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch } from "react-icons/fi";
 
 export default function AdminKatalog() {
   const nav = useNavigate();
@@ -155,11 +155,10 @@ export default function AdminKatalog() {
 
   return (
     <div style={wrap} className="ak-root">
-      {/* Responsive + font CSS */}
       <style>{responsiveCSS}</style>
 
       <div style={panel} className="ak-panel">
-        {/* INPUT iznad, DUGME ispod (mobile), u liniji (desktop) */}
+        {/* RED 1: Dodaj kategoriju (desktop: u liniji) */}
         <form onSubmit={addCategory} style={topBar} className="ak-topbar">
           <div style={addBox}>
             <span style={addIcon}>
@@ -174,6 +173,7 @@ export default function AdminKatalog() {
                 if (error) setError("");
               }}
               aria-label="Unesite naziv nove kategorije"
+              inputMode="text"
             />
           </div>
           <button
@@ -186,10 +186,25 @@ export default function AdminKatalog() {
           </button>
         </form>
 
-        {error && (
-          <div className="ak-error">
-            {error}
+        {/* RED 2: Pretraga (na desktopu stoji ispod, na tel. full width) */}
+        <div className="ak-searchrow">
+          <div style={searchBox}>
+            <span style={searchIcon}>
+              <FiSearch />
+            </span>
+            <input
+              style={searchInput}
+              placeholder="Pretraga kategorija (npr. Lice, Nokti…) "
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="Pretraga kategorija"
+              inputMode="search"
+            />
           </div>
+        </div>
+
+        {error && (
+          <div className="ak-error">{error}</div>
         )}
 
         {/* Grid */}
@@ -206,7 +221,6 @@ export default function AdminKatalog() {
 
               return (
                 <div key={cat.id} style={tile} className="ak-tile">
-                  {/* Pozadina: za “Na popustu” koristi slika3.webp */}
                   <div
                     style={{
                       ...marble,
@@ -227,6 +241,7 @@ export default function AdminKatalog() {
                             setEditingId(cat.id);
                             setEditingName(cat.name || "");
                           }}
+                          className="ak-actionbtn"
                         >
                           <FiEdit />
                         </button>
@@ -237,6 +252,7 @@ export default function AdminKatalog() {
                             e.stopPropagation();
                             removeCategory(cat.id);
                           }}
+                          className="ak-actionbtn"
                         >
                           <FiTrash2 />
                         </button>
@@ -251,6 +267,7 @@ export default function AdminKatalog() {
                             setEditingId(null);
                             setEditingName("");
                           }}
+                          className="ak-actionbtn"
                         >
                           <FiX />
                         </button>
@@ -265,6 +282,7 @@ export default function AdminKatalog() {
                             e.stopPropagation();
                             renameCategory(cat.id, editingName);
                           }}
+                          className="ak-actionbtn"
                         >
                           <FiCheck />
                         </button>
@@ -317,7 +335,7 @@ export default function AdminKatalog() {
   );
 }
 
-/* ===== BASE STYLES (desktop-first) ===== */
+/* ===== BASE STYLES ===== */
 
 const wrap = {
   minHeight: "100vh",
@@ -338,7 +356,6 @@ const panel = {
   padding: "clamp(16px,4vw,32px)",
 };
 
-/* topBar: na desktopu u liniji, na mobilnom se slaže */
 const topBar = {
   display: "grid",
   gridTemplateColumns: "1fr auto",
@@ -355,8 +372,9 @@ const addInput = {
   borderRadius: 12,
   border: "1px solid #ececec",
   background: "#fff",
-  fontSize: 14,
+  fontSize: 16,
   boxShadow: "0 6px 14px rgba(0,0,0,.06)",
+  WebkitTapHighlightColor: "transparent",
 };
 const addIcon = {
   position: "absolute",
@@ -377,6 +395,28 @@ const addBtn = {
   cursor: "pointer",
   padding: "0 14px",
   boxShadow: "0 8px 18px rgba(255,127,181,.3)",
+  WebkitTapHighlightColor: "transparent",
+};
+
+const searchBox = { position: "relative", width: "100%", maxWidth: 980, margin: "10px auto 0" };
+const searchInput = {
+  width: "100%",
+  height: 44,
+  padding: "0 12px 0 36px",
+  borderRadius: 12,
+  border: "1px solid #ececec",
+  background: "#fff",
+  fontSize: 16,
+  boxShadow: "0 6px 14px rgba(0,0,0,.06)",
+  WebkitTapHighlightColor: "transparent",
+};
+const searchIcon = {
+  position: "absolute",
+  left: 12,
+  top: "50%",
+  transform: "translateY(-50%)",
+  opacity: 0.6,
+  fontSize: 16,
 };
 
 const grid = {
@@ -392,6 +432,7 @@ const tile = {
   overflow: "hidden",
   border: "1px solid #ececec",
   boxShadow: "0 8px 20px rgba(0,0,0,.14)",
+  userSelect: "none",
 };
 const marble = {
   position: "absolute",
@@ -401,15 +442,16 @@ const marble = {
 };
 const tileActions = { position: "absolute", top: 8, right: 8, display: "flex", gap: 6, zIndex: 2 };
 const tileActionBtn = {
-  height: 34,
-  width: 34,
-  borderRadius: 8,
+  height: 38,
+  width: 38,
+  borderRadius: 10,
   border: "none",
   background: "#efefef",
   cursor: "pointer",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  WebkitTapHighlightColor: "transparent",
 };
 const tileButton = {
   position: "relative",
@@ -423,6 +465,7 @@ const tileButton = {
   border: "none",
   outline: "none",
   zIndex: 1,
+  WebkitTapHighlightColor: "transparent",
 };
 const tileName = {
   fontWeight: 800,
@@ -435,20 +478,19 @@ const badge = {
   position: "absolute",
   right: 10,
   bottom: 10,
-  background: "rgba(255,255,255,.90)",
+  background: "rgba(255,255,255,.92)",
   border: "1px solid #eee",
   borderRadius: 999,
-  padding: "3px 10px",
+  padding: "4px 10px",
   fontSize: 12,
   fontWeight: 700,
   color: "#444",
 };
-const editRow = { padding: 12, position: "relative", zIndex: 1, background: "rgba(255,255,255,.85)" };
-const editInput = { width: "100%", height: 40, borderRadius: 10, border: "1px solid #ddd", padding: "0 10px", fontSize: 14 };
+const editRow = { padding: 12, position: "relative", zIndex: 1, background: "rgba(255,255,255,.92)" };
+const editInput = { width: "100%", height: 42, borderRadius: 12, border: "1px solid #ddd", padding: "0 10px", fontSize: 16 };
 
 /* ===== RESPONSIVE + FONT CSS ===== */
 const responsiveCSS = `
-/* Global font (radi ako si dodao link za Poppins u index.html) */
 .ak-root, .ak-root * {
   font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
 }
@@ -472,11 +514,20 @@ const responsiveCSS = `
 
 /* Telefon */
 @media (max-width: 600px) {
-  .ak-topbar { gap: 8px; margin-top: 12px; }
-  .ak-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-  .ak-tilebtn { height: 104px; }
+  .ak-topbar { gap: 8px; margin-top: 8px; }
+  .ak-searchrow { margin-top: 6px; }
+  .ak-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .ak-tilebtn { height: 108px; }
   .ak-tilename { font-size: 18px !important; }
   .ak-actions { gap: 6px; }
-  .ak-badge { font-size: 11px; padding: 2px 8px; right: 8px; bottom: 8px; }
+  .ak-badge { font-size: 11px; padding: 3px 8px; right: 8px; bottom: 8px; }
+}
+
+/* Bolji tap feedback bez plavog highlight-a */
+.ak-root button,
+.ak-root input,
+.ak-root .ak-tilebtn,
+.ak-root .ak-actionbtn {
+  -webkit-tap-highlight-color: transparent;
 }
 `;

@@ -16,12 +16,11 @@ export default function AdminCategory() {
   const [loading, setLoading] = useState(true);
   const [services, setServices] = useState([]);
 
-  // forma za novu/usluge
-  const [editing, setEditing] = useState(null); // id usluge ili null
+  const [editing, setEditing] = useState(null);
   const [name, setName] = useState("");
   const [durationMin, setDurationMin] = useState("");
   const [price, setPrice] = useState("");
-  const [discount, setDiscount] = useState(""); // % (radi sa discountPercent u bazi)
+  const [discount, setDiscount] = useState("");
 
   const finalPrice = useMemo(() => {
     const p = Number(price) || 0;
@@ -29,13 +28,11 @@ export default function AdminCategory() {
     return Math.max(0, Math.round(p * (1 - d / 100)));
   }, [price, discount]);
 
-  // učitaj kategoriju + njene usluge (poseban branch za "discounts")
   useEffect(() => {
     if (!catId) return;
 
     let off = () => {};
     if (catId === "discounts") {
-      // Virtuelna kategorija "Na popustu"
       setCatName("Na popustu");
       setLoading(false);
       off = onSnapshot(
@@ -80,7 +77,7 @@ export default function AdminCategory() {
   };
 
   const saveCategoryName = async () => {
-    if (catId === "discounts") return; // ne dozvoli preimenovanje virtuelne
+    if (catId === "discounts") return;
     const n = catName.trim();
     if (!n) return;
     await updateDoc(doc(db, "categories", catId), { name: n, updatedAt: serverTimestamp() });
@@ -88,7 +85,7 @@ export default function AdminCategory() {
   };
 
   const deleteCategory = async () => {
-    if (catId === "discounts") return; // ne briši virtuelnu
+    if (catId === "discounts") return;
     if (services.length) {
       if (!confirm(`Kategorija ima ${services.length} usluga. Obrisaćeš SAMO kategoriju (usluge ostaju). Nastavi?`)) return;
     } else {
@@ -109,7 +106,7 @@ export default function AdminCategory() {
   const saveService = async (e) => {
     e?.preventDefault?.();
     const payload = {
-      categoryId: catId === "discounts" ? "" : catId, // kod "discounts" ne menjamo kategoriju
+      categoryId: catId === "discounts" ? "" : catId,
       name: name.trim(),
       durationMin: Number(durationMin) || 0,
       basePrice: Number(price) || 0,
@@ -140,22 +137,21 @@ export default function AdminCategory() {
   return (
     <div style={wrap}>
       <div style={panel}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+        <style>{css}</style>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
           <button style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
           <h2 style={title}>{catName || "Kategorija"}</h2>
         </div>
 
-        {/* preimenovanje / brisanje kategorije (sakrij za "Na popustu") */}
         {catId !== "discounts" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
+          <div className="admincat-catrow">
             <input style={inp} value={catName} onChange={e => setCatName(e.target.value)} placeholder="Naziv kategorije" />
             <button style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
             <button style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
           </div>
         )}
 
-        {/* forma za uslugu */}
-        <form onSubmit={saveService} style={form}>
+        <form onSubmit={saveService} style={form} className="admincat-form">
           <input style={inp} placeholder="Naziv usluge" value={name} onChange={e => setName(e.target.value)} />
           <input style={inp} type="number" min="0" placeholder="Trajanje (min)" value={durationMin} onChange={e => setDurationMin(e.target.value)} />
           <input style={inp} type="number" min="0" placeholder="Cena (RSD)" value={price} onChange={e => setPrice(e.target.value)} />
@@ -165,34 +161,31 @@ export default function AdminCategory() {
           {editing && <button style={ghostBtn} type="button" onClick={resetForm}>Otkaži</button>}
         </form>
 
-        {/* lista usluga */}
         <div style={list}>
-   {services.map(s => {
-  const isEditing = editing === s.id;
-  const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
-  const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
-  const currentFinal = isEditing 
-    ? Math.max(0, Math.round(currentPrice * (1 - currentDiscount / 100)))
-    : s.finalPrice;
+          {services.map(s => {
+            const isEditing = editing === s.id;
+            const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
+            const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
+            const currentFinal = isEditing
+              ? Math.max(0, Math.round(currentPrice * (1 - currentDiscount / 100)))
+              : s.finalPrice;
 
-  return (
-    <div key={s.id} style={row}>
-      <div>
-        <div style={{ fontWeight: 900 }}>{s.name}</div>
-        <div style={{ opacity: .8, fontSize: 13 }}>
-          {s.durationMin} min · {currentPrice} RSD{" "}
-          {currentDiscount
-            ? `· popust ${currentDiscount}% → ${currentFinal} RSD`
-            : ""}
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
-        <button style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
-      </div>
-    </div>
-  );
-})}
+            return (
+              <div key={s.id} style={row} className="admincat-row">
+                <div>
+                  <div style={{ fontWeight: 900 }}>{s.name}</div>
+                  <div style={{ opacity: .8, fontSize: 13 }}>
+                    {s.durationMin} min · {currentPrice} RSD{" "}
+                    {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal} RSD` : ""}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
+                  <button style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
+                </div>
+              </div>
+            );
+          })}
 
           {!services.length && !loading && <div style={{ color: "#fff" }}>Nema usluga.</div>}
         </div>
@@ -211,6 +204,37 @@ const ghostBtn = { height: 42, borderRadius: 12, border: "1px solid rgba(255,255
 const dangerBtn = { ...btn, background: "#ff5b6e" };
 const form = { display: "grid", gridTemplateColumns: "2fr 140px 140px 160px auto auto auto", gap: 8, marginBottom: 14 };
 const list = { display: "grid", gap: 10 };
-const row = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: 14, padding: "10px 12px", boxShadow: "0 10px 20px rgba(0,0,0,.06)" };
+const row = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: 14, padding: "10px 12px", boxShadow: "0 10px 20px rgba(0,0,0,.06)", flexWrap: "wrap", gap: 8 };
 const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#efefef", cursor: "pointer", fontWeight: 800 };
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
+
+/* dodatni CSS za mobile */
+const css = `
+@media (max-width: 900px) {
+  .admincat-catrow {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .admincat-form {
+    grid-template-columns: 1fr;
+  }
+  .admincat-form input,
+  .admincat-form button,
+  .admincat-form div {
+    width: 100%;
+  }
+  .admincat-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .admincat-row > div:last-child {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+`;

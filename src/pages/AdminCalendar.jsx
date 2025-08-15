@@ -606,7 +606,7 @@ export default function AdminCalendar() {
 
   return (
     <div style={wrap}>
-      <div style={panel}>
+      <div style={panel} className="admincal">
         <style>{responsiveCSS}</style>
 
         <div style={tabbar}>
@@ -633,8 +633,8 @@ export default function AdminCalendar() {
         {tab === "day" ? (
           <>
             {/* CONTROLS */}
-            <div style={ctlWrap}>
-              <div style={ctlRowA}>
+            <div style={ctlWrap} className="ctl">
+              <div style={ctlRowA} className="ctl-row-a">
                 <div style={ctlItem}>
                   <label style={lbl}>
                     <FiCalendar /> Datum
@@ -762,7 +762,7 @@ export default function AdminCalendar() {
                 </div>
               </div>
 
-              <div style={ctlRowB}>
+              <div style={ctlRowB} className="ctl-row-b">
                 <label style={{ ...lbl, display: "flex", gap: 8 }}>
                   <input
                     type="checkbox"
@@ -804,8 +804,8 @@ export default function AdminCalendar() {
         ) : tab === "month" ? (
           <>
             {/* MONTH PLANNER + DAY STRIP + ROSTER */}
-            <div style={monthWrap}>
-              <div style={row}>
+            <div style={monthWrap} className="month-wrap">
+              <div style={row} className="month-row">
                 <div style={ctlItem}>
                   <label style={lbl}>
                     <FiUser /> Radnica
@@ -842,7 +842,7 @@ export default function AdminCalendar() {
                   </label>
                   <input
                     type="time"
-                    step="300"
+                    step={300}
                     lang="sr-RS"
                     value={tplStart}
                     onChange={(e) => setTplStart(e.target.value)}
@@ -853,7 +853,7 @@ export default function AdminCalendar() {
                   <label style={lbl}>Kraj</label>
                   <input
                     type="time"
-                    step="300"
+                    step={300}
                     lang="sr-RS"
                     value={tplEnd}
                     onChange={(e) => setTplEnd(e.target.value)}
@@ -862,7 +862,7 @@ export default function AdminCalendar() {
                 </div>
               </div>
 
-              <div style={{ ...row, alignItems: "center" }}>
+              <div style={{ ...row, alignItems: "center" }} className="month-row">
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {DOW_SR.map((d, i) => (
                     <label key={d} style={dayChip(templateDays.has(i))}>
@@ -892,7 +892,10 @@ export default function AdminCalendar() {
               </div>
 
               {/* ODMOR: datum + trajanje dana */}
-              <div style={{ ...row, alignItems: "end", marginTop: 8 }}>
+              <div
+                style={{ ...row, alignItems: "end", marginTop: 8 }}
+                className="month-row"
+              >
                 <div style={ctlItem}>
                   <label style={lbl}>
                     <FiCalendar /> Početak odmora (datum)
@@ -948,8 +951,8 @@ export default function AdminCalendar() {
         ) : (
           <>
             {/* RASPORED */}
-            <div style={monthWrap}>
-              <div style={row}>
+            <div style={monthWrap} className="month-wrap">
+              <div style={row} className="month-row">
                 <div style={ctlItem}>
                   <label style={lbl}>
                     <FiCalendar /> Mesec
@@ -1090,7 +1093,7 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false }) {
   }, [selectedKey]);
 
   return (
-    <div style={{ marginTop: 8 }}>
+    <div style={{ marginTop: 8 }} className="daystrip">
       <div style={stripWrap} ref={ref}>
         {Array.from({ length: days }, (_, i) => i + 1).map((d) => {
           const k = `${base.getFullYear()}-${pad2(
@@ -1101,6 +1104,7 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false }) {
             <button
               key={k}
               data-daykey={k}
+              className="strip-btn"
               style={stripBtn(isSel, compact)}
               onClick={() => onPickDay(k)}
               title={`Dan ${k}`}
@@ -1564,7 +1568,7 @@ function ApptModal({
   const srv = servicesById.get(appt.serviceId);
   const duration = appt.durationMin || srv?.durationMin || 0;
 
-  const dow = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
+  const dow = DOW[new Date(appt.dateKey + "T00:00:00").getDay() ];
   const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
 
   return (
@@ -1868,6 +1872,7 @@ const colHeader = {
   color: "#fff",
   background: "rgba(0,0,0,.25)",
   borderBottom: "1px solid rgba(255,255,255,.2)",
+  fontSize: "var(--head-fz, 16px)",
 };
 
 const colBody = {
@@ -2073,12 +2078,95 @@ const actionBtn = {
   fontWeight: 900,
 };
 
-/* --- Responsive fine-tuning (ne menja inline stilove, samo sitnice) --- */
+/* --- Responsive fine-tuning --- */
 const responsiveCSS = `
-  @media (max-width: 1100px) {
-    .grid-day, .grid-schedule { gap: 8px; }
+/* --- MOBILE TUNE-UP --- */
+
+.admincal :is(input, select, button) {
+  font-size: 16px !important; /* iOS zoom fix */
+}
+
+@media (max-width: 1100px) {
+  .grid-day, .grid-schedule { gap: 8px !important; }
+  .daystrip .strip-btn { min-width: 64px !important; }
+}
+
+/* TABLETI */
+@media (max-width: 900px) {
+  /* KONTROLE (day tab) → 3 kolone */
+  .ctl .ctl-row-a {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+    gap: 8px !important;
   }
-  @media (max-width: 760px) {
-    .grid-day, .grid-schedule { grid-template-columns: 68px 1fr !important; }
+  .month-wrap .month-row {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+    gap: 8px !important;
   }
+}
+
+/* TELEFONI */
+@media (max-width: 640px) {
+  /* Grid: vreme levo uže, desno 1 kolona */
+  .grid-day, .grid-schedule {
+    grid-template-columns: 64px 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* KONTROLE (day tab) → 2 kolone */
+  .ctl .ctl-row-a {
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  }
+
+  .ctl .ctl-row-b { gap: 6px !important; }
+
+  /* Month planner redovi → 2 kolone */
+  .month-wrap .month-row {
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  }
+
+  /* DayStrip kompaktniji */
+  .daystrip button {
+    min-width: 58px !important;
+    padding: 6px 6px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Inputi i selecti širina 100% */
+  .admincal input,
+  .admincal select {
+    width: 100% !important;
+  }
+
+  /* Dugmad veća – touch friendly */
+  .admincal button {
+    min-height: 42px !important;
+  }
+
+  /* Manje margine unutar kolona */
+  .admincal .grid-day > div:last-child > div,
+  .admincal .grid-schedule > div:last-child {
+    margin: 6px !important;
+  }
+
+  .admincal { --head-fz: 14px; }
+}
+
+/* VEOMA MALI TELEFONI */
+@media (max-width: 420px) {
+  /* KONTROLE (day tab) → 1 kolona */
+  .ctl .ctl-row-a { grid-template-columns: 1fr !important; }
+
+  .month-wrap .month-row { grid-template-columns: 1fr !important; }
+
+  .daystrip button {
+    min-width: 52px !important;
+    padding: 5px 5px !important;
+  }
+
+  .grid-day span, .grid-schedule span {
+    font-size: 12px !important;
+  }
+}
 `;
