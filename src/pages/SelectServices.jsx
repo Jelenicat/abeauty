@@ -179,15 +179,16 @@ export default function SelectServices() {
         <div style={catStack}>
           {cats.map((c) => (
             <div key={c.id} style={{ display: "grid", gap: 10 }}>
-              {isMobile ? (
-                <button onClick={() => openCategoryModal(c.id)} style={mobCatCard(catImage(c))}>
-                  <span style={mobCatLabel}>{String(c.name || "").toUpperCase()}</span>
-                </button>
-              ) : (
-                <button onClick={() => openCategoryModal(c.id)} style={deskCatBtn()}>
-                  {c.name}
-                </button>
-              )}
+          {isMobile ? (
+  <button onClick={() => openCategoryModal(c.id)} style={mobCatCard(catImage(c))}>
+    <span style={mobCatLabel}>{String(c.name || "").toUpperCase()}</span>
+  </button>
+) : (
+  <button onClick={() => openCategoryModal(c.id)} style={deskCatCard(catImage(c))}>
+    <span style={mobCatLabel}>{String(c.name || "").toUpperCase()}</span>
+  </button>
+)}
+
             </div>
           ))}
         </div>
@@ -326,7 +327,7 @@ const wrap = { minHeight: "100vh", background: "url('/slika7.webp') center/cover
 const panel = { width: "min(1200px, 100%)", background: "linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.1))", border: "1px solid rgba(255,255,255,.5)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.18)", padding: "clamp(16px,3vw,24px)" };
 const title = { margin: 0, color: "#000" };
 const catStack = { display: "grid", gap: 16, marginTop: 12 };
-const deskCatBtn = (imgUrl) => ({ height: 64, borderRadius: 16, background: "rgba(255,255,255,.5)", border: "none",  outline: "none", color: "#000", fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" });
+const deskCatBtn = () => ({ height: 64, borderRadius: 16, background: "rgba(255,255,255,.5)", border: "none",  outline: "none", color: "#000", fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" });
 const mobCatCard = (imgUrl) => ({ position: "relative", display: "block", width: "100%", height: 96, borderRadius: 18, border: "none", overflow: "hidden", cursor: "pointer", boxShadow: "0 10px 24px rgba(0,0,0,.18)", background: `linear-gradient(180deg, rgba(255,255,255,0) 40%, rgba(0,0,0,.18) 100%), url('${imgUrl}') center/cover no-repeat` });
 const mobCatLabel = { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "rgba(255,255,255,.5)", color: "#000", padding: "10px 16px", borderRadius: 14, fontWeight: 900, letterSpacing: ".06em", fontSize: 13, textAlign: "center", boxShadow: "0 8px 18px rgba(0,0,0,.15)" };
 const srvGrid = (mobile) => ({ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fill,minmax(260px,1fr))", gap: 10 });
