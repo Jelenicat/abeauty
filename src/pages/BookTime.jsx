@@ -14,6 +14,7 @@ import {
   getDocs,
   addDoc,
   serverTimestamp,
+  updateDoc
 } from "firebase/firestore";
 
 /* ---------- helpers ---------- */
@@ -251,8 +252,8 @@ const { selectedServices, clearServices } = useBooking();
     });
   }
 
- async function book(slot) {
-  if (busyAction) return; // blokiraj dupli klik
+async function book(slot) {
+  if (busyAction) return;
 
   const emp = employees.find((e) => e.id === slot.employeeId);
   if (!emp) {
@@ -265,7 +266,7 @@ const { selectedServices, clearServices } = useBooking();
 
     const dk = dateKey(selectedDay);
 
-    // re-check preklapanja
+    // re-check zauzeće
     const qA = query(
       collection(db, "appointments"),
       where("dateKey", "==", dk),
@@ -278,7 +279,8 @@ const { selectedServices, clearServices } = useBooking();
       return;
     }
 
-    const payload = {
+    // upis termina
+    await addDoc(collection(db, "appointments"), {
       type: "booking",
       status: "booked",
       employeeId: emp.id,
@@ -297,43 +299,32 @@ const { selectedServices, clearServices } = useBooking();
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       ...(activeService.color ? { color: activeService.color } : {}),
-    };
+    });
 
-    // upis termina
-    const docRef = await addDoc(collection(db, "appointments"), payload);
-
-    // osveži prefs da označi da je zakazano
+    // Označi ovu uslugu kao "booked" u prefs
     const next = new Map(prefs);
     next.set(activeService.id, { ...p, booked: true });
     setPrefs(next);
 
+    // Provera da li je ostalo usluga
     const remaining = selectedServices.find((s) => !(next.get(s.id)?.booked));
     if (remaining) {
-      setActiveId(remaining.id);
-      alert("Termin je uspešno rezervisan ❤️");
+      setActiveId(remaining.id); // prebaci na sledeću
+      alert("Termin je uspešno zakazan ❤️");
     } else {
       alert("Sve izabrane usluge su uspešno zakazane ❤️");
-
-      // ⚡ odmah ažuriraj status da se ne vidi dugme Otkaži u Home.jsx
-      await updateDoc(docRef, { status: "confirmed" }); 
-      // možeš staviti i "done" ili "pending" ako želiš da ih potpuno sakriješ
-
       clearServices();
-      nav("/"); // odmah preusmeri na početnu
+      nav("/"); // na početnu
     }
 
   } catch (err) {
     console.error("Booking error:", err);
-    const msg = String(err?.message || "Greška pri rezervaciji.");
-    alert(
-      msg.includes("index")
-        ? "Upit traži Firestore indeks. Otvori konzolu i klikni na link koji je Firestore generisao da napraviš indeks, pa pokušaj ponovo."
-        : msg
-    );
+    alert("Greška pri rezervaciji. Pokušaj ponovo.");
   } finally {
     setBusyAction(false);
   }
 }
+
 
   const allBooked = selectedServices.every((s) => prefs.get(s.id)?.booked);
 
