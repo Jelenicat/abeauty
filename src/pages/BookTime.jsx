@@ -106,7 +106,8 @@ function useIsMobile(breakpoint = 820) {
 
 /* ===================== MAIN COMPONENT ===================== */
 export default function BookTime() {
-  const { selectedServices } = useBooking();
+const { selectedServices, clearServices } = useBooking();
+
   const { user } = useAuth();
   const nav = useNavigate();
 
@@ -316,6 +317,7 @@ if (remaining) {
   setActiveId(remaining.id);
 } else {
   alert("Sve izabrane usluge su uspešno zakazane ❤️");
+  clearServices();
   nav("/"); // preusmeravanje na home
 }
 
