@@ -483,6 +483,73 @@ body.gallery-open{ overflow:hidden; }
 .lokacija-adresa {
   font-weight: 500;
 }
+/* isto kao .zakazi-btn, ali spusteno ispod */
+.cancel-btn{
+  position:absolute;
+  left:50%;
+  top:calc(50% + 90px);          /* 90px ispod glavnog dugmeta */
+  transform:translate(-50%, -50%);
+  z-index:2;
+
+  background:url("/slika3.webp") center/cover no-repeat;
+  border:none;
+  padding:20px 50px;
+  font-size:1.5rem;
+  color:#000000;
+  font-weight:700;
+  border-radius:999px;
+  cursor:pointer;
+  box-shadow:0 18px 24px rgba(0,0,0,0.7);
+  transition:transform .2s ease, box-shadow .2s ease;
+  animation: floaty 2.8s ease-in-out infinite;
+}
+.cancel-btn:hover{
+  transform:translate(-50%, -50%) scale(1.05);
+  box-shadow:0 16px 32px rgba(0,0,0,0.3);
+}
+/* Overlay: uz vrh + skrol */
+.gallery-overlay.overlay--top {
+  align-items: flex-start;
+  padding: 24px 12px;
+  overflow-y: auto;
+}
+
+/* Modal otkazivanja: kolona, sečenje sadržaja u radijusu */
+.cancel-dialog {
+  background: #fff;
+  color: #000;
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.3);
+  max-width: 420px;
+  width: calc(100% - 32px);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 85vh;
+  overflow: hidden;              /* važno: da se sadržaj ne preliva preko radijusa */
+}
+
+/* Skrol lista unutar modala (kartice se skroluju, header ostaje) */
+.cancel-list {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;            /* da ne preseče senku na scrolleru */
+}
+
+/* Kartica termina */
+.cancel-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
 
 @media (max-width: 840px){
   .services2-body{ grid-template-columns: 1fr; }

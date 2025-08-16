@@ -119,6 +119,15 @@ export default function Home() {
     setGalleryOpen(false);
     document.body.classList.remove("gallery-open");
   };
+/* ===== Cancel modal scroll lock ===== */
+useEffect(() => {
+  if (cancelModalOpen) {
+    document.body.classList.add("gallery-open");
+  } else {
+    document.body.classList.remove("gallery-open");
+  }
+  return () => document.body.classList.remove("gallery-open");
+}, [cancelModalOpen]);
 
   /* ===== Usluge (modal) ===== */
   const openServices = () => {
@@ -314,24 +323,11 @@ export default function Home() {
         </button>
 
         {/* DODATO: Otkaži termin (vidljivo samo za korisnika koji nije admin i ima buduće termine) */}
-        {isLoggedIn && !user?.isAdmin && myAppointments.length > 0 && (
-          <button
-            className="cancel-btn"
-            onClick={() => setCancelModalOpen(true)}
-            style={{
-              marginTop: 10,
-              background: "#ff6b81",
-              color: "#fff",
-              padding: "10px 16px",
-              border: "none",
-              borderRadius: 8,
-              cursor: "pointer",
-              boxShadow: "0 8px 18px rgba(255,107,129,.28)",
-            }}
-          >
-            Otkaži termin
-          </button>
-        )}
+         {isLoggedIn && !user?.isAdmin && myAppointments.length > 0 && (
+   <button className="cancel-btn" onClick={() => setCancelModalOpen(true)}>
+     Otkaži termin
+   </button>
+ )}
       </section>
 
       {/* O NAMA */}
@@ -485,91 +481,73 @@ export default function Home() {
       )}
 
       {/* CANCEL MODAL */}
-      {cancelModalOpen && (
-        <div className="gallery-overlay" onClick={() => setCancelModalOpen(false)}>
-          <div
-            className="cancel-dialog"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#fff",
-              padding: 20,
-              borderRadius: 16,
-              maxWidth: 420,
-              width: "calc(100% - 32px)",
-              color: "#000",
-              boxShadow: "0 8px 30px rgba(0,0,0,.3)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0 }}>Moji termini</h3>
-              <button className="gallery-close" onClick={() => setCancelModalOpen(false)} aria-label="Zatvori">
-                ✕
-              </button>
-            </div>
 
-            <p style={{ marginTop: 8, marginBottom: 12, fontSize: 13, lineHeight: 1.4 }}>
-              Besplatno otkazivanje je moguće do <b>6 sati</b> pre termina. Nakon toga,
-              biće naplaćeno <b>50%</b> iznosa pri sledećem zakazivanju.
-            </p>
+{/* CANCEL MODAL – NOVI DIZAJN */}
+{cancelModalOpen && (
+  <div
+    className="gallery-overlay overlay--top"
+    onClick={() => setCancelModalOpen(false)}
+  >
+    <div
+      className="cancel-dialog"
+      onClick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Moji termini"
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0 }}>Moji termini</h3>
+        <button className="gallery-close" onClick={() => setCancelModalOpen(false)} aria-label="Zatvori">
+          ✕
+        </button>
+      </div>
 
-            {!myAppointments.length ? (
-              <div style={{ opacity: 0.8 }}>Nema budućih termina.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {myAppointments.map((a) => {
-                  const dstr = new Intl.DateTimeFormat("sr-RS", {
-                    weekday: "short",
-                    day: "2-digit",
-                    month: "2-digit",
-                    year: "numeric",
-                  }).format(a.dateObj);
-                  const hoursLeft = Math.max(0, Math.floor(diffHours(a.dateObj)));
-                  return (
-                    <div
-                      key={a.id}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr auto",
-                        gap: 8,
-                        alignItems: "center",
-                        padding: "10px 12px",
-                        border: "1px solid #eee",
-                        borderRadius: 12,
-                        background: "#fafafa",
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 800 }}>
-                          {dstr} u {a.startHHMM} — {a.serviceName || "Usluga"}
-                        </div>
-                        <div style={{ fontSize: 12, opacity: 0.8 }}>
-                          {a.employeeName ? `Radnica: ${a.employeeName}` : ""}
-                          {a.price ? ` • Cena: ${money(a.price)}` : ""}
-                          {` • Preostalo ~ ${hoursLeft}h`}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => cancelAppointment(a)}
-                        style={{
-                          background: "#ff6b81",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: 10,
-                          padding: "8px 12px",
-                          cursor: "pointer",
-                          fontWeight: 700,
-                        }}
-                      >
-                        Otkaži
-                      </button>
-                    </div>
-                  );
-                })}
+      <p style={{ marginTop: 0, marginBottom: 8, fontSize: 13, lineHeight: 1.4 }}>
+        Besplatno otkazivanje je moguće do <b>6 sati</b> pre termina. Nakon toga,
+        biće naplaćeno <b>50%</b> iznosa pri sledećem zakazivanju.
+      </p>
+
+      {!myAppointments.length ? (
+        <div style={{ opacity: 0.8 }}>Nema budućih termina.</div>
+      ) : (
+        <div className="cancel-list">
+          {myAppointments.map((a) => {
+            const dstr = new Intl.DateTimeFormat("sr-RS", {
+              weekday: "short", day: "2-digit", month: "2-digit", year: "numeric",
+            }).format(a.dateObj);
+            const hoursLeft = Math.max(0, Math.floor(diffHours(a.dateObj)));
+            return (
+              <div key={a.id} className="cancel-card">
+                <div>
+                  <div style={{ fontWeight: 800 }}>
+                    {dstr} u {a.startHHMM} — {a.serviceName || "Usluga"}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    {a.employeeName ? `Radnica: ${a.employeeName}` : ""}
+                    {a.price ? ` • Cena: ${money(a.price)}` : ""}
+                    {` • Preostalo ~ ${hoursLeft}h`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => cancelAppointment(a)}
+                  style={{
+                    background: "#ff6b81", color: "#fff", border: "none",
+                    borderRadius: 10, padding: "8px 12px", cursor: "pointer", fontWeight: 700,
+                  }}
+                >
+                  Otkaži
+                </button>
               </div>
-            )}
-          </div>
+            );
+          })}
         </div>
       )}
+    </div>
+  </div>
+)}
+
+
+
 
       {/* LOGIN MODAL */}
       <LoginModal
