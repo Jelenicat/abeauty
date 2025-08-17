@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
-  doc, getDoc, updateDoc, deleteDoc,
+  doc, getDoc, setDoc, updateDoc, deleteDoc,
   collection, query, where, onSnapshot, addDoc,
   serverTimestamp, orderBy
 } from "firebase/firestore";
@@ -33,8 +33,17 @@ export default function AdminCategory() {
 
     let off = () => {};
     if (catId === "discounts") {
-      setCatName("Na popustu");
-      setLoading(false);
+      (async () => {
+        try {
+          const snap = await getDoc(doc(db, "meta", "discounts"));
+          const t = snap.exists() ? (snap.data().title || "Na popustu") : "Na popustu";
+          setCatName(t);
+        } catch {
+          setCatName("Na popustu");
+        }
+        setLoading(false);
+      })();
+
       off = onSnapshot(
         query(
           collection(db, "services"),
@@ -77,15 +86,35 @@ export default function AdminCategory() {
   };
 
   const saveCategoryName = async () => {
-    if (catId === "discounts") return;
     const n = catName.trim();
     if (!n) return;
-    await updateDoc(doc(db, "categories", catId), { name: n, updatedAt: serverTimestamp() });
+
+    if (catId === "discounts") {
+      // meta/discounts.title
+      try {
+        await updateDoc(doc(db, "meta", "discounts"), {
+          title: n,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // ako dokument ne postoji – kreiraj
+        await setDoc(doc(db, "meta", "discounts"), {
+          title: n,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    } else {
+      await updateDoc(doc(db, "categories", catId), {
+        name: n,
+        updatedAt: serverTimestamp(),
+      });
+    }
     alert("Naziv kategorije sačuvan.");
   };
 
   const deleteCategory = async () => {
-    if (catId === "discounts") return;
+    if (catId === "discounts") return; // specijalna – ne brišemo
     if (services.length) {
       if (!confirm(`Kategorija ima ${services.length} usluga. Obrisaćeš SAMO kategoriju (usluge ostaju). Nastavi?`)) return;
     } else {
@@ -138,18 +167,25 @@ export default function AdminCategory() {
     <div style={wrap}>
       <div style={panel}>
         <style>{css}</style>
+
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
           <button style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
           <h2 style={title}>{catName || "Kategorija"}</h2>
         </div>
 
-        {catId !== "discounts" && (
-          <div className="admincat-catrow">
-            <input style={inp} value={catName} onChange={e => setCatName(e.target.value)} placeholder="Naziv kategorije" />
-            <button style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
+        {/* EDIT NAZIVA — dostupno i za "discounts"; brisanje samo za obične */}
+        <div className="admincat-catrow" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
+          <input
+            style={inp}
+            value={catName}
+            onChange={e => setCatName(e.target.value)}
+            placeholder="Naziv kategorije"
+          />
+          <button style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
+          {catId !== "discounts" && (
             <button style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
-          </div>
-        )}
+          )}
+        </div>
 
         <form onSubmit={saveService} style={form} className="admincat-form">
           <input style={inp} placeholder="Naziv usluge" value={name} onChange={e => setName(e.target.value)} />

@@ -15,8 +15,8 @@ export default function AdminEmployees() {
   // forma
   const [editing, setEditing] = useState(null); // null | employee obj
   const [name, setName] = useState("");
-  const [selectedCats, setSelectedCats] = useState(new Set());      // category ids
-  const [selectedServices, setSelectedServices] = useState(new Set()); // service ids
+  const [selectedCats, setSelectedCats] = useState(new Set());      
+  const [selectedServices, setSelectedServices] = useState(new Set()); 
   const [loading, setLoading] = useState(true);
 
   // --- učitavanje realtime ---
@@ -41,7 +41,6 @@ export default function AdminEmployees() {
     return () => { offEmp(); offCats(); offServices(); };
   }, []);
 
-  // pomoćni: usluge grupisane po kategoriji
   const servicesByCat = useMemo(() => {
     const map = new Map();
     for (const s of allServices) {
@@ -51,7 +50,6 @@ export default function AdminEmployees() {
     return map;
   }, [allServices]);
 
-  // util: slug iz imena -> /public/employees/<slug>.jpg
   const slugify = (str) =>
     String(str || "")
       .normalize("NFKD")
@@ -60,11 +58,9 @@ export default function AdminEmployees() {
       .replace(/(^-|-$)/g, "")
       .toLowerCase();
 
-  // Ako doc ima photoUrl koristi njega; inače pretpostavi /employees/<slug>.jpg
   const photoSrcFor = (emp) =>
     (emp.photoUrl && String(emp.photoUrl)) || `/employees/${slugify(emp.name)}.jpg`;
 
-  // --- handlers ---
   const resetForm = () => {
     setEditing(null);
     setName("");
@@ -77,7 +73,6 @@ export default function AdminEmployees() {
     setName(emp.name || "");
     setSelectedCats(new Set(emp.categories || []));
     setSelectedServices(new Set(emp.services || []));
-    // auto-scroll blago prema editoru
     setTimeout(() => {
       document.getElementById(`emp-${emp.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 0);
@@ -111,13 +106,11 @@ export default function AdminEmployees() {
     if (editing?.id === id) resetForm();
   };
 
-  // klik na kategoriju: dodeli/ukloni celu kategoriju
   const toggleCategory = (catId) => {
     const next = new Set(selectedCats);
     if (next.has(catId)) next.delete(catId); else next.add(catId);
     setSelectedCats(next);
 
-    // ako je kategorija uključena — ukloni pojedinačne usluge te kategorije
     if (next.has(catId)) {
       const nextServices = new Set(selectedServices);
       (servicesByCat.get(catId) || []).forEach(s => nextServices.delete(s.id));
@@ -125,7 +118,6 @@ export default function AdminEmployees() {
     }
   };
 
-  // klik na uslugu (radi samo ako kategorija NIJE čekirana)
   const toggleService = (srv) => {
     if (selectedCats.has(srv.categoryId)) return;
     const next = new Set(selectedServices);
@@ -133,7 +125,6 @@ export default function AdminEmployees() {
     setSelectedServices(next);
   };
 
-  // fallback za <img> — ako slika ne postoji u /public, vrati inicijale
   const ImgOrFallback = ({ src, name }) => {
     const [error, setError] = useState(false);
     if (!src || error) {
@@ -152,9 +143,7 @@ export default function AdminEmployees() {
   return (
     <div style={wrap}>
       <div style={panel}>
-   
-
-        {/* forma za dodavanje/izmene (ime) */}
+        {/* input + dugme Dodaj novog zaposlenog */}
         <form onSubmit={saveEmployee} style={form}>
           <input
             value={name}
@@ -162,13 +151,12 @@ export default function AdminEmployees() {
             placeholder="Ime i prezime zaposlenog"
             style={inp}
           />
-          <div style={{display:"flex", gap:8, alignItems:"flex-end"}}>
-            {editing && <button type="button" onClick={resetForm} style={ghostBtn}>Otkaži</button>}
-            <button type="submit" style={btn}>{editing ? "Sačuvaj izmene" : "Dodaj zaposlenog"}</button>
-          </div>
+          {!editing && (
+            <button type="submit" style={btn}>Dodaj</button>
+          )}
         </form>
 
-        {/* GRID kartice radnica (klik otvara inline editor ispod) */}
+        {/* GRID kartice radnica */}
         <div style={empGrid}>
           {employees.map((emp) => {
             const isSel = editing?.id === emp.id;
@@ -197,14 +185,14 @@ export default function AdminEmployees() {
                   )}
                 </div>
 
-                {/* INLINE editor: dodela kategorija/usluga ispod selektovane kartice */}
+                {/* INLINE editor sa Otkaži + Sačuvaj dole */}
                 {isSel && (
                   <div style={inlineEditor}>
                     <div style={inlineHeader}>
                       <div style={{fontWeight:900}}>
                         Dodela kategorija i usluga — {editing?.name}
                       </div>
-                      <div style={{display:"flex", gap:8}}>
+                      <div style={btnRow}>
                         <button type="button" onClick={resetForm} style={ghostBtn}>Otkaži</button>
                         <button type="button" onClick={saveEmployee} style={btn}>Sačuvaj izmene</button>
                       </div>
@@ -230,7 +218,6 @@ export default function AdminEmployees() {
                               </span>
                             </div>
 
-                            {/* >>> ispravka: uklonjena suvišna viticaste } <<< */}
                             <div style={srvList}>
                               {services.map(s => {
                                 const disabled = catChecked;
@@ -278,7 +265,7 @@ export default function AdminEmployees() {
 /* ===== styles ===== */
 const wrap = {
   minHeight:"100vh",
-  background:'url("/slika7.webp") center/cover no-repeat fixed',
+  background:'url("/slika1.webp") center/cover no-repeat fixed',
   padding:24, display:"flex", justifyContent:"center", alignItems:"flex-start"
 };
 
@@ -292,24 +279,29 @@ const panel = {
   padding:"clamp(18px,4vw,36px)", marginTop:16
 };
 
-const title = {
-  margin:"0 0 18px",
-  color:"#000",
-  textAlign:"center",
-  fontWeight:900,
-  fontSize:"clamp(20px,3.4vw,32px)",
-  letterSpacing:.3
-};
-
 const form = { display:"grid", gridTemplateColumns:"1fr auto", gap:12, margin:"10px 0 18px" };
 const inp  = { height:46, borderRadius:14, border:"1px solid #eaeaea", padding:"0 14px", fontSize:15, background:"#fff", boxShadow:"0 6px 18px rgba(0,0,0,.06)" };
-const btn  = { height:46, border:"none", borderRadius:14, background:"linear-gradient(135deg,#ff5fa2,#ff7fb5)", color:"#fff", fontWeight:800, cursor:"pointer", padding:"0 18px", boxShadow:"0 10px 22px rgba(255,127,181,.35)" };
-const ghostBtn = { height:46, borderRadius:14, border:"1px solid rgba(255,255,255,.7)", background:"transparent", color:"#fff", fontWeight:800, padding:"0 16px", cursor:"pointer" };
+
+const btn  = { height:46, border:"none", borderRadius:14, background:"linear-gradient(135deg,#ff5fa2,#ff7fb5)", color:"fff", fontWeight:800, cursor:"pointer", padding:"0 18px", boxShadow:"0 10px 22px rgba(255,127,181,.35)", width:"100%", maxWidth:400 };
+const ghostBtn = { 
+  height:46,
+  borderRadius:14,
+  border:"1px solid #000",   // crni okvir
+  background:"transparent",
+  color:"#000",              // crni tekst
+  fontWeight:800,
+  padding:"0 16px",
+  cursor:"pointer",
+  width:"100%",
+  maxWidth:400
+};
+
+
+const btnRow = { display:"flex", flexWrap:"wrap", gap:8, width:"100%" };
 
 const smBtn   = { height:32, padding:"0 10px", border:"none", borderRadius:10, background:"#efefef", cursor:"pointer", fontWeight:800 };
 const smDel   = { ...smBtn, background:"#ffe1e1", color:"#7a1b1b" };
 
-/* === GRID sa kvadratnim karticama === */
 const empGrid = {
   display:"grid",
   gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))",
@@ -349,7 +341,6 @@ const initialsInSquare = { fontWeight:900, color:"#b15b78", fontSize:22, letterS
 const empName = { fontWeight:800, fontSize:13, textAlign:"center", color:"#222", minHeight:36, lineHeight:1.2 };
 const cardActions = { display:"flex", gap:8 };
 
-/* === INLINE editor ispod kartice === */
 const inlineEditor = {
   gridColumn: "1 / -1",
   background: "rgba(255,255,255,.45)",
@@ -368,7 +359,6 @@ const inlineHeader = {
   color: "#000"
 };
 
-/* --- sekcija dodela usluga/kategorija --- */
 const grid   = { display:"grid", gap:18, gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))" };
 const catCard = {
   background:"#fff",

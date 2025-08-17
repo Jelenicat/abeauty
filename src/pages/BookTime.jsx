@@ -832,10 +832,11 @@ function StylistsStrip({ employees, selectedId, onSelect, mobile = false }) {
   }
 
   // === mobilne varijante dimenzija ===
-  const AV = mobile ? 88 : 70;
-  const GAP = mobile ? 4 : 8;
-  const MINW = mobile ? 110 : 160;
-  const PAD = mobile ? 4 : 10;
+const AV = mobile ? 110 : 70;   // veći avatar na mobilnom
+const GAP = mobile ? 4 : 8;
+const MINW = mobile ? 110 : 160;
+const PAD = mobile ? 4 : 10;
+
 
   const stripWrap = {
     display: "grid",

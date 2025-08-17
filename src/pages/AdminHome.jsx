@@ -1,3 +1,4 @@
+// AdminHome.jsx
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -15,42 +16,39 @@ export default function AdminHome() {
 
   const handleLogout = async () => {
     try {
-      // očekuje se da AuthContext ima logout() koji čisti sesiju/localStorage
       await (logout?.() ?? Promise.resolve());
     } finally {
-      navigate("/login", { replace: true }); // ili "/" po tvojoj ruti
+      navigate("/login", { replace: true });
     }
   };
 
   return (
     <div className="admin-wrap">
-      {/* Dugme za odjavu gore desno */}
-      <button className="admin-logout" onClick={handleLogout} title="Odjavi se">
-        <FiLogOut style={{ marginRight: 8 }} />
-        Odjavi se
-      </button>
-
       <div className="admin-panel">
-        
+        {/* GRID */}
+        <div className="admin-grid">
+          <button className="admin-card" onClick={() => navigate("/admin/katalog")}>
+            Katalog usluga
+          </button>
+          <button className="admin-card" onClick={() => navigate("/admin/kalendar")}>
+            Kalendar
+          </button>
+          <button className="admin-card" onClick={() => navigate("/admin/finansije")}>
+            Troškovi i zarada
+          </button>
+          <button className="admin-card" onClick={() => navigate("/admin/zaposleni")}>
+            Zaposleni
+          </button>
+          <button className="admin-card" onClick={() => navigate("/admin/klijenti")}>
+            Klijenti
+          </button>
+        </div>
 
-  <div className="admin-grid">
-  <button className="admin-card" onClick={() => navigate("/admin/katalog")}>
-    Katalog usluga
-  </button>
-  <button className="admin-card" onClick={() => navigate("/admin/kalendar")}>
-    Kalendar
-  </button>
-  <button className="admin-card" onClick={() => navigate("/admin/finansije")}>
-    Troškovi i zarada
-  </button>
-  <button className="admin-card" onClick={() => navigate("/admin/zaposleni")}>
-    Zaposleni
-  </button>
-  <button className="admin-card" onClick={() => navigate("/admin/klijenti")}>
-    Klijenti
-  </button>
-</div>
-
+        {/* Dugme za odjavu NA DNU SADRŽAJA */}
+        <button className="admin-logout" onClick={handleLogout} title="Odjavi se">
+          <FiLogOut style={{ marginRight: 8 }} />
+          Odjavi se
+        </button>
       </div>
     </div>
   );

@@ -158,11 +158,9 @@ export default function AdminFinansije() {
   const apptsByEmployee = useMemo(() => {
     const m = new Map();
     const norm = (a) => {
-      // datum
       const d = a.dateKey || (a.startAt?.toDate
         ? a.startAt.toDate().toISOString().slice(0,10)
         : "");
-      // vreme
       const sh = a.startHHMM || (a.startAt?.toDate
         ? a.startAt.toDate().toTimeString().slice(0,5)
         : "");
@@ -230,14 +228,14 @@ export default function AdminFinansije() {
     <div style={wrap} className="fin-wrap">
       <style>{css}</style>
       <div style={panel} className="fin-panel">
-       <div style={header} className="fin-sticky">
-
-          <h2 style={title}>Troškovi i zarada</h2>
+        <div style={header} className="fin-sticky">
+          
           <input
             type="month"
             value={month}
             onChange={e => setMonth(e.target.value)}
             style={monthInp}
+            className="fin-month"
             aria-label="Izaberi mesec"
           />
         </div>
@@ -435,6 +433,31 @@ const css = `
 .fin-wrap, .fin-wrap * { font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
 .fin-panel { position: relative; }
 
+/* Ukloni "plavu" boju i stilizuj month input */
+.fin-month{
+  color:#222;
+  background:#fff;
+  border:1px solid #eaeaea;
+  border-radius:12px;
+  height:40px;
+  padding:0 10px;
+  outline:none;
+}
+.fin-month:focus{
+  border-color:#ff9cbc;
+  box-shadow:0 0 0 3px rgba(255,127,181,.25);
+}
+.fin-month::-webkit-datetime-edit,
+.fin-month::-webkit-datetime-edit-text,
+.fin-month::-webkit-datetime-edit-month-field,
+.fin-month::-webkit-datetime-edit-year-field {
+  color:#222;
+}
+.fin-month::-webkit-calendar-picker-indicator{
+  opacity:.75;
+  filter: grayscale(100%);
+}
+
 /* Tabs */
 .fin-tab {
   height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid #e7e7e7;
@@ -490,20 +513,20 @@ const css = `
   background:linear-gradient(135deg,#ff5fa2,#ff7fb5); color:#fff; box-shadow:0 10px 22px rgba(255,127,181,.35);
   -webkit-appearance:none; appearance:none; outline:none; -webkit-tap-highlight-color:transparent;
 }
-.fin-btn.ghost{ background:#efefef; color:#222; box-shadow:none; }
+.fin-btn.ghost{ background:#efefef; color:#222; box-shadow:none; white-space:nowrap; }
 .fin-btn.danger{ background:#ff6b6b; }
 
 /* Liste */
 .fin-list{ display:grid; gap:8px; padding:12px; }
 .fin-item{
-  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
   background:#fff; border:1px solid #f1f1f1; border-radius:14px; padding:12px; box-shadow:0 10px 18px rgba(0,0,0,.06);
 }
 .fin-item.emp { width:100%; text-align:left; cursor:pointer; }
 .fin-item.emp.open { outline:2px solid #ffd3e6; }
 
-.fin-item-name{ font-weight:800; color:#222; }
-.fin-item-right{ display:flex; align-items:center; gap:10px; }
+.fin-item-name{ font-weight:800; color:#222; flex:1; min-width:160px; word-break:break-word; }
+.fin-item-right{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
 .fin-item-amount{ font-weight:900; color:#333; white-space:nowrap; }
 
 /* Sublista termina po radnici */
@@ -528,7 +551,7 @@ const css = `
 .fin-error{ color:#ff5fa2; font-weight:700; text-align:center; margin:8px 0; }
 
 /* =========================
-   MOBILNE DORADЕ
+   MOBILNE DORADE
    ========================= */
 @media (max-width: 680px){
   /* wrap/panel spacing */
@@ -541,14 +564,11 @@ const css = `
 
   /* header unutra */
   .fin-sticky h2 { font-size: 20px !important; }
-  .fin-sticky input[type="month"]{
-    height: 42px; border-radius: 12px; padding: 0 10px;
-  }
+  .fin-month{ height: 42px; }
 
   /* tabs kao full width i veća tap meta */
   .fin-tab { flex:1; height: 44px; border-radius: 14px; font-size:14px; }
   .fin-tab + .fin-tab { margin-left: 6px; }
-  /* kontejner tabs-a već ima display:flex u JSX; ovo centriranje */
   .fin-panel > div:nth-of-type(2){ display:flex; gap:6px; }
 
   /* kartice sa sumama — 1 kolona */
@@ -561,10 +581,19 @@ const css = `
   .fin-input{ height: 44px; font-size: 15px; }
   .fin-btn{ height: 44px; width: 100%; border-radius: 14px; }
 
-  /* stavke lista kompaktnije i „klikabilnije” */
-  .fin-item{ padding: 12px; border-radius: 14px; }
-  .fin-item-right{ gap: 8px; }
-  .fin-item-amount{ font-size: 15px; }
+  /* LISTE: raspored u kolonu da dugmad ne iskaču */
+  .fin-item{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .fin-item-right{
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .fin-item-right .fin-btn{
+    width: 100%;
+  }
 
   /* sub-items: u dve linije na uskim ekranima */
   .fin-subitem{
@@ -582,4 +611,3 @@ const css = `
   .fin-tab{ height: 42px; font-size: 13px; }
 }
 `;
-

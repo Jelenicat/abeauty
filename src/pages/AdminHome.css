@@ -5,7 +5,6 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  position: relative; /* za odjavi se dugme */
 }
 
 .admin-panel {
@@ -16,6 +15,11 @@
   border-radius: 28px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
   padding: clamp(18px, 4vw, 36px);
+
+  /* NOVO: flex kolona da gurne dugme na dno */
+  display: flex;
+  flex-direction: column;
+  min-height: 70vh;
 }
 
 .admin-title {
@@ -68,24 +72,41 @@
   box-shadow: 0 20px 38px rgba(0, 0, 0, .18);
 }
 
+
 /* “Odjavi se” dugme */
+
+
 .admin-logout {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  height: 38px;
-  padding: 0 14px;
+  height: 42px;
+  padding: 0 18px;
   border: none;
   border-radius: 999px;
   background: linear-gradient(135deg, #ff5fa2, #ff7fb5);
   color: #fff;
-  font-weight: 900;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   cursor: pointer;
   box-shadow: 0 8px 20px rgba(255, 127, 181, .28);
+  font-size: 16px;
+
+  margin-top: 24px;   /* ⬅️ dodat razmak od poslednje kartice */
+  align-self: center; /* da ostane centrirano */
 }
+
 
 .admin-logout:active {
   transform: translateY(1px);
 }
+
+/* prilagodjavanje za mobilne ekrane */
+@media (max-width: 600px) {
+  .admin-logout {
+    width: 50%;
+    max-width: 400px;
+    height: 50px;
+    font-size: 18px;
+  }
+}
+

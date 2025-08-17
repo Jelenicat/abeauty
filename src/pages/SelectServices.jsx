@@ -1,6 +1,6 @@
 // src/pages/SelectServices.jsx
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { useBooking } from "../context/BookingContext";
@@ -46,13 +46,11 @@ export default function SelectServices() {
   const [activeCatId, setActiveCatId] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // PROMPT posle selekcije usluge
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptServiceName, setPromptServiceName] = useState("");
 
   const navigate = useNavigate();
 
-  // responsive flag
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined"
       ? window.matchMedia("(max-width: 768px)").matches
@@ -114,7 +112,6 @@ export default function SelectServices() {
     if (!activeCatId && cats.length) setActiveCatId(cats[0].id);
   }, [cats, activeCatId]);
 
-  // helper za sliku kategorije
   const catImage = (c) =>
     c?.image || c?.photo || c?.cover || c?.img || "/slika6.webp";
 
@@ -179,20 +176,27 @@ export default function SelectServices() {
     () => services.filter((s) => Number(discountOf(s) || 0) > 0),
     [services]
   );
-  const maxDiscount = useMemo(
-    () =>
-      discountedServices.reduce(
-        (m, s) => Math.max(m, Number(discountOf(s) || 0)),
-        0
-      ),
-    [discountedServices]
-  );
+
+  // naziv za popuste (iz baze)
+  const [discountCatName, setDiscountCatName] = useState("Na popustu");
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "meta", "discounts"));
+        if (snap.exists()) {
+          setDiscountCatName(snap.data().title || "Na popustu");
+        }
+      } catch {
+        setDiscountCatName("Na popustu");
+      }
+    })();
+  }, []);
 
   return (
     <div style={wrap}>
       <div style={panel}>
         <div style={catStack}>
-          {/* Kartica za AKCIJE & POPUSTI (ako ima bar jedan popust) */}
+          {/* Kartica za POPUSTE */}
           {discountedServices.length > 0 && (
             <div style={{ display: "grid", gap: 10 }}>
               <button
@@ -201,8 +205,7 @@ export default function SelectServices() {
                 type="button"
               >
                 <div style={saleCenter}>
-                  <span style={saleTitle}>AKCIJE & POPUSTI</span>
-                  
+                  <span style={saleTitle}>{discountCatName.toUpperCase()}</span>
                 </div>
               </button>
             </div>
@@ -290,6 +293,9 @@ export default function SelectServices() {
     </div>
   );
 }
+
+
+
 
 /* -------- Modal -------- */
 function Modal({ children, onClose }) {

@@ -11,6 +11,8 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  setDoc,
+  getDoc,
 } from "firebase/firestore";
 import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch } from "react-icons/fi";
 
@@ -30,7 +32,10 @@ export default function AdminKatalog() {
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
 
-  // Realtime
+  // Custom naslov za "Na popustu"
+  const [discountTitle, setDiscountTitle] = useState("Na popustu");
+
+  // Realtime: kategorije, usluge
   useEffect(() => {
     const offCats = onSnapshot(
       query(collection(db, "categories"), orderBy("order", "asc")),
@@ -48,41 +53,57 @@ export default function AdminKatalog() {
     };
   }, []);
 
+  // Realtime: meta/discounts (naslov)
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      try {
+        // ako nema snapshot listener-a na doc, fallback na getDoc
+        unsub = onSnapshot(doc(db, "meta", "discounts"), (snap) => {
+          setDiscountTitle(snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu");
+        });
+      } catch {
+        const snap = await getDoc(doc(db, "meta", "discounts"));
+        setDiscountTitle(snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu");
+      }
+    })();
+    return () => unsub && unsub();
+  }, []);
+
   const countByCat = useMemo(() => {
     const m = new Map();
     for (const s of services) m.set(s.categoryId, (m.get(s.categoryId) || 0) + 1);
     return m;
   }, [services]);
 
-  const filtered = useMemo(() => {
-    const t = filter.trim().toLowerCase();
-    return t ? cats.filter((c) => (c.name || "").toLowerCase().includes(t)) : cats;
-  }, [cats, filter]);
-
   const discountedServices = useMemo(
     () => services.filter((s) => Number(s.discountPercent || 0) > 0),
     [services]
   );
 
-  // Virtuelna kategorija "Na popustu"
+  const filtered = useMemo(() => {
+    const t = filter.trim().toLowerCase();
+    return t ? cats.filter((c) => (c.name || "").toLowerCase().includes(t)) : cats;
+  }, [cats, filter]);
+
+  // Virtuelna kategorija "Na popustu" – koristi custom title i radi pretraga po njemu
   const filteredWithDiscounts = useMemo(() => {
+    const t = filter.trim().toLowerCase();
     const wants =
       discountedServices.length > 0 &&
-      (!filter.trim() ||
-        "na popustu".includes(filter.trim().toLowerCase()) ||
-        "popust".includes(filter.trim().toLowerCase()));
+      (!t || discountTitle.toLowerCase().includes(t) || "popust".includes(t));
 
     const base = [...filtered];
     if (wants) {
       base.unshift({
         id: "discounts",
-        name: "Na popustu",
+        name: discountTitle || "Na popustu",
         order: -Infinity,
         _virtual: true,
       });
     }
     return base;
-  }, [filtered, discountedServices.length, filter]);
+  }, [filtered, discountedServices.length, filter, discountTitle]);
 
   async function addCategory(e) {
     e.preventDefault();
@@ -110,8 +131,26 @@ export default function AdminKatalog() {
   }
 
   async function renameCategory(id, name) {
-    const CLEAN = name.trim();
+    const CLEAN = (name || "").trim();
     if (!CLEAN) return;
+
+    // EDIT: podrži i "discounts"
+    if (id === "discounts") {
+      try {
+        await setDoc(
+          doc(db, "meta", "discounts"),
+          { title: CLEAN, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+        setEditingId(null);
+        setEditingName("");
+      } catch (err) {
+        console.error(err);
+        setError("Greška prilikom čuvanja naziva popusta.");
+      }
+      return;
+    }
+
     const current = cats.find((c) => c.id === id);
     if (current && (current.name || "").trim() === CLEAN) {
       setEditingId(null);
@@ -139,6 +178,7 @@ export default function AdminKatalog() {
   }
 
   async function removeCategory(id) {
+    if (id === "discounts") return; // nema brisanja za virtuelnu
     if (!confirm("Obrisati kategoriju? (Usluge ostaju u bazi)")) return;
     try {
       await deleteDoc(doc(db, "categories", id));
@@ -158,7 +198,7 @@ export default function AdminKatalog() {
       <style>{responsiveCSS}</style>
 
       <div style={panel} className="ak-panel">
-        {/* RED 1: Dodaj kategoriju (desktop: u liniji) */}
+        {/* RED 1: Dodaj kategoriju */}
         <form onSubmit={addCategory} style={topBar} className="ak-topbar">
           <div style={addBox}>
             <span style={addIcon}>
@@ -186,7 +226,7 @@ export default function AdminKatalog() {
           </button>
         </form>
 
-        {/* RED 2: Pretraga (na desktopu stoji ispod, na tel. full width) */}
+        {/* RED 2: Pretraga */}
         <div className="ak-searchrow">
           <div style={searchBox}>
             <span style={searchIcon}>
@@ -203,9 +243,7 @@ export default function AdminKatalog() {
           </div>
         </div>
 
-        {error && (
-          <div className="ak-error">{error}</div>
-        )}
+        {error && <div className="ak-error">{error}</div>}
 
         {/* Grid */}
         {loading ? (
@@ -213,14 +251,16 @@ export default function AdminKatalog() {
         ) : (
           <div style={grid} className="ak-grid">
             {filteredWithDiscounts.map((cat) => {
-              const isEditing = editingId === cat.id && !cat._virtual;
               const isDiscounts = cat.id === "discounts";
+              const isEditing = editingId === cat.id; // sad dozvoljeno i za discounts
               const count = isDiscounts
                 ? discountedServices.length
                 : countByCat.get(cat.id) || 0;
+              const displayName = isDiscounts ? discountTitle : cat.name;
 
               return (
                 <div key={cat.id} style={tile} className="ak-tile">
+                  {/* Pozadina */}
                   <div
                     style={{
                       ...marble,
@@ -230,21 +270,23 @@ export default function AdminKatalog() {
                     }}
                     className="ak-marble"
                   />
-                  <div style={tileActions} className="ak-actions">
-                    {(!isDiscounts && !isEditing) ? (
-                      <>
-                        <button
-                          style={tileActionBtn}
-                          title="Preimenuj"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingId(cat.id);
-                            setEditingName(cat.name || "");
-                          }}
-                          className="ak-actionbtn"
-                        >
-                          <FiEdit />
-                        </button>
+
+                  {/* Akcije u uglu – nema delete za discounts */}
+                  {!isEditing && (
+                    <div style={tileActions} className="ak-actions">
+                      <button
+                        style={tileActionBtn}
+                        title="Preimenuj"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingId(cat.id);
+                          setEditingName(displayName || "");
+                        }}
+                        className="ak-actionbtn"
+                      >
+                        <FiEdit />
+                      </button>
+                      {!isDiscounts && (
                         <button
                           style={{ ...tileActionBtn, background: "#ffe1e1", color: "#7a1b1b" }}
                           title="Obriši"
@@ -256,14 +298,46 @@ export default function AdminKatalog() {
                         >
                           <FiTrash2 />
                         </button>
-                      </>
-                    ) : !isDiscounts ? (
-                      <>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Normalni prikaz / Edit prikaz */}
+                  {!isEditing ? (
+                    <button
+                      style={tileButton}
+                      onClick={() =>
+                        nav(isDiscounts ? "/admin/katalog/discounts" : `/admin/katalog/${cat.id}`)
+                      }
+                      className="ak-tilebtn"
+                    >
+                      <div style={tileName} className="ak-tilename">
+                        {displayName}
+                      </div>
+                      <div style={badge} className="ak-badge">
+                        {count} usl.
+                      </div>
+                    </button>
+                  ) : (
+                    <div style={editRow} className="ak-editrow" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        style={editInput}
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renameCategory(cat.id, editingName);
+                          if (e.key === "Escape") {
+                            setEditingId(null);
+                            setEditingName("");
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <div className="ak-editbtns" style={editBtns}>
                         <button
                           style={{ ...tileActionBtn, background: "#efefef" }}
                           title="Otkaži"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={() => {
                             setEditingId(null);
                             setEditingName("");
                           }}
@@ -278,48 +352,12 @@ export default function AdminKatalog() {
                             color: "#fff",
                           }}
                           title="Sačuvaj"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            renameCategory(cat.id, editingName);
-                          }}
+                          onClick={() => renameCategory(cat.id, editingName)}
                           className="ak-actionbtn"
                         >
                           <FiCheck />
                         </button>
-                      </>
-                    ) : null}
-                  </div>
-
-                  {!isEditing ? (
-                    <button
-                      style={tileButton}
-                      onClick={() =>
-                        nav(isDiscounts ? "/admin/katalog/discounts" : `/admin/katalog/${cat.id}`)
-                      }
-                      className="ak-tilebtn"
-                    >
-                      <div style={tileName} className="ak-tilename">{cat.name}</div>
-                      <div style={badge} className="ak-badge">{count} usl.</div>
-                    </button>
-                  ) : (
-                    <div style={editRow} onClick={(e) => e.stopPropagation()}>
-                      <input
-                        style={editInput}
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") renameCategory(cat.id, editingName);
-                          if (e.key === "Escape") {
-                            setEditingId(null);
-                            setEditingName("");
-                          }
-                        }}
-                        onBlur={() => {
-                          if (editingId === cat.id && editingName.trim())
-                            renameCategory(cat.id, editingName);
-                        }}
-                        autoFocus
-                      />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -486,8 +524,30 @@ const badge = {
   fontWeight: 700,
   color: "#444",
 };
-const editRow = { padding: 12, position: "relative", zIndex: 1, background: "rgba(255,255,255,.92)" };
-const editInput = { width: "100%", height: 42, borderRadius: 12, border: "1px solid #ddd", padding: "0 10px", fontSize: 16 };
+
+/* Edit red: input + dugmad */
+const editRow = {
+  position: "relative",
+  zIndex: 1,
+  background: "rgba(255,255,255,.96)",
+  display: "grid",
+  gridTemplateColumns: "1fr auto",
+  gap: 8,
+  padding: 12,
+  alignItems: "center",
+};
+const editInput = {
+  width: "100%",
+  height: 42,
+  borderRadius: 12,
+  border: "1px solid #ddd",
+  padding: "0 10px",
+  fontSize: 16,
+};
+const editBtns = {
+  display: "flex",
+  gap: 8,
+};
 
 /* ===== RESPONSIVE + FONT CSS ===== */
 const responsiveCSS = `
@@ -521,9 +581,24 @@ const responsiveCSS = `
   .ak-tilename { font-size: 18px !important; }
   .ak-actions { gap: 6px; }
   .ak-badge { font-size: 11px; padding: 3px 8px; right: 8px; bottom: 8px; }
+
+  /* Edit red: dugmad ispod inputa */
+  .ak-editrow {
+    grid-template-columns: 1fr;
+  }
+  .ak-editrow .ak-editbtns {
+    margin-top: 8px;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .ak-editrow .ak-editbtns .ak-actionbtn {
+    width: 100%;
+  }
 }
 
-/* Bolji tap feedback bez plavog highlight-a */
+/* Bez plavog tap highlight-a */
 .ak-root button,
 .ak-root input,
 .ak-root .ak-tilebtn,
