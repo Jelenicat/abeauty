@@ -1,35 +1,29 @@
 export default async function handler(req, res) {
   try {
-    const apiKey = process.env.BREVO_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'BREVO_API_KEY missing' });
-
-    const to = String(req.query.to || '').replace(/^00/, '+');
-    const text = String(req.query.text || 'Test ABeauty SMS');
-
-    if (!/^\+?\d{7,15}$/.test(to)) {
-      return res.status(400).json({ error: 'Add ?to=+3816xxxxxxx' });
+    const { to, text } = req.query;
+    if (!to || !text) {
+      return res.status(400).json({ error: "Missing 'to' or 'text' query" });
     }
 
-    const payload = {
-      type: 'transactional',
-      recipient: to,
-      content: text,
-      sender: (process.env.BREVO_SENDER || undefined)
-    };
-
-    const r = await fetch('https://api.brevo.com/v3/transactionalSMS/sms', {
-      method: 'POST',
+    const r = await fetch("https://api.brevo.com/v3/transactionalSMS/sms", {
+      method: "POST",
       headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'api-key': apiKey
+        "api-key": process.env.BREVO_API_KEY,
+        "accept": "application/json",
+        "content-type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        sender: process.env.BREVO_SENDER || undefined, // može biti prazan
+        recipient: to,                                  // npr. +381604204623
+        content: text,
+        type: "transactional"
+      })
     });
 
-    const data = await r.json();
-    res.status(r.ok ? 200 : 400).json(data);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status).json(data);
+    return res.status(200).json({ ok: true, data });
   } catch (e) {
-    res.status(500).json({ error: e?.message || String(e) });
+    return res.status(500).json({ error: String(e) });
   }
 }
