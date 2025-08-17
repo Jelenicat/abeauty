@@ -1,9 +1,12 @@
 {
+  "version": 2,
   "functions": {
-    "api/**/*.js": { "runtime": "nodejs18.x" }
+    "api/*.js": {
+      "runtime": "nodejs18.x"
+    }
   },
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
