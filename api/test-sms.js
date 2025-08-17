@@ -1,46 +1,37 @@
 export default async function handler(req, res) {
   try {
-    const { to, text } = req.query || {};
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const to = url.searchParams.get("to");
+    const text = url.searchParams.get("text") || "Test poruka";
 
+    if (!to) return res.status(400).json({ error: "Missing ?to= param" });
     if (!process.env.BREVO_API_KEY) {
-      return res.status(500).json({ ok: false, error: "BREVO_API_KEY missing" });
+      return res.status(500).json({ error: "Missing BREVO_API_KEY" });
     }
-    if (!to || !text) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "Usage: /api/test-sms?to=+3816...&text=..." });
-    }
-
-    // normalizacija broja: 060... -> +3816...
-    let phone = String(to).trim();
-    if (/^0\d+$/.test(phone)) phone = "+381" + phone.slice(1);
-    if (!phone.startsWith("+")) phone = "+" + phone.replace(/[^\d]/g, "");
 
     const payload = {
-      sender: process.env.BREVO_SENDER || undefined, // ako nemaš odobren alphanumeric sender, može i undefined
-      recipient: phone,
-      content: String(text),
+      // U mnogim zemljama mora numerički sender; ako ti Brevo vraća grešku,
+      // probaj da izostaviš 'sender' ili koristi broj koji ti je odobren
+      sender: process.env.SMS_SENDER || undefined,
+      recipient: to,
+      content: text,
       type: "transactional",
     };
 
     const r = await fetch("https://api.brevo.com/v3/transactionalSMS/sms", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        accept: "application/json",
+        "content-type": "application/json",
         "api-key": process.env.BREVO_API_KEY,
       },
       body: JSON.stringify(payload),
     });
 
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      return res
-        .status(r.status)
-        .json({ ok: false, error: data || (await r.text()) });
-    }
-
-    return res.json({ ok: true, sent: { to: phone, text }, provider: data });
+    if (!r.ok) return res.status(r.status).json({ error: data });
+    return res.status(200).json({ sent: true, provider: "brevo", data });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e) });
+    return res.status(500).json({ error: String(e) });
   }
 }
