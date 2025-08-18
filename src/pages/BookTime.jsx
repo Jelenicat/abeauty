@@ -111,6 +111,17 @@ export default function BookTime() {
 
   const { user } = useAuth();
   const nav = useNavigate();
+const backBtn = {
+  height: 40,
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,.12)",
+  padding: "0 16px",
+  fontWeight: 900,
+  cursor: "pointer",
+  background: "#fff",
+  color: "#000",
+  boxShadow: "0 6px 16px rgba(0,0,0,.08)",
+};
 
   const isMobile = useIsMobile();
 
@@ -364,11 +375,15 @@ export default function BookTime() {
   const allBooked = selectedServices.length === 0;
 
   /* ---------- LAYOUT ---------- */
-  if (isMobile) {
-    // MOBILNI PRIKAZ – jedna kolona
-    return (
-      <div style={wrap(isMobile)}>
-        <div style={panel(isMobile)}>
+if (isMobile) {
+  return (
+    <div style={wrap(isMobile)}>
+      <div style={panel(isMobile)}>
+        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
+          <button onClick={() => nav(-1)} style={backBtn}>
+            ← Nazad
+          </button>
+        </div>
           {noServices ? (
             <>
               <h2 style={title}>Nema izabranih usluga</h2>
@@ -529,6 +544,12 @@ export default function BookTime() {
         ) : (
           <div style={layoutDesktop}>
             {/* leva kolona: usluge */}
+            <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
+  <button onClick={() => nav(-1)} style={backBtn}>
+    ← Nazad
+  </button>
+</div>
+
             <div style={leftCol}>
               {selectedServices.map((s) => {
                 const booked = prefs.get(s.id)?.booked;
