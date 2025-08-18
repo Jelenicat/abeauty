@@ -752,7 +752,7 @@ if (isMobile) {
 /* Date strip (horizontalni datumi) */
 function DateStrip({ selectedDay, onSelect }) {
   const start = new Date(selectedDay);
-  start.setDate(selectedDay.getDate() - 4);
+  start.setDate(selectedDay.getDate() - 1);
   const days = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
