@@ -22,6 +22,7 @@ export default function AdminCategory() {
   const [durationMin, setDurationMin] = useState("");
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const finalPrice = useMemo(() => {
     const p = Number(price) || 0;
@@ -131,8 +132,29 @@ export default function AdminCategory() {
     setDiscount(String(srv.discountPercent ?? srv.discount ?? ""));
   };
 
+  // 👉 OPTIMISTIČKI upsert u lokalni state (odmah prikaže izmenu)
+  const upsertLocalService = (id, payload) => {
+    setServices((prev) => {
+      const idx = prev.findIndex((x) => x.id === id);
+      const nextObj = { ...(prev[idx] || {}), id, ...payload };
+      if (idx >= 0) {
+        const copy = prev.slice();
+        copy[idx] = nextObj;
+        return copy;
+      }
+      return [...prev, nextObj];
+    });
+  };
+
+  // 👉 OPTIMISTIČKO uklanjanje iz lokalnog state-a
+  const removeLocalService = (id) => {
+    setServices((prev) => prev.filter((x) => x.id !== id));
+  };
+
   const saveService = async (e) => {
     e?.preventDefault?.();
+    if (saving) return;
+
     const payload = {
       categoryId: catId === "discounts" ? "" : catId,
       name: name.trim(),
@@ -144,22 +166,62 @@ export default function AdminCategory() {
     };
     if (!payload.name) return;
 
-    if (editing) {
-      await updateDoc(doc(db, "services", editing), payload);
-    } else {
-      await addDoc(collection(db, "services"), {
-        ...payload,
-        order: (services?.length || 0) + 1,
-        createdAt: serverTimestamp(),
-      });
+    setSaving(true);
+    try {
+      if (editing) {
+        // Optimistički: prikaži odmah u listi
+        upsertLocalService(editing, {
+          ...payload,
+          updatedAt: new Date(), // samo za UI
+        });
+
+        await updateDoc(doc(db, "services", editing), payload);
+
+        // Ako smo u "discounts" i popust je postao 0, skini iz liste odmah
+        if (catId === "discounts" && payload.discountPercent <= 0) {
+          removeLocalService(editing);
+        }
+      } else {
+        const orderVal = (services?.length || 0) + 1;
+        const docRef = await addDoc(collection(db, "services"), {
+          ...payload,
+          order: orderVal,
+          createdAt: serverTimestamp(),
+        });
+
+        // Optimistički dodaj u listu (sa privremenim order-om)
+        upsertLocalService(docRef.id, {
+          ...payload,
+          order: orderVal,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        // Ako smo u "discounts" modu i novi popust je 0, ne prikazuj ga (pošto query filtrira > 0)
+        if (catId === "discounts" && payload.discountPercent <= 0) {
+          removeLocalService(docRef.id);
+        }
+      }
+      resetForm();
+    } catch (err) {
+      console.error(err);
+      alert("Greška pri čuvanju usluge.");
+    } finally {
+      setSaving(false);
     }
-    resetForm();
   };
 
   const removeService = async (id) => {
     if (!confirm("Obrisati uslugu?")) return;
-    await deleteDoc(doc(db, "services", id));
-    if (editing === id) resetForm();
+    // Optimistički ukloni
+    removeLocalService(id);
+    try {
+      await deleteDoc(doc(db, "services", id));
+      if (editing === id) resetForm();
+    } catch (e) {
+      console.error(e);
+      alert("Greška pri brisanju. Osveži stranicu.");
+    }
   };
 
   return (
@@ -219,8 +281,8 @@ export default function AdminCategory() {
             onChange={e => setDiscount(e.target.value)}
           />
           <div className="price-preview">Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
-          <button className="btn-primary" style={btn} type="submit">
-            {editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}
+          <button className="btn-primary" style={btn} type="submit" disabled={saving}>
+            {saving ? "Čuvam..." : editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}
           </button>
           {editing && (
             <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>
@@ -235,16 +297,16 @@ export default function AdminCategory() {
             const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
             const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
             const currentFinal = isEditing
-              ? Math.max(0, Math.round(currentPrice * (1 - currentDiscount / 100)))
+              ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
               : s.finalPrice;
 
             return (
               <div key={s.id} style={row} className="admincat-row">
                 <div>
-                  <div style={{ fontWeight: 900 }}>{s.name}</div>
+                  <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
                   <div style={{ opacity: .8, fontSize: 13 }}>
-                    {s.durationMin} min · {currentPrice} RSD{" "}
-                    {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal} RSD` : ""}
+                    {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
+                    {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
