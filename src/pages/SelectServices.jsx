@@ -236,26 +236,33 @@ export default function SelectServices() {
             </div>
           ))}
         </div>
+<div style={summaryRow}>
+  <div style={{ color: "#000" }}>
+    Izabrano: <b>{selectedServices.length}</b> • Trajanje: <b>{totalMin} min</b>
+    {totalPrice ? (
+      <> • Ukupno: <b>{money(totalPrice)}</b></>
+    ) : null}
+  </div>
 
-        <div style={summaryRow}>
-          <div style={{ color: "#000" }}>
-            Izabrano: <b>{selectedServices.length}</b> • Trajanje:{" "}
-            <b>{totalMin} min</b>
-            {totalPrice ? (
-              <>
-                {" "}
-                • Ukupno: <b>{money(totalPrice)}</b>
-              </>
-            ) : null}
-          </div>
-          <button
-            disabled={!canContinue}
-            onClick={() => navigate("/rezervisi")}
-            style={primaryBtn(canContinue)}
-          >
-            Nastavi
-          </button>
-        </div>
+  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+    {/* NOVO: Dugme Nazad */}
+    <button
+      onClick={() => navigate("/")}
+      style={secondaryBtn}
+    >
+      Nazad
+    </button>
+
+    <button
+      disabled={!canContinue}
+      onClick={() => navigate("/rezervisi")}
+      style={primaryBtn(canContinue)}
+    >
+      Nastavi
+    </button>
+  </div>
+</div>
+
       </div>
 
       {isModalOpen && (
@@ -553,6 +560,18 @@ const primaryBtn = (on) => ({
   color: "#000",
   boxShadow: on ? "0 8px 20px rgba(0,0,0,.15)" : "none",
 });
+const secondaryBtn = {
+  height: 40,
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,.12)",
+  padding: "0 16px",
+  fontWeight: 900,
+  cursor: "pointer",
+  background: "#fff",
+  color: "#000",
+  boxShadow: "0 6px 16px rgba(0,0,0,.08)",
+};
+
 const modalBack = {
   position: "fixed",
   inset: 0,
