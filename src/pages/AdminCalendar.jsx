@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { db } from "../firebase";
+import { useNavigate } from "react-router-dom";
 import {
   collection,
   doc,
@@ -85,6 +86,7 @@ function hashToColor(str) {
 /* -------------------- component -------------------- */
 
 export default function AdminCalendar() {
+    const nav = useNavigate();
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 
   // meta
@@ -718,7 +720,23 @@ const apptBgFor = (a, colorForServiceId) => {
     <div style={wrap}>
       <div style={panel} className="admincal">
         <style>{responsiveCSS}</style>
-
+    {/* Dugme nazad */}
+        <div style={{ marginBottom: 12 }}>
+          <button
+            onClick={() => nav(-1)}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,.35)",
+              background: "linear-gradient(135deg,#ffffff,#ffe3ef)",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: isMobile ? 14 : 16
+            }}
+          >
+            ← Nazad
+          </button>
+        </div>
         <div style={tabbar}>
           <button
             style={tab === "day" ? tabBtnActive : tabBtn}
@@ -1452,7 +1470,7 @@ function DayGrid({
                             }`
                       }
                     >
-                <div style={cardTitle}>
+                <div style={cardTitle(isMobile)}>
     {isVacation
       ? "Odmor"
       : isBreak
@@ -1961,20 +1979,33 @@ const apptCard = (top, height, bg, disabled = false) => ({
   flexDirection: "column",
   justifyContent: "space-between",
   cursor: disabled ? "default" : "pointer",
-  overflow: "hidden"
+  overflow: "hidden",
+  whiteSpace: "normal",
+wordBreak: "break-word",
+overflowWrap: "anywhere",
+fontSize: isMobile ? 12 : 14,   // smanji font na mobilnom
+lineHeight: 1.3,                // sabij redove da sve stane
+
 });
 
-const cardTitle = {
-  fontWeight: 600,
-  fontSize: 14,
-  lineHeight: 1.15,
-  marginBottom: 2,
-  display: "-webkit-box",
-  WebkitLineClamp: 2,          // ✅ do 2 reda
-  WebkitBoxOrient: "vertical",
-  overflow: "hidden",
+// UMESTO: const cardTitle = { ... }
+// STAVI OVO:
+const cardTitle = (isMobile) => ({
+  fontWeight: 800,
+  fontSize: isMobile ? 16 : 14,
+  lineHeight: 1.18,
+  marginBottom: 4,
   textAlign: "left",
-};
+  ...(isMobile
+    ? {} // na telefonu NE sečemo naslov
+    : {
+        display: "-webkit-box",
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden",
+      }),
+});
+
 
 
 const metaRow = {
@@ -2306,6 +2337,8 @@ const pillLight = {
   background: "rgba(0,0,0,.045)",
   color: "#222",
   boxShadow: "inset 0 0 0 1px rgba(0,0,0,.05)",
+  fontSize: isMobile ? 12 : 14,   // smanji font na mobilnom
+lineHeight: 1.3,  
 };
 
 
