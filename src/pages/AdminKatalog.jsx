@@ -198,7 +198,7 @@ export default function AdminKatalog() {
       {/* Dugme Nazad */}
       <div style={{ marginBottom: 16 }}>
         <button
-          onClick={() => nav(-1)}
+           onClick={() => nav("/admin")}
           style={backBtn}
           className="ak-backbtn"
         >
