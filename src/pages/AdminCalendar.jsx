@@ -714,8 +714,27 @@ const apptBgFor = (a, colorForServiceId) => {
   /* ------------ render ------------ */
 
   return (
+    
     <div style={wrap}>
-      <div style={panel} className="admincal">
+          <div className="admincal">
+      {/* 👇 OVDE DODAJ NAZAD dugme */}
+      <button
+        onClick={() => window.history.back()}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "8px 14px",
+          marginBottom: 10,
+          borderRadius: 10,
+          border: "1px solid #ccc",
+          background: "#fff",
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        ← Nazad
+      </button>
         <style>{responsiveCSS}</style>
 
         <div style={tabbar}>
@@ -872,41 +891,50 @@ const apptBgFor = (a, colorForServiceId) => {
               </div>
 
         {/* MOBILNA TRAKA RADNICA */}
-<div
-  className="emp-strip-mobile"
-  style={{
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px", // 🟢 ovde kontroliraš razmak među dugmićima
-  }}
->
-  {employees.map((e) => {
-    const isWorking = workingTodayIds.includes(e.id);
-    const isSelected = selEmpId === e.id;
-    return (
-      <button
-        key={e.id}
-        onClick={() => setSelEmpId(e.id)}
-        style={{
-          padding: "6px 12px",
-          borderRadius: 999,
-          border: "1px solid rgba(255,255,255,.35)",
-          background: isSelected
-            ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
-            : isWorking
-            ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-            : "rgba(255,255,255,.12)",
-          color: isSelected ? "#fff" : "#000",
-          fontWeight: 800,
-          cursor: "pointer",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {e.name}
-      </button>
-    );
-  })}
-</div>
+{/* MOBILNA TRAKA RADNICA */}
+{isMobile && (
+  <div
+    className="emp-strip-mobile"
+    style={{
+      display: "flex",
+      flexWrap: "nowrap",       // ⬅️ više ne prelama u novi red
+      overflowX: "auto",        // ⬅️ horizontalni scroll
+      gap: 8,
+      padding: "6px 0",
+      WebkitOverflowScrolling: "touch", // glatkiji iOS scroll
+      scrollbarWidth: "none",   // Firefox
+    }}
+  >
+    {employees.map((e) => {
+      const isWorking = workingTodayIds.includes(e.id);
+      const isSelected = selEmpId === e.id;
+      return (
+        <button
+          key={e.id}
+          onClick={() => setSelEmpId(e.id)}
+          style={{
+            flex: "0 0 auto",                     // ⬅️ svaki dugmić ima „fiksnu” širinu u traci
+            padding: "8px 14px",
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,.35)",
+            background: isSelected
+              ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+              : isWorking
+              ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
+              : "rgba(255,255,255,.12)",
+            color: isSelected ? "#fff" : "#000",
+            fontWeight: 800,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {e.name}
+        </button>
+      );
+    })}
+  </div>
+)}
+
 
             </div>
 
@@ -2404,11 +2432,19 @@ const responsiveCSS = `
 }
 
 
+@media (max-width: 768px) {
   .emp-strip-mobile{
-    display:flex; overflow-x:auto; gap:6px; padding:6px 0; scrollbar-width:none;
+    display:flex;
+    flex-wrap:nowrap;          /* ⬅️ bitno za „traku” */
+    overflow-x:auto;
+    gap:8px;
+    padding:6px 0;
+    scrollbar-width:none;      /* Firefox */
   }
-  .emp-strip-mobile::-webkit-scrollbar{ display:none; }
+  .emp-strip-mobile::-webkit-scrollbar{ display:none; } /* Chrome/Safari */
+  .emp-strip-mobile button{ flex:0 0 auto; }            /* dugmići ostaju u jednom redu */
 }
+
 
 /* --- MOBILE TUNE-UP --- */
 @media (max-width: 640px) {
