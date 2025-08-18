@@ -245,6 +245,7 @@ const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10,
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
 
 /* dodatni CSS za mobile */
+/* dodatni CSS za mobile */
 const css = `
 @media (max-width: 900px) {
   .admincat-catrow {
@@ -253,24 +254,51 @@ const css = `
     gap: 8px;
     margin-bottom: 14px;
   }
+
   .admincat-form {
     grid-template-columns: 1fr;
   }
+
   .admincat-form input,
   .admincat-form button,
   .admincat-form div {
     width: 100%;
   }
+
   .admincat-row {
     flex-direction: column;
     align-items: flex-start;
+    gap: 10px;
   }
+
   .admincat-row > div:last-child {
     display: flex;
+    flex-direction: column;
     gap: 8px;
     width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-start;
+  }
+
+  /* dugmići u redovima */
+  .admincat-row button {
+    width: 100%;
+    height: 42px;
+    border-radius: 12px;
+    font-weight: 800;
+  }
+
+  /* primarna dugmad (Sačuvaj, Dodaj, Izmeni) – gradient */
+  .admincat-form button[type="submit"],
+  .admincat-row button:first-child {
+    background: linear-gradient(135deg,#ff5fa2,#ff7fb5);
+    color: #fff;
+  }
+
+  /* sekundarna dugmad (Otkaži, Obriši) – svetlija */
+  .admincat-form button[type="button"],
+  .admincat-row button:last-child {
+    background: #ffe1e1;
+    color: #7a1b1b;
   }
 }
 `;
+
