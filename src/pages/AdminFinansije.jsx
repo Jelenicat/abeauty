@@ -231,8 +231,8 @@ export default function AdminFinansije() {
     <div style={wrap} className="fin-wrap">
       <style>{css}</style>
       <div style={panel} className="fin-panel">
-        {/* STICKY HEADER: Nazad + month input (uvek lepljiv) */}
-        <div className="fin-sticky fin-header">
+        {/* FIXED HEADER: Nazad + month input (uvek fiksiran gore) */}
+        <div className="fin-fixed fin-header">
           <button
             onClick={() => nav(-1)}
             className="fin-back"
@@ -250,6 +250,8 @@ export default function AdminFinansije() {
             aria-label="Izaberi mesec"
           />
         </div>
+        {/* Spacer da sadržaj ne uleti ispod fiksiranog bara */}
+        <div className="fin-fixed-spacer" />
 
         {/* Tabs */}
         <div style={tabs}>
@@ -442,27 +444,34 @@ const css = `
 .fin-wrap, .fin-wrap * { font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
 .fin-panel { position: relative; }
 
-/* Sticky header (uvek, i desktop i mobilni) */
-.fin-sticky{
-  position: sticky;
+/* FIXED header (desktop + mobilni) */
+.fin-fixed{
+  position: fixed;
   top: 8px;
-  z-index: 6;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1200px, calc(100% - 32px)); /* prati širinu panela i margine ekrana */
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px;
-  background: rgba(255,255,255,.85);
+  background: rgba(255,255,255,.9);
   backdrop-filter: blur(8px);
   border: 1px solid #ececec;
   border-radius: 14px;
   box-shadow: 0 8px 22px rgba(0,0,0,.08);
 }
-.fin-sticky + * { margin-top: 10px; }
+.fin-fixed-spacer{
+  height: 64px; /* rezerva prostora ispod fixed trake */
+  margin-bottom: 10px;
+}
 
 /* Header layout tweaks za uže ekrane */
 .fin-header { justify-content: space-between; }
 @media (max-width: 680px){
   .fin-header { flex-direction: column; align-items: stretch; }
+  .fin-fixed-spacer{ height: 96px; } /* veći razmak jer se header složi u 2 reda */
 }
 
 /* Nazad dugme */
@@ -605,14 +614,14 @@ const css = `
   .fin-wrap { padding: 14px; }
   .fin-panel { border-radius: 22px; }
 
-  /* sticky header je već uključen za sve — ovde samo veći tap i raspored */
+  /* fixed header - veći tap i raspored */
   .fin-back { height: 44px; border-radius: 14px; }
   .fin-month{ height: 44px; }
 
   /* tabs kao full width i veća tap meta */
   .fin-tab { flex:1; height: 44px; border-radius: 14px; font-size:14px; }
   .fin-tab + .fin-tab { margin-left: 6px; }
-  .fin-panel > div:nth-of-type(2){ display:flex; gap:6px; }
+  .fin-panel > div:nth-of-type(3){ display:flex; gap:6px; } /* tabs blok */
 
   /* kartice sa sumama — 1 kolona */
   .fin-cards { grid-template-columns: 1fr; gap:8px; }

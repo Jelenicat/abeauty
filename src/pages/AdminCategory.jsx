@@ -1,3 +1,4 @@
+// src/pages/AdminCategory.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
@@ -90,14 +91,12 @@ export default function AdminCategory() {
     if (!n) return;
 
     if (catId === "discounts") {
-      // meta/discounts.title
       try {
         await updateDoc(doc(db, "meta", "discounts"), {
           title: n,
           updatedAt: serverTimestamp(),
         });
       } catch {
-        // ako dokument ne postoji – kreiraj
         await setDoc(doc(db, "meta", "discounts"), {
           title: n,
           createdAt: serverTimestamp(),
@@ -114,7 +113,7 @@ export default function AdminCategory() {
   };
 
   const deleteCategory = async () => {
-    if (catId === "discounts") return; // specijalna – ne brišemo
+    if (catId === "discounts") return;
     if (services.length) {
       if (!confirm(`Kategorija ima ${services.length} usluga. Obrisaćeš SAMO kategoriju (usluge ostaju). Nastavi?`)) return;
     } else {
@@ -175,7 +174,7 @@ export default function AdminCategory() {
             <h2 className="admincat-title" style={title}>{catName || "Kategorija"}</h2>
           </div>
 
-          {/* EDIT NAZIVA — dostupno i za "discounts"; brisanje samo za obične */}
+          {/* EDIT NAZIVA */}
           <div className="admincat-catrow" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
             <input
               style={inp}
@@ -190,14 +189,44 @@ export default function AdminCategory() {
           </div>
         </div>
 
-        <form onSubmit={saveService} style={form} className="admincat-form">
-          <input style={inp} placeholder="Naziv usluge" value={name} onChange={e => setName(e.target.value)} />
-          <input style={inp} type="number" min="0" placeholder="Trajanje (min)" value={durationMin} onChange={e => setDurationMin(e.target.value)} />
-          <input style={inp} type="number" min="0" placeholder="Cena (RSD)" value={price} onChange={e => setPrice(e.target.value)} />
-          <input style={inp} type="number" min="0" max="90" placeholder="Popust % (opciono)" value={discount} onChange={e => setDiscount(e.target.value)} />
-          <div style={{ alignSelf: "center", color: "#fff", fontWeight: 800 }}>Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
-          <button className="btn-primary" style={btn} type="submit">{editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}</button>
-          {editing && <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>Otkaži</button>}
+        {/* FORMA ZA USLUGU */}
+        <form onSubmit={saveService} style={formBase} className="admincat-form">
+          <input
+            style={inp}
+            placeholder="Naziv usluge"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <input
+            style={inp}
+            type="number" min="0"
+            placeholder="Trajanje (min)"
+            value={durationMin}
+            onChange={e => setDurationMin(e.target.value)}
+          />
+          <input
+            style={inp}
+            type="number" min="0"
+            placeholder="Cena (RSD)"
+            value={price}
+            onChange={e => setPrice(e.target.value)}
+          />
+          <input
+            style={inp}
+            type="number" min="0" max="90"
+            placeholder="Popust % (opciono)"
+            value={discount}
+            onChange={e => setDiscount(e.target.value)}
+          />
+          <div className="price-preview">Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
+          <button className="btn-primary" style={btn} type="submit">
+            {editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}
+          </button>
+          {editing && (
+            <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>
+              Otkaži
+            </button>
+          )}
         </form>
 
         <div style={list}>
@@ -237,14 +266,31 @@ export default function AdminCategory() {
 const wrap = { minHeight: "100vh", background: 'url("/slika1.webp") center/cover no-repeat fixed', padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" };
 const panel = { width: "min(1250px,100%)", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.35)", backdropFilter: "blur(10px)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.25)", padding: "clamp(18px,4vw,28px)" };
 const title = { margin: 0, color: "#fff", fontWeight: 900, fontSize: "clamp(18px,3vw,28px)" };
-const inp = { height: 42, borderRadius: 12, border: "1px solid #ececec", padding: "0 12px", background: "#fff" };
+const inp = {
+  height: 42,
+  borderRadius: 12,
+  border: "1px solid #ececec",
+  padding: "0 12px",
+  background: "#fff",
+  width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
+};
 const btn = { height: 42, border: "none", borderRadius: 12, background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff", fontWeight: 800, padding: "0 16px", cursor: "pointer" };
 const ghostBtn = { height: 42, borderRadius: 12, border: "1px solid rgba(255,255,255,.7)", background: "transparent", color: "#fff", fontWeight: 800, padding: "0 14px", cursor: "pointer" };
 const dangerBtn = { ...btn, background: "#ff5b6e" };
-const form = { display: "grid", gridTemplateColumns: "2fr 140px 140px 160px auto auto auto", gap: 8, marginBottom: 14 };
+
+/* baza forme (kolone definišemo u CSS-u da bi media query radio) */
+const formBase = {
+  display: "grid",
+  gap: 8,
+  marginBottom: 14,
+  alignItems: "center",
+};
+
 const list = { display: "grid", gap: 10 };
 const row = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: 14, padding: "10px 12px", boxShadow: "0 10px 20px rgba(0,0,0,.06)", flexWrap: "wrap", gap: 8 };
-const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800 };
+const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800, color:"#fff" };
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
 
 /* dodatni CSS */
@@ -257,6 +303,41 @@ const css = `
   backdrop-filter: blur(8px);
   padding: 12px;
   margin-bottom: 14px;
+}
+
+/* RASPORED FORME — desktop prvo */
+.admincat-form {
+  grid-template-columns:
+    minmax(220px, 2fr)    /* Naziv usluge */
+    minmax(120px, 1fr)    /* Trajanje */
+    minmax(120px, 1fr)    /* Cena */
+    minmax(120px, 1fr)    /* Popust */
+    minmax(160px, auto)   /* Nova cena */
+    minmax(150px, auto)   /* Dodaj/Sačuvaj */
+    minmax(120px, auto);  /* Otkaži (ako je edit) */
+}
+.admincat-form > * {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.price-preview {
+  align-self: center;
+  color: #fff;
+  font-weight: 800;
+  padding: 0 6px;
+}
+
+/* --- TABLET --- */
+@media (max-width: 1100px) {
+  .admincat-form {
+    grid-template-columns:
+      minmax(200px, 1.6fr)
+      repeat(3, minmax(120px, 1fr))
+      minmax(160px, auto)
+      minmax(150px, auto)
+      minmax(120px, auto);
+  }
 }
 
 /* --- MOBILE --- */
@@ -285,7 +366,7 @@ const css = `
   /* red sa inputom za naziv + dugmad -> kolona, full width */
   .admincat-catrow {
     display: grid !important;
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
     gap: 8px;
     margin-bottom: 12px !important;
   }
@@ -301,20 +382,25 @@ const css = `
     border-radius: 12px;
     font-weight: 800;
   }
-  .admincat-catrow .btn-primary {
-    background: linear-gradient(135deg,#ff5fa2,#ff7fb5);
-    color: #fff;
-  }
-  .admincat-catrow .btn-danger {
-    background: #ff6b81;
-    color: #fff;
-  }
 
-  /* FORMA ispod – 1 kolona */
-  .admincat-form { grid-template-columns: 1fr; }
+  /* FORMA ispod – jedna kolona, NIŠTA ne izlazi iz širine */
+  .admincat-form {
+    grid-template-columns: 1fr !important;
+  }
   .admincat-form input,
   .admincat-form button,
-  .admincat-form div { width: 100%; }
+  .admincat-form .price-preview {
+    width: 100%;
+  }
+  .admincat-form input {
+    height: 44px;
+    border-radius: 12px;
+  }
+  .admincat-form button {
+    height: 44px;
+    border-radius: 12px;
+    font-weight: 800;
+  }
 
   /* Redovi u listi: kolona + full-width dugmad */
   .admincat-row { flex-direction: column; align-items: flex-start; gap: 10px; }

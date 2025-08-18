@@ -929,6 +929,7 @@ const apptBgFor = (a, colorForServiceId) => {
               onColDragOver={onColDragOver}
               onColDrop={onColDrop}
               noShowByPhone={noShowByPhone}
+              isMobile={isMobile}
             />
           </>
         ) : tab === "month" ? (
@@ -1197,6 +1198,7 @@ const apptBgFor = (a, colorForServiceId) => {
                 colorForServiceId={colorForServiceId}
                 onApptClick={openApptModal}
                 noShowByPhone={noShowByPhone}
+                isMobile={isMobile} 
               />
             </div>
           </>
@@ -1347,16 +1349,20 @@ function DayGrid({
   onColDragOver,
   onColDrop,
   noShowByPhone,
+  isMobile,
 }) {
   return (
     <div style={gridWrap} className="grid-day">
-      <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
-        {timeMarks(openMin, closeMin).map((t) => (
-          <div key={t} style={markRow}>
-            <span style={markLbl}>{minToTime(t)}</span>
-          </div>
-        ))}
+     {!isMobile && (
+  <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
+    {timeMarks(openMin, closeMin).map((t) => (
+      <div key={t} style={markRow}>
+        <span style={markLbl}>{minToTime(t)}</span>
       </div>
+    ))}
+  </div>
+)}
+
 
       <div style={colsWrap}>
         {employeeIdsForDay.map((empId) => {
@@ -1501,6 +1507,7 @@ function ScheduleGrid({
   colorForServiceId,
   onApptClick,
   noShowByPhone,
+  isMobile,
 }) {
   const dow = DOW[dateObj.getDay()];
   const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
@@ -1553,13 +1560,16 @@ function ScheduleGrid({
       </div>
 
       <div style={gridWrap} className="grid-schedule">
-        <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
-          {timeMarks(openMin, closeMin).map((t) => (
-            <div key={t} style={markRow}>
-              <span style={markLbl}>{minToTime(t)}</span>
-            </div>
-          ))}
-        </div>
+      {!isMobile && (
+  <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
+    {timeMarks(openMin, closeMin).map((t) => (
+      <div key={t} style={markRow}>
+        <span style={markLbl}>{minToTime(t)}</span>
+      </div>
+    ))}
+  </div>
+)}
+
 
         <div
           style={{
@@ -2047,6 +2057,10 @@ const inp = {
   background: "#fff",
   padding: "0 12px",
   fontSize: 14,
+    appearance: "none",  
+    WebkitAppearance: "none",
+  MozAppearance: "none",
+  color: "#000",
 };
 const primaryBtn = {
   height: 40,
@@ -2381,7 +2395,33 @@ const actionBtn = {
 
 /* --- Responsive fine-tuning --- */
 const responsiveCSS = `
+@media (max-width: 768px) {
+  .grid-day > div:first-child,
+  .grid-schedule > div:first-child { display: none; }
+
+  .grid-day,
+  .grid-schedule { grid-template-columns: 1fr !important; }
+
+  .emp-strip-mobile{
+    display:flex; overflow-x:auto; gap:6px; padding:6px 0; scrollbar-width:none;
+  }
+  .emp-strip-mobile::-webkit-scrollbar{ display:none; }
+}
+
 /* --- MOBILE TUNE-UP --- */
+@media (max-width: 640px) {
+  input[type="date"],
+  input[type="month"],
+  input[type="time"],
+  select {
+    font-size: 16px;      /* čitljivo na mobilnom */
+    padding: 8px 10px;
+    appearance: none;     /* uklanja iOS plavi tekst i strelice */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    color: #000;          /* crni tekst */
+  }
+}
 
 .admincal :is(input, select, button) {
   font-size: 16px !important; /* iOS zoom fix */
@@ -2409,7 +2449,7 @@ const responsiveCSS = `
 /* TELEFONI ≤640px */
 @media (max-width: 640px) {
   .grid-day, .grid-schedule {
-    grid-template-columns: 64px 1fr !important;
+    grid-template-columns: 1fr !important;   /* 1 kolona na telefonu */
     gap: 8px !important;
   }
 
@@ -2427,6 +2467,7 @@ const responsiveCSS = `
 
   .admincal { --head-fz: 14px; }
 }
+
 
 /* TELEFONI ≤768px – sakrij levu vremensku osu i prikaži traku radnica */
 @media (max-width: 768px) {
