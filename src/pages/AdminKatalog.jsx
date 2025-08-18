@@ -1,3 +1,4 @@
+// src/pages/AdminKatalog.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
@@ -14,7 +15,7 @@ import {
   setDoc,
   getDoc,
 } from "firebase/firestore";
-import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch } from "react-icons/fi";
+import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch, FiArrowLeft } from "react-icons/fi";
 
 export default function AdminKatalog() {
   const nav = useNavigate();
@@ -58,7 +59,6 @@ export default function AdminKatalog() {
     let unsub = () => {};
     (async () => {
       try {
-        // ako nema snapshot listener-a na doc, fallback na getDoc
         unsub = onSnapshot(doc(db, "meta", "discounts"), (snap) => {
           setDiscountTitle(snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu");
         });
@@ -86,7 +86,6 @@ export default function AdminKatalog() {
     return t ? cats.filter((c) => (c.name || "").toLowerCase().includes(t)) : cats;
   }, [cats, filter]);
 
-  // Virtuelna kategorija "Na popustu" – koristi custom title i radi pretraga po njemu
   const filteredWithDiscounts = useMemo(() => {
     const t = filter.trim().toLowerCase();
     const wants =
@@ -134,7 +133,6 @@ export default function AdminKatalog() {
     const CLEAN = (name || "").trim();
     if (!CLEAN) return;
 
-    // EDIT: podrži i "discounts"
     if (id === "discounts") {
       try {
         await setDoc(
@@ -178,7 +176,7 @@ export default function AdminKatalog() {
   }
 
   async function removeCategory(id) {
-    if (id === "discounts") return; // nema brisanja za virtuelnu
+    if (id === "discounts") return;
     if (!confirm("Obrisati kategoriju? (Usluge ostaju u bazi)")) return;
     try {
       await deleteDoc(doc(db, "categories", id));
@@ -196,6 +194,17 @@ export default function AdminKatalog() {
   return (
     <div style={wrap} className="ak-root">
       <style>{responsiveCSS}</style>
+
+      {/* Dugme Nazad */}
+      <div style={{ marginBottom: 16 }}>
+        <button
+          onClick={() => nav(-1)}
+          style={backBtn}
+          className="ak-backbtn"
+        >
+          <FiArrowLeft style={{ marginRight: 6 }} /> Nazad
+        </button>
+      </div>
 
       <div style={panel} className="ak-panel">
         {/* RED 1: Dodaj kategoriju */}
@@ -252,7 +261,7 @@ export default function AdminKatalog() {
           <div style={grid} className="ak-grid">
             {filteredWithDiscounts.map((cat) => {
               const isDiscounts = cat.id === "discounts";
-              const isEditing = editingId === cat.id; // sad dozvoljeno i za discounts
+              const isEditing = editingId === cat.id;
               const count = isDiscounts
                 ? discountedServices.length
                 : countByCat.get(cat.id) || 0;
@@ -260,7 +269,6 @@ export default function AdminKatalog() {
 
               return (
                 <div key={cat.id} style={tile} className="ak-tile">
-                  {/* Pozadina */}
                   <div
                     style={{
                       ...marble,
@@ -271,7 +279,6 @@ export default function AdminKatalog() {
                     className="ak-marble"
                   />
 
-                  {/* Akcije u uglu – nema delete za discounts */}
                   {!isEditing && (
                     <div style={tileActions} className="ak-actions">
                       <button
@@ -302,7 +309,6 @@ export default function AdminKatalog() {
                     </div>
                   )}
 
-                  {/* Normalni prikaz / Edit prikaz */}
                   {!isEditing ? (
                     <button
                       style={tileButton}
@@ -373,15 +379,16 @@ export default function AdminKatalog() {
   );
 }
 
-/* ===== BASE STYLES ===== */
+/* ===== STYLES ===== */
 
 const wrap = {
   minHeight: "100vh",
   background: ["url('/slika1.webp') center/cover no-repeat fixed", "linear-gradient(135deg,#f0f0f0,#d9d9d9)"].join(", "),
   padding: "clamp(12px,4vw,24px)",
   display: "flex",
-  justifyContent: "center",
-  alignItems: "flex-start",
+  flexDirection: "column",
+  justifyContent: "flex-start",
+  alignItems: "center",
 };
 
 const panel = {
@@ -394,6 +401,20 @@ const panel = {
   padding: "clamp(16px,4vw,32px)",
 };
 
+const backBtn = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "10px 16px",
+  borderRadius: 12,
+  border: "none",
+  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
+  color: "#fff",
+  fontWeight: 700,
+  fontSize: 16,
+  cursor: "pointer",
+  boxShadow: "0 6px 14px rgba(0,0,0,.18)",
+};
+
 const topBar = {
   display: "grid",
   gridTemplateColumns: "1fr auto",
@@ -401,6 +422,8 @@ const topBar = {
   maxWidth: "980px",
   margin: "16px auto 0",
 };
+
+
 
 const addBox = { position: "relative", width: "100%" };
 const addInput = {
