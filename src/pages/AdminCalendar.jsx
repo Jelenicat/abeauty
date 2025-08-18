@@ -86,7 +86,7 @@ function hashToColor(str) {
 /* -------------------- component -------------------- */
 
 export default function AdminCalendar() {
-    const nav = useNavigate();
+  const nav = useNavigate();
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 
   // meta
@@ -426,7 +426,6 @@ export default function AdminCalendar() {
     return colorForCategoryId(catId);
   };
 // jedinstvena pozadina za sve vrste "termina"
-// helpers (van komponente)
 const apptBgFor = (a, colorForServiceId) => {
   return a.type === "vacation"
     ? "repeating-linear-gradient(-45deg,#ffc6cf 0 10px,#ffadb9 10px 20px)"
@@ -436,7 +435,6 @@ const apptBgFor = (a, colorForServiceId) => {
     ? "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)"
     : colorForServiceId(a.serviceId) || "#ffffff";
 };
-
 
   async function addItem() {
     const dk = dateKey(dayDate);
@@ -690,6 +688,8 @@ const apptBgFor = (a, colorForServiceId) => {
     if (!a) return;
     if (a.employeeId === empIdTarget) return;
     const segs = shiftsByEmp.get(empIdTarget) || [];
+    a.startMin = a.startMin ?? timeToMin(a.startHHMM);
+    a.endMin = a.endMin ?? timeToMin(a.endHHMM);
     const okShift = segs.some(
       (seg) => a.startMin >= seg.start && a.endMin <= seg.end
     );
@@ -716,11 +716,10 @@ const apptBgFor = (a, colorForServiceId) => {
   /* ------------ render ------------ */
 
   return (
-    
     <div style={wrap}>
       <div style={panel} className="admincal">
         <style>{responsiveCSS}</style>
-    {/* Dugme nazad */}
+        {/* Dugme nazad */}
         <div style={{ marginBottom: 12 }}>
           <button
             onClick={() => nav(-1)}
@@ -731,7 +730,7 @@ const apptBgFor = (a, colorForServiceId) => {
               background: "linear-gradient(135deg,#ffffff,#ffe3ef)",
               fontWeight: 700,
               cursor: "pointer",
-              fontSize: isMobile ? 14 : 16
+              fontSize: isMobile ? 14 : 16,
             }}
           >
             ← Nazad
@@ -890,52 +889,49 @@ const apptBgFor = (a, colorForServiceId) => {
                 </div>
               </div>
 
-        {/* MOBILNA TRAKA RADNICA */}
-{/* MOBILNA TRAKA RADNICA */}
-{isMobile && (
-  <div
-    className="emp-strip-mobile"
-    style={{
-      display: "flex",
-      flexWrap: "nowrap",       // ⬅️ više ne prelama u novi red
-      overflowX: "auto",        // ⬅️ horizontalni scroll
-      gap: 8,
-      padding: "6px 0",
-      WebkitOverflowScrolling: "touch", // glatkiji iOS scroll
-      scrollbarWidth: "none",   // Firefox
-    }}
-  >
-    {employees.map((e) => {
-      const isWorking = workingTodayIds.includes(e.id);
-      const isSelected = selEmpId === e.id;
-      return (
-        <button
-          key={e.id}
-          onClick={() => setSelEmpId(e.id)}
-          style={{
-            flex: "0 0 auto",                     // ⬅️ svaki dugmić ima „fiksnu” širinu u traci
-            padding: "8px 14px",
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,.35)",
-            background: isSelected
-              ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
-              : isWorking
-              ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-              : "rgba(255,255,255,.12)",
-            color: isSelected ? "#fff" : "#000",
-            fontWeight: 800,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {e.name}
-        </button>
-      );
-    })}
-  </div>
-)}
-
-
+              {/* MOBILNA TRAKA RADNICA */}
+              {isMobile && (
+                <div
+                  className="emp-strip-mobile"
+                  style={{
+                    display: "flex",
+                    flexWrap: "nowrap",
+                    overflowX: "auto",
+                    gap: 8,
+                    padding: "6px 0",
+                    WebkitOverflowScrolling: "touch",
+                    scrollbarWidth: "none",
+                  }}
+                >
+                  {employees.map((e) => {
+                    const isWorking = workingTodayIds.includes(e.id);
+                    const isSelected = selEmpId === e.id;
+                    return (
+                      <button
+                        key={e.id}
+                        onClick={() => setSelEmpId(e.id)}
+                        style={{
+                          flex: "0 0 auto",
+                          padding: "8px 14px",
+                          borderRadius: 999,
+                          border: "1px solid rgba(255,255,255,.35)",
+                          background: isSelected
+                            ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+                            : isWorking
+                            ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
+                            : "rgba(255,255,255,.12)",
+                          color: isSelected ? "#fff" : "#000",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {e.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* GRID */}
@@ -1226,13 +1222,13 @@ const apptBgFor = (a, colorForServiceId) => {
                 colorForServiceId={colorForServiceId}
                 onApptClick={openApptModal}
                 noShowByPhone={noShowByPhone}
-                isMobile={isMobile} 
+                isMobile={isMobile}
               />
             </div>
           </>
         )}
 
-             {/* Modal za termin */}
+        {/* Modal za termin */}
         {activeAppt &&
           createPortal(
             <ApptModal
@@ -1303,9 +1299,7 @@ const apptBgFor = (a, colorForServiceId) => {
               noShowByPhone={noShowByPhone}
             />,
             document.body
-          )
-        }
-
+          )}
       </div>
     </div>
   );
@@ -1381,17 +1375,15 @@ function DayGrid({
 }) {
   return (
     <div style={gridWrap} className="grid-day">
-     {!isMobile && (
-<div className="time-axis" style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
-
-    {timeMarks(openMin, closeMin).map((t) => (
-      <div key={t} style={markRow}>
-        <span style={markLbl}>{minToTime(t)}</span>
-      </div>
-    ))}
-  </div>
-)}
-
+      {!isMobile && (
+        <div className="time-axis" style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
+          {timeMarks(openMin, closeMin).map((t) => (
+            <div key={t} style={markRow}>
+              <span style={markLbl}>{minToTime(t)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={colsWrap}>
         {employeeIdsForDay.map((empId) => {
@@ -1457,7 +1449,7 @@ function DayGrid({
                       onClick={() =>
                         !isBreak && !isBlock && !isVacation && onApptClick(a)
                       }
-                    style={apptCard(top, height, bg, isBreak || isBlock || isVacation)}
+                      style={apptCard(top, height, bg, isBreak || isBlock || isVacation)}
                       title={
                         isVacation
                           ? "Odmor"
@@ -1470,50 +1462,53 @@ function DayGrid({
                             }`
                       }
                     >
-                <div style={cardTitle(isMobile)}>
-    {isVacation
-      ? "Odmor"
-      : isBreak
-      ? "Pauza"
-      : isBlock
-      ? "Blokirano"
-      : a.serviceName || "Usluga"}
-  </div>
+                      <div style={cardTitle(isMobile)}>
+                        {isVacation
+                          ? "Odmor"
+                          : isBreak
+                          ? "Pauza"
+                          : isBlock
+                          ? "Blokirano"
+                          : a.serviceName || "Usluga"}
+                      </div>
 
-  {!isBreak && !isBlock && !isVacation && (
-    <div style={metaRow}>
-      <span style={pill}>
-        <FiClock style={{ marginRight: 6 }} />
-        {minToTime(a.startMin)}–{minToTime(a.endMin)}
-      </span>
-      {a.clientName && (
-        <span style={pillLight}>
-          <FiUser style={{ marginRight: 6 }} />
-          {a.clientName}
-        </span>
-      )}
-    </div>
-  )}
+                      {!isBreak && !isBlock && !isVacation && (
+                        <div style={metaRow}>
+                          <span style={pill}>
+                            <FiClock style={{ marginRight: 6 }} />
+                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                          </span>
+                          {a.clientName && (
+                            <span style={pillLight(isMobile)}>
+                              <FiUser style={{ marginRight: 6 }} />
+                              {a.clientName}
+                            </span>
+                          )}
+                        </div>
+                      )}
 
-  {isBreak && (
-    <div style={metaRow}>
-      <span style={pill}><FiClock style={{marginRight:6}}/> {minToTime(a.startMin)}–{minToTime(a.endMin)}</span>
-    </div>
-  )}
+                      {isBreak && (
+                        <div style={metaRow}>
+                          <span style={pill}>
+                            <FiClock style={{ marginRight: 6 }} />{" "}
+                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                          </span>
+                        </div>
+                      )}
 
-  {!isBreak && !isBlock && !isVacation && hasNoShowHistory && (
-    <div style={badgeNoShow}>
-      <FiAlertTriangle style={{ marginRight: 6 }} />
-      No-show istorija
-    </div>
-  )}
+                      {!isBreak && !isBlock && !isVacation && hasNoShowHistory && (
+                        <div style={badgeNoShow}>
+                          <FiAlertTriangle style={{ marginRight: 6 }} />
+                          No-show istorija
+                        </div>
+                      )}
 
-  {hoverApptId === a.id && !isBreak && !isBlock && !isVacation && (
-    <div style={hoverHint}>
-      <FiEdit3 /> Klikni za detalje
-    </div>
-  )}
-</button>
+                      {hoverApptId === a.id && !isBreak && !isBlock && !isVacation && (
+                        <div style={hoverHint}>
+                          <FiEdit3 /> Klikni za detalje
+                        </div>
+                      )}
+                    </button>
                   );
                 })}
               </div>
@@ -1589,16 +1584,15 @@ function ScheduleGrid({
       </div>
 
       <div style={gridWrap} className="grid-schedule">
-      {!isMobile && (
-  <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
-    {timeMarks(openMin, closeMin).map((t) => (
-      <div key={t} style={markRow}>
-        <span style={markLbl}>{minToTime(t)}</span>
-      </div>
-    ))}
-  </div>
-)}
-
+        {!isMobile && (
+          <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
+            {timeMarks(openMin, closeMin).map((t) => (
+              <div key={t} style={markRow}>
+                <span style={markLbl}>{minToTime(t)}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div
           style={{
@@ -1615,7 +1609,6 @@ function ScheduleGrid({
             const height = pxFromMin(a.endMin - a.startMin);
             const widthPct = 100 / (a.cols || 1);
             const leftPct = (a.lane || 0) * widthPct;
-            const bg = colorForServiceId(a.serviceId) || "#fff";
 
             const empName = employeesById.get(a.employeeId)?.name || "—";
             const srv =
@@ -1630,42 +1623,38 @@ function ScheduleGrid({
               <button
                 key={a.id}
                 onClick={() => onApptClick(a)}
- style={{
-   ...apptCard(top, height, colorForServiceId(a.serviceId) || "#fff"),
-   left: `calc(${leftPct}% + 6px)`,
-   width: `calc(${widthPct}% - 12px)`
- }}
-
+                style={{
+                  ...apptCard(top, height, colorForServiceId(a.serviceId) || "#fff"),
+                  left: `calc(${leftPct}% + 6px)`,
+                  width: `calc(${widthPct}% - 12px)`,
+                }}
                 title={`${srv} • ${minToTime(a.startMin)}–${minToTime(
                   a.endMin
                 )} • ${empName}`}
               >
-                
-                <div style={cardTitle}>{srv}</div>
+                <div style={cardTitle(isMobile)}>{srv}</div>
 
-  <div style={metaRow}>
-    <span style={pill}>
-      <FiClock style={{ marginRight: 6 }} />
-      {minToTime(a.startMin)}–{minToTime(a.endMin)}
-    </span>
-    <span style={pillLight}>
-      <FiUser style={{ marginRight: 6 }} />
-      {empName}
-    </span>
-    {a.clientName && (
-      <span style={pillLight}>
-        {a.clientName}
-      </span>
-    )}
-  </div>
+                <div style={metaRow}>
+                  <span style={pill}>
+                    <FiClock style={{ marginRight: 6 }} />
+                    {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                  </span>
+                  <span style={pillLight(isMobile)}>
+                    <FiUser style={{ marginRight: 6 }} />
+                    {empName}
+                  </span>
+                  {a.clientName && (
+                    <span style={pillLight(isMobile)}>{a.clientName}</span>
+                  )}
+                </div>
 
-  {hasNoShowHistory && (
-    <div style={badgeNoShow}>
-      <FiAlertTriangle style={{ marginRight: 6 }} />
-      No-show istorija
-    </div>
-  )}
-</button>
+                {hasNoShowHistory && (
+                  <div style={badgeNoShow}>
+                    <FiAlertTriangle style={{ marginRight: 6 }} />
+                    No-show istorija
+                  </div>
+                )}
+              </button>
             );
           })}
           {!laid.length && (
@@ -1893,11 +1882,9 @@ function ApptModal({
               onChange={(e) => setStart(e.target.value)}
               style={inp}
             />
-<div style={{ color: "#555", opacity: 0.9, fontSize: 12 }}>
-  Trajanje: <b>{duration} min</b>
-</div>
-
-
+            <div style={{ color: "#555", opacity: 0.9, fontSize: 12 }}>
+              Trajanje: <b>{duration} min</b>
+            </div>
           </div>
 
           <div style={fieldRow}>
@@ -1962,9 +1949,8 @@ function ApptModal({
 }
 
 /* -------------------- UI helpers & styles -------------------- */
-// kartica termina – zajednički stil za DayGrid i ScheduleGrid
-// kartica termina – jednostavan izgled (bez belog overlay-a)
-const apptCard = (isMobile, top, height, bg, disabled = false) => ({
+/* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
+const apptCard = (top, height, bg, disabled = false) => ({
   position: "absolute",
   left: 6,
   right: 6,
@@ -1983,12 +1969,10 @@ const apptCard = (isMobile, top, height, bg, disabled = false) => ({
   whiteSpace: "normal",
   wordBreak: "break-word",
   overflowWrap: "anywhere",
-  fontSize: isMobile ? 12 : 14,
   lineHeight: 1.3,
 });
 
-// UMESTO: const cardTitle = { ... }
-// STAVI OVO:
+/* naslov na kartici – funkcija da možemo proslediti isMobile */
 const cardTitle = (isMobile) => ({
   fontWeight: 800,
   fontSize: isMobile ? 16 : 14,
@@ -1996,7 +1980,7 @@ const cardTitle = (isMobile) => ({
   marginBottom: 4,
   textAlign: "left",
   ...(isMobile
-    ? {} // na telefonu NE sečemo naslov
+    ? {}
     : {
         display: "-webkit-box",
         WebkitLineClamp: 2,
@@ -2004,8 +1988,6 @@ const cardTitle = (isMobile) => ({
         overflow: "hidden",
       }),
 });
-
-
 
 const metaRow = {
   display: "flex",
@@ -2015,19 +1997,13 @@ const metaRow = {
   flexWrap: "wrap",
 };
 
-
-
-
-
-
-
 const normPhone = (s) =>
   String(s || "")
     .replace(/[^\d+]/g, "")
     .replace(/^00/, "+")
     .trim();
 
-const pxFromMin = (min) => min *3.5;//0min ≈ 70px, 45min ≈ 106px
+const pxFromMin = (min) => min * 3.5;
 const gridHeight = (m) => pxFromMin(m);
 const timeMarks = (open, close) => {
   const arr = [];
@@ -2098,8 +2074,8 @@ const inp = {
   background: "#fff",
   padding: "0 12px",
   fontSize: 14,
-    appearance: "none",  
-    WebkitAppearance: "none",
+  appearance: "none",
+  WebkitAppearance: "none",
   MozAppearance: "none",
   color: "#000",
 };
@@ -2312,7 +2288,6 @@ const empPillStyle = (isVacation) => ({
     : {}),
 });
 
-
 const pillBase = {
   display: "inline-flex",
   alignItems: "center",
@@ -2330,28 +2305,16 @@ const pill = {
   color: "#111",
   boxShadow: "inset 0 0 0 1px rgba(0,0,0,.06)",
 };
+
+/* jedina verzija pillLight – funkcija */
 const pillLight = (isMobile) => ({
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 10px",
-  borderRadius: 999,
+  ...pillBase,
   background: "rgba(0,0,0,.045)",
   color: "#222",
   boxShadow: "inset 0 0 0 1px rgba(0,0,0,.05)",
   fontSize: isMobile ? 12 : 14,
   lineHeight: 1.3,
 });
-const pillLight = {
-  ...pillBase,
-  background: "rgba(0,0,0,.045)",
-  color: "#222",
-  boxShadow: "inset 0 0 0 1px rgba(0,0,0,.05)",
-  fontSize: isMobile ? 12 : 14,   // smanji font na mobilnom
-lineHeight: 1.3,  
-};
-
-
 
 /* --- Modal --- */
 const modalBackdrop = {
@@ -2361,8 +2324,7 @@ const modalBackdrop = {
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
-  zIndex: 2147483647, 
-  
+  zIndex: 2147483647,
 };
 const modalCard = {
   width: "min(560px, 96vw)",
@@ -2446,7 +2408,6 @@ const actionBtn = {
   fontWeight: 900,
 };
 
-
 /* --- Responsive fine-tuning --- */
 const responsiveCSS = `
 @media (max-width: 768px) {
@@ -2456,20 +2417,18 @@ const responsiveCSS = `
   .grid-schedule { grid-template-columns: 1fr !important; }
 }
 
-
 @media (max-width: 768px) {
   .emp-strip-mobile{
     display:flex;
-    flex-wrap:nowrap;          /* ⬅️ bitno za „traku” */
+    flex-wrap:nowrap;
     overflow-x:auto;
     gap:8px;
     padding:6px 0;
-    scrollbar-width:none;      /* Firefox */
+    scrollbar-width:none;
   }
-  .emp-strip-mobile::-webkit-scrollbar{ display:none; } /* Chrome/Safari */
-  .emp-strip-mobile button{ flex:0 0 auto; }            /* dugmići ostaju u jednom redu */
+  .emp-strip-mobile::-webkit-scrollbar{ display:none; }
+  .emp-strip-mobile button{ flex:0 0 auto; }
 }
-
 
 /* --- MOBILE TUNE-UP --- */
 @media (max-width: 640px) {
@@ -2477,12 +2436,12 @@ const responsiveCSS = `
   input[type="month"],
   input[type="time"],
   select {
-    font-size: 16px;      /* čitljivo na mobilnom */
+    font-size: 16px;
     padding: 8px 10px;
-    appearance: none;     /* uklanja iOS plavi tekst i strelice */
+    appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    color: #000;          /* crni tekst */
+    color: #000;
   }
 }
 
@@ -2512,7 +2471,7 @@ const responsiveCSS = `
 /* TELEFONI ≤640px */
 @media (max-width: 640px) {
   .grid-day, .grid-schedule {
-    grid-template-columns: 1fr !important;   /* 1 kolona na telefonu */
+    grid-template-columns: 1fr !important;
     gap: 8px !important;
   }
 
@@ -2530,7 +2489,6 @@ const responsiveCSS = `
 
   .admincal { --head-fz: 14px; }
 }
-
 
 /* TELEFONI ≤768px – sakrij levu vremensku osu i prikaži traku radnica */
 @media (max-width: 768px) {
