@@ -24,7 +24,6 @@ function formatDateTime(dateISO, timeHHMM, tz) {
 }
 
 function getLocalHour(tz) {
-  // 24h format, npr. "15" -> 15
   const s = new Intl.DateTimeFormat('en-GB', {
     timeZone: tz, hour: '2-digit', hour12: false
   }).format(new Date());
@@ -57,7 +56,7 @@ async function sendSMS({ apiKey, sender, to, text }) {
 
 // === Ovde ubaci svoj realni fetch termina za sutra ===
 async function getAppointmentsForTomorrow(tz) {
-  // DEMO: jedan termin
+  // DEMO podatak – zameni svojim izvorom
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
   const yyyy = tomorrow.getFullYear();
@@ -87,54 +86,58 @@ export default async function handler(req, res) {
     if (!sender) return json(res, 400, { ok: false, error: 'BREVO_SENDER (or SMS_SENDER) missing' });
 
     const dryRun = /^(1|true)$/i.test(String(req.query.dryRun || ''));
-    const force = /^(1|true)$/i.test(String(req.query.force || ''));
+    const force  = /^(1|true)$/i.test(String(req.query.force  || ''));
     const isCron = !!req.headers['x-vercel-cron'];
+    const mode   = isCron ? 'cron' : (force ? 'force' : 'manual');
 
-    // Sigurnost: pravo slanje samo iz crona ili uz ?force=1
-    const mode = isCron ? 'cron' : (force ? 'force' : 'manual');
+    const localHour     = getLocalHour(tz);
+    const shouldSendNow = force || localHour === 15; // force = odmah; inače tačno u 15h
+    const allowed       = isCron || force;           // dozvoljeno iz Vercel crona ili force
 
-    // DST-safe: rutu pozivamo u 13:00 i 14:00 UTC, ali šaljemo samo kad je lokalno 15h
-    const localHour = getLocalHour(tz);
-    const shouldSendNow = localHour === 15;
-
+    // Dohvati termine za sutra
     const appointmentsAll = await getAppointmentsForTomorrow(tz);
 
-    // Filtriraj na vremenski opseg 08:00 - 22:00 (22:00 uključeno)
+    // Filtriraj na 08:00–22:00 (uključivo)
     const filtered = appointmentsAll.filter(a => {
       const m = timeToMin(a.startHHMM);
       return m >= 8 * 60 && m <= 22 * 60;
     });
 
-    if (dryRun || !shouldSendNow || !(isCron || force)) {
+    // Dry run ili nije pravo vreme / nije dozvoljeno
+    if (dryRun || !shouldSendNow || !allowed) {
+      // mali preview poruka koje bi se poslale
+      const preview = filtered.map(a => {
+        const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
+        const msg =
+          `Imate zakazanu uslugu ${String(a.serviceName).toLowerCase()} ${fmtDate} u ${fmtTime}h` +
+          (salonPhone ? ` Kontakt: ${salonPhone}` : '') +
+          ` | Vaš aBeauty ❤️`;
+        return { to: a.clientPhone, message: msg };
+      });
+
       return json(res, 200, {
         ok: true,
         tz,
         mode,
         localHour,
-        willSend: shouldSendNow && (isCron || force) && filtered.length > 0 && !dryRun,
+        willSend: shouldSendNow && allowed && filtered.length > 0 && !dryRun,
         dryRun,
         count: filtered.length,
-        sample: filtered.slice(0, 5) // malo primera u odgovoru
+        sample: preview.slice(0, 5)
       });
     }
 
+    // Stvarno slanje
     const results = [];
     for (const a of filtered) {
       try {
         const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
-
         const message =
           `Imate zakazanu uslugu ${String(a.serviceName).toLowerCase()} ${fmtDate} u ${fmtTime}h` +
           (salonPhone ? ` Kontakt: ${salonPhone}` : '') +
           ` | Vaš aBeauty ❤️`;
 
-        const resp = await sendSMS({
-          apiKey,
-          sender,
-          to: a.clientPhone,
-          text: message
-        });
-
+        const resp = await sendSMS({ apiKey, sender, to: a.clientPhone, text: message });
         results.push({ to: a.clientPhone, ok: resp.ok, status: resp.status, data: resp.data });
       } catch (e) {
         results.push({ to: a.clientPhone, ok: false, error: String(e?.message || e) });
