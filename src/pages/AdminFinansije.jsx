@@ -456,11 +456,11 @@ const css = `
   align-items: center;
   gap: 12px;
   padding: 8px;
-  background: rgba(255,255,255,.9);
+  
   backdrop-filter: blur(8px);
-  border: 1px solid #ececec;
-  border-radius: 14px;
-  box-shadow: 0 8px 22px rgba(0,0,0,.08);
+
+  
+
 }
 .fin-fixed-spacer{
   height: 64px; /* rezerva prostora ispod fixed trake */
