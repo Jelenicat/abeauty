@@ -716,25 +716,7 @@ const apptBgFor = (a, colorForServiceId) => {
   return (
     
     <div style={wrap}>
-          <div className="admincal">
-      {/* 👇 OVDE DODAJ NAZAD dugme */}
-      <button
-        onClick={() => window.history.back()}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "8px 14px",
-          marginBottom: 10,
-          borderRadius: 10,
-          border: "1px solid #ccc",
-          background: "#fff",
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-      >
-        ← Nazad
-      </button>
+      <div style={panel} className="admincal">
         <style>{responsiveCSS}</style>
 
         <div style={tabbar}>
