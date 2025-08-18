@@ -472,9 +472,7 @@ useEffect(() => {
             </div>
 
             <div className="services2-footer">
-              <div className="services-note">
-                Ovo je pregled po kategorijama. Zakazivanje nije omogućeno u ovom prikazu.
-              </div>
+           
             </div>
           </div>
         </div>

@@ -87,13 +87,28 @@
 
 /* RESPONSIVE TWEAKS – telefon i tablet */
 @media (max-width: 768px){
+
+  .lm-overlay {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0 12px;   /* manje paddinga sa strane */
+  }
+
+ 
+  
+
+
   .lm-card{
     width: min(520px, 94vw);
     padding: 20px 18px 22px;
     border-radius: 16px;
-    background: rgba(255,255,255,.70);       /* mrvicu providnije na tel. */
+    background: rgba(255,255,255,.6);       /* mrvicu providnije na tel. */
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+        width: 100%;
+    max-width: 380px;  /* centrirana širina */
+    margin: 0 auto;    /* garantuje centriranje */
   }
   .lm-logo{ height: 150px; margin-bottom: -6px; }
   .lm-header h3{ font-size: 20px; }
