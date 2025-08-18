@@ -503,11 +503,10 @@ if (isMobile) {
                       </button>
                     );
                   })
-                ) : (
-                  <div style={{ color: "#fff", opacity: 0.9 }}>
-                    Nema slobodnih termina za izabrani dan.
-                  </div>
-                )}
+          ) : (
+  <div style={emptyMsg}>Nema slobodnih termina za izabrani dan.</div>
+)}
+
               </div>
 
               {allBooked && (
@@ -719,11 +718,10 @@ if (isMobile) {
                       </button>
                     );
                   })
-                ) : (
-                  <div style={{ color: "#fff", opacity: 0.9 }}>
-                    Nema slobodnih termina za izabrani dan.
-                  </div>
-                )}
+              ) : (
+  <div style={emptyMsg}>Nema slobodnih termina za izabrani dan.</div>
+)}
+
               </div>
 
               {allBooked && (
@@ -1325,6 +1323,16 @@ const pillBtnMobile = {
   textAlign: "center",
   boxShadow: "0 4px 12px rgba(0,0,0,.08)",
 };
+const emptyMsg = {
+  gridColumn: "1 / -1",   // raširi poruku preko cele širine grida
+  textAlign: "center",
+  color: "#fff",
+  opacity: 0.9,
+  fontSize: 15,
+  fontWeight: 600,
+  padding: "12px 8px",
+};
+
 
 /* --- Modal styles --- */
 // original overlay je bio centriran; sada ga držimo uz sam vrh ekrana
