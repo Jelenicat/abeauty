@@ -155,8 +155,14 @@ export default function AdminCategory() {
     e?.preventDefault?.();
     if (saving) return;
 
+    // *** KLJUČNO: ne gubimo originalni categoryId kada editujemo iz "Na popustu" ***
+    const prevObj = editing ? services.find((s) => s.id === editing) : null;
+    const resolvedCategoryId = editing
+      ? (prevObj?.categoryId ?? (catId === "discounts" ? "" : catId))
+      : (catId === "discounts" ? "" : catId);
+
     const payload = {
-      categoryId: catId === "discounts" ? "" : catId,
+      categoryId: resolvedCategoryId,
       name: name.trim(),
       durationMin: Number(durationMin) || 0,
       basePrice: Number(price) || 0,
@@ -177,7 +183,7 @@ export default function AdminCategory() {
 
         await updateDoc(doc(db, "services", editing), payload);
 
-        // Ako smo u "discounts" i popust je postao 0, skini iz liste odmah
+        // Ako smo u "discounts" i popust je postao 0, ukloni iz ove liste (ostaje u svojoj kategoriji)
         if (catId === "discounts" && payload.discountPercent <= 0) {
           removeLocalService(editing);
         }
@@ -476,4 +482,3 @@ const css = `
 }
 */
 `;
-
