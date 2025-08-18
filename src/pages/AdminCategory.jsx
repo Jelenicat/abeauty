@@ -168,23 +168,26 @@ export default function AdminCategory() {
       <div style={panel}>
         <style>{css}</style>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-          <button style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
-          <h2 style={title}>{catName || "Kategorija"}</h2>
-        </div>
+        {/* GORNJI BLOK – lep card + mobile kolona */}
+        <div className="admincat-top">
+          <div className="admincat-topbar" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+            <button className="btn-ghost" style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
+            <h2 className="admincat-title" style={title}>{catName || "Kategorija"}</h2>
+          </div>
 
-        {/* EDIT NAZIVA — dostupno i za "discounts"; brisanje samo za obične */}
-        <div className="admincat-catrow" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
-          <input
-            style={inp}
-            value={catName}
-            onChange={e => setCatName(e.target.value)}
-            placeholder="Naziv kategorije"
-          />
-          <button style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
-          {catId !== "discounts" && (
-            <button style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
-          )}
+          {/* EDIT NAZIVA — dostupno i za "discounts"; brisanje samo za obične */}
+          <div className="admincat-catrow" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
+            <input
+              style={inp}
+              value={catName}
+              onChange={e => setCatName(e.target.value)}
+              placeholder="Naziv kategorije"
+            />
+            <button className="btn-primary" style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
+            {catId !== "discounts" && (
+              <button className="btn-danger" style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
+            )}
+          </div>
         </div>
 
         <form onSubmit={saveService} style={form} className="admincat-form">
@@ -193,8 +196,8 @@ export default function AdminCategory() {
           <input style={inp} type="number" min="0" placeholder="Cena (RSD)" value={price} onChange={e => setPrice(e.target.value)} />
           <input style={inp} type="number" min="0" max="90" placeholder="Popust % (opciono)" value={discount} onChange={e => setDiscount(e.target.value)} />
           <div style={{ alignSelf: "center", color: "#fff", fontWeight: 800 }}>Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
-          <button style={btn} type="submit">{editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}</button>
-          {editing && <button style={ghostBtn} type="button" onClick={resetForm}>Otkaži</button>}
+          <button className="btn-primary" style={btn} type="submit">{editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}</button>
+          {editing && <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>Otkaži</button>}
         </form>
 
         <div style={list}>
@@ -216,8 +219,8 @@ export default function AdminCategory() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
-                  <button style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
+                  <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
+                  <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
                 </div>
               </div>
             );
@@ -241,64 +244,87 @@ const dangerBtn = { ...btn, background: "#ff5b6e" };
 const form = { display: "grid", gridTemplateColumns: "2fr 140px 140px 160px auto auto auto", gap: 8, marginBottom: 14 };
 const list = { display: "grid", gap: 10 };
 const row = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: 14, padding: "10px 12px", boxShadow: "0 10px 20px rgba(0,0,0,.06)", flexWrap: "wrap", gap: 8 };
-const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#efefef", cursor: "pointer", fontWeight: 800 };
+const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800 };
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
 
-/* dodatni CSS za mobile */
-/* dodatni CSS za mobile */
+/* dodatni CSS */
 const css = `
+/* lep "card" header na svim ekranima */
+.admincat-top {
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.10);
+  backdrop-filter: blur(8px);
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+/* --- MOBILE --- */
 @media (max-width: 900px) {
-  .admincat-catrow {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-    margin-bottom: 14px;
-  }
-
-  .admincat-form {
-    grid-template-columns: 1fr;
-  }
-
-  .admincat-form input,
-  .admincat-form button,
-  .admincat-form div {
-    width: 100%;
-  }
-
-  .admincat-row {
+  /* top bar: Nazad + naslov -> kolona */
+  .admincat-topbar {
+    display: flex !important;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 10px;
+    margin-bottom: 12px !important;
   }
-
-  .admincat-row > div:last-child {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+  .admincat-topbar .btn-ghost {
     width: 100%;
-  }
-
-  /* dugmići u redovima */
-  .admincat-row button {
-    width: 100%;
-    height: 42px;
+    height: 44px;
     border-radius: 12px;
     font-weight: 800;
   }
+  .admincat-title {
+    margin: 0;
+    text-align: left;
+    font-size: 22px;
+    line-height: 1.2;
+  }
 
-  /* primarna dugmad (Sačuvaj, Dodaj, Izmeni) – gradient */
-  .admincat-form button[type="submit"],
-  .admincat-row button:first-child {
+  /* red sa inputom za naziv + dugmad -> kolona, full width */
+  .admincat-catrow {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 12px !important;
+  }
+  .admincat-catrow input {
+    width: 100%;
+    height: 44px;
+    border-radius: 12px;
+  }
+  .admincat-catrow .btn-primary,
+  .admincat-catrow .btn-danger {
+    width: 100%;
+    height: 44px;
+    border-radius: 12px;
+    font-weight: 800;
+  }
+  .admincat-catrow .btn-primary {
     background: linear-gradient(135deg,#ff5fa2,#ff7fb5);
     color: #fff;
   }
-
-  /* sekundarna dugmad (Otkaži, Obriši) – svetlija */
-  .admincat-form button[type="button"],
-  .admincat-row button:last-child {
-    background: #ffe1e1;
-    color: #7a1b1b;
+  .admincat-catrow .btn-danger {
+    background: #ff6b81;
+    color: #fff;
   }
-}
-`;
 
+  /* FORMA ispod – 1 kolona */
+  .admincat-form { grid-template-columns: 1fr; }
+  .admincat-form input,
+  .admincat-form button,
+  .admincat-form div { width: 100%; }
+
+  /* Redovi u listi: kolona + full-width dugmad */
+  .admincat-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .admincat-row > div:last-child { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+  .admincat-row button { width: 100%; height: 42px; border-radius: 12px; font-weight: 800; }
+}
+
+/* (opciono) sticky top na mobilnom – otkomentariši ako želiš da bude zalepljen
+@media (max-width: 900px) {
+  .admincat-top { position: sticky; top: 12px; z-index: 5; }
+}
+*/
+`;

@@ -1,25 +1,26 @@
-// src/pages/AdminEmployees.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../firebase";
 import {
   collection, addDoc, updateDoc, deleteDoc, doc,
   onSnapshot, query, orderBy, serverTimestamp
 } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
 export default function AdminEmployees() {
+  const nav = useNavigate();
+
   // podaci
   const [employees, setEmployees] = useState([]);
   const [cats, setCats] = useState([]);
   const [allServices, setAllServices] = useState([]);
 
   // forma
-  const [editing, setEditing] = useState(null); // null | employee obj
+  const [editing, setEditing] = useState(null); 
   const [name, setName] = useState("");
   const [selectedCats, setSelectedCats] = useState(new Set());      
   const [selectedServices, setSelectedServices] = useState(new Set()); 
   const [loading, setLoading] = useState(true);
 
-  // --- učitavanje realtime ---
   useEffect(() => {
     const offEmp = onSnapshot(
       query(collection(db, "employees"), orderBy("name", "asc")),
@@ -143,6 +144,11 @@ export default function AdminEmployees() {
   return (
     <div style={wrap}>
       <div style={panel}>
+        {/* Dugme nazad */}
+        <div style={{ marginBottom: 16 }}>
+          <button style={backBtn} onClick={() => nav(-1)}>← Nazad</button>
+        </div>
+
         {/* input + dugme Dodaj novog zaposlenog */}
         <form onSubmit={saveEmployee} style={form}>
           <input
@@ -156,7 +162,7 @@ export default function AdminEmployees() {
           )}
         </form>
 
-        {/* GRID kartice radnica */}
+        {/* GRID kartice radnika */}
         <div style={empGrid}>
           {employees.map((emp) => {
             const isSel = editing?.id === emp.id;
@@ -185,7 +191,7 @@ export default function AdminEmployees() {
                   )}
                 </div>
 
-                {/* INLINE editor sa Otkaži + Sačuvaj dole */}
+                {/* INLINE editor */}
                 {isSel && (
                   <div style={inlineEditor}>
                     <div style={inlineHeader}>
@@ -268,7 +274,6 @@ const wrap = {
   background:'url("/slika1.webp") center/cover no-repeat fixed',
   padding:24, display:"flex", justifyContent:"center", alignItems:"flex-start"
 };
-
 const panel = {
   width:"min(1200px,100%)",
   background:"rgba(255,255,255,.14)",
@@ -279,16 +284,27 @@ const panel = {
   padding:"clamp(18px,4vw,36px)", marginTop:16
 };
 
+const backBtn = {
+  height:42,
+  borderRadius:12,
+  border:"1px solid rgba(255,255,255,.7)",
+  background:"transparent",
+  color:"#fff",
+  fontWeight:800,
+  padding:"0 14px",
+  cursor:"pointer"
+};
+
 const form = { display:"grid", gridTemplateColumns:"1fr auto", gap:12, margin:"10px 0 18px" };
 const inp  = { height:46, borderRadius:14, border:"1px solid #eaeaea", padding:"0 14px", fontSize:15, background:"#fff", boxShadow:"0 6px 18px rgba(0,0,0,.06)" };
 
-const btn  = { height:46, border:"none", borderRadius:14, background:"linear-gradient(135deg,#ff5fa2,#ff7fb5)", color:"fff", fontWeight:800, cursor:"pointer", padding:"0 18px", boxShadow:"0 10px 22px rgba(255,127,181,.35)", width:"100%", maxWidth:400 };
+const btn  = { height:46, border:"none", borderRadius:14, background:"linear-gradient(135deg,#ff5fa2,#ff7fb5)", color:"#fff", fontWeight:800, cursor:"pointer", padding:"0 18px", boxShadow:"0 10px 22px rgba(255,127,181,.35)", width:"100%", maxWidth:400 };
 const ghostBtn = { 
   height:46,
   borderRadius:14,
-  border:"1px solid #000",   // crni okvir
+  border:"1px solid #000",
   background:"transparent",
-  color:"#000",              // crni tekst
+  color:"#000",
   fontWeight:800,
   padding:"0 16px",
   cursor:"pointer",
@@ -296,116 +312,39 @@ const ghostBtn = {
   maxWidth:400
 };
 
-
 const btnRow = { display:"flex", flexWrap:"wrap", gap:8, width:"100%" };
-
 const smBtn   = { height:32, padding:"0 10px", border:"none", borderRadius:10, background:"#efefef", cursor:"pointer", fontWeight:800 };
 const smDel   = { ...smBtn, background:"#ffe1e1", color:"#7a1b1b" };
 
-const empGrid = {
-  display:"grid",
-  gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))",
-  gap:12,
-  margin:"6px 0 16px"
-};
+const empGrid = { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))", gap:12, margin:"6px 0 16px" };
 const empCard = (active) => ({
   background: "rgba(255,255,255,.35)",
   border: "1px solid rgba(255,255,255,.45)",
   backdropFilter: "blur(8px)",
-  WebkitBackdropFilter: "blur(8px)",
   borderRadius: 16,
   padding: 10,
   display: "grid",
   justifyItems: "center",
   gap: 8,
   cursor: "pointer",
-  boxShadow: active
-    ? "0 12px 28px rgba(0,0,0,.14)"
-    : "0 8px 18px rgba(0,0,0,.10)",
+  boxShadow: active ? "0 12px 28px rgba(0,0,0,.14)" : "0 8px 18px rgba(0,0,0,.10)",
   outline: active ? "2px solid #ffb6d0" : "none",
   transition: "box-shadow .15s ease, outline-color .15s ease, background .15s ease",
 });
-const square = {
-  width:110,
-  height:110,
-  borderRadius:12,
-  overflow:"hidden",
-  background:"linear-gradient(135deg,#ffe3ef,#ffffff)",
-  boxShadow:"0 6px 16px rgba(0,0,0,.10)",
-  display:"grid",
-  placeItems:"center"
-};
+const square = { width:110, height:110, borderRadius:12, overflow:"hidden", background:"linear-gradient(135deg,#ffe3ef,#ffffff)", boxShadow:"0 6px 16px rgba(0,0,0,.10)", display:"grid", placeItems:"center" };
 const squareImg = { width:"100%", height:"100%", objectFit:"cover" };
 const squareFallback = { ...square, background:"#f8f8f8" };
 const initialsInSquare = { fontWeight:900, color:"#b15b78", fontSize:22, letterSpacing:.6 };
 const empName = { fontWeight:800, fontSize:13, textAlign:"center", color:"#222", minHeight:36, lineHeight:1.2 };
 const cardActions = { display:"flex", gap:8 };
 
-const inlineEditor = {
-  gridColumn: "1 / -1",
-  background: "rgba(255,255,255,.45)",
-  border: "1px solid rgba(255,255,255,.55)",
-  borderRadius: 18,
-  padding: 12,
-  margin: "-4px 0 14px",
-  boxShadow: "0 12px 28px rgba(0,0,0,.10)",
-  backdropFilter: "blur(6px)"
-};
-const inlineHeader = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: 8,
-  color: "#000"
-};
+const inlineEditor = { gridColumn: "1 / -1", background: "rgba(255,255,255,.45)", border: "1px solid rgba(255,255,255,.55)", borderRadius: 18, padding: 12, margin: "-4px 0 14px", boxShadow: "0 12px 28px rgba(0,0,0,.10)", backdropFilter: "blur(6px)" };
+const inlineHeader = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, color: "#000" };
 
 const grid   = { display:"grid", gap:18, gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))" };
-const catCard = {
-  background:"#fff",
-  borderRadius:20,
-  boxShadow:"0 16px 32px rgba(0,0,0,.10)",
-  overflow:"hidden",
-  border:"1px solid #f1f1f1"
-};
-const catHead = {
-  display:"flex",
-  alignItems:"center",
-  justifyContent:"space-between",
-  gap:10,
-  padding:"12px 14px",
-  background:"linear-gradient(135deg, #fafafa, #f5f5f7)",
-  borderBottom:"1px solid #ececec",
-  position:"sticky",
-  top:0,
-  zIndex:1
-};
+const catCard = { background:"#fff", borderRadius:20, boxShadow:"0 16px 32px rgba(0,0,0,.10)", overflow:"hidden", border:"1px solid #f1f1f1" };
+const catHead = { display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"12px 14px", background:"linear-gradient(135deg, #fafafa, #f5f5f7)", borderBottom:"1px solid #ececec", position:"sticky", top:0, zIndex:1 };
 const catHint = { fontSize:12, color:"#888", fontWeight:700 };
-
-const srvList = {
-  display:"grid",
-  gap:10,
-  maxHeight:280,
-  overflow:"auto",
-  padding:12
-};
-
-const srvItem = (checked, disabled) => ({
-  display:"flex",
-  alignItems:"center",
-  gap:10,
-  padding:"10px 12px",
-  borderRadius:14,
-  background: "#fff",
-  border: checked ? "2px solid #ff79ad" : "1px solid #ededed",
-  boxShadow: checked ? "0 10px 16px rgba(255,121,173,.15)" : "0 6px 14px rgba(0,0,0,.05)",
-  transition:"transform .12s ease, box-shadow .12s ease, border-color .12s ease",
-  cursor: disabled ? "not-allowed" : "pointer",
-  opacity: disabled ? .55 : 1,
-  userSelect:"none",
-});
-const srvDot = (checked) => ({
-  width:10, height:10, borderRadius:999,
-  background: checked ? "#ff79ad" : "#d9d9d9",
-  boxShadow: checked ? "0 0 0 4px rgba(255,121,173,.16)" : "none",
-  flex:"0 0 auto"
-});
+const srvList = { display:"grid", gap:10, maxHeight:280, overflow:"auto", padding:12 };
+const srvItem = (checked, disabled) => ({ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:14, background: "#fff", border: checked ? "2px solid #ff79ad" : "1px solid #ededed", boxShadow: checked ? "0 10px 16px rgba(255,121,173,.15)" : "0 6px 14px rgba(0,0,0,.05)", transition:"transform .12s ease, box-shadow .12s ease, border-color .12s ease", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? .55 : 1, userSelect:"none" });
+const srvDot = (checked) => ({ width:10, height:10, borderRadius:999, background: checked ? "#ff79ad" : "#d9d9d9", boxShadow: checked ? "0 0 0 4px rgba(255,121,173,.16)" : "none", flex:"0 0 auto" });

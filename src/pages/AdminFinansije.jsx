@@ -6,6 +6,7 @@ import {
   onSnapshot, query, orderBy, where, collection,
   serverTimestamp, Timestamp
 } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
 export default function AdminFinansije() {
   // === Mesec (YYYY-MM) ===
@@ -22,6 +23,8 @@ export default function AdminFinansije() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("pregled"); // 'pregled' | 'radnice'
   const [err, setErr] = useState("");
+
+  const nav = useNavigate();
 
   // --- accordion: otvorene radnice ---
   const [open, setOpen] = useState(() => new Set());
@@ -228,8 +231,16 @@ export default function AdminFinansije() {
     <div style={wrap} className="fin-wrap">
       <style>{css}</style>
       <div style={panel} className="fin-panel">
-        <div style={header} className="fin-sticky">
-          
+        {/* STICKY HEADER: Nazad + month input (uvek lepljiv) */}
+        <div className="fin-sticky fin-header">
+          <button
+            onClick={() => nav(-1)}
+            className="fin-back"
+            aria-label="Nazad na prethodnu stranu"
+          >
+            ← Nazad
+          </button>
+
           <input
             type="month"
             value={month}
@@ -423,8 +434,6 @@ const panel = {
   boxShadow: "0 24px 60px rgba(0,0,0,.25)",
   padding: "clamp(16px,4vw,28px)",
 };
-const header = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 };
-const title = { margin: 0, color: "#000", fontWeight: 900, fontSize: "clamp(20px,3.2vw,28px)", letterSpacing: .2 };
 const monthInp = { height: 40, borderRadius: 12, border: "1px solid #eaeaea", padding: "0 10px", background: "#fff" };
 const tabs = { display: "flex", gap: 8, marginBottom: 10 };
 
@@ -433,7 +442,45 @@ const css = `
 .fin-wrap, .fin-wrap * { font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
 .fin-panel { position: relative; }
 
-/* Ukloni "plavu" boju i stilizuj month input */
+/* Sticky header (uvek, i desktop i mobilni) */
+.fin-sticky{
+  position: sticky;
+  top: 8px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  background: rgba(255,255,255,.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #ececec;
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgba(0,0,0,.08);
+}
+.fin-sticky + * { margin-top: 10px; }
+
+/* Header layout tweaks za uže ekrane */
+.fin-header { justify-content: space-between; }
+@media (max-width: 680px){
+  .fin-header { flex-direction: column; align-items: stretch; }
+}
+
+/* Nazad dugme */
+.fin-back{
+  height: 40px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  background: linear-gradient(135deg,#ff5fa2,#ff7fb5);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(255,127,181,.35);
+  -webkit-appearance:none; appearance:none; outline:none; -webkit-tap-highlight-color:transparent;
+}
+.fin-back:active{ transform: translateY(1px); }
+
+/* Month input stilizacija */
 .fin-month{
   color:#222;
   background:#fff;
@@ -442,6 +489,7 @@ const css = `
   height:40px;
   padding:0 10px;
   outline:none;
+  box-shadow: 0 6px 12px rgba(0,0,0,.05);
 }
 .fin-month:focus{
   border-color:#ff9cbc;
@@ -554,17 +602,12 @@ const css = `
    MOBILNE DORADE
    ========================= */
 @media (max-width: 680px){
-  /* wrap/panel spacing */
   .fin-wrap { padding: 14px; }
   .fin-panel { border-radius: 22px; }
 
-  /* sticky header: naslov + month + tabs */
-  .fin-sticky{ position: sticky; top: 8px; z-index: 5; }
-  .fin-sticky + * { margin-top: 8px; }
-
-  /* header unutra */
-  .fin-sticky h2 { font-size: 20px !important; }
-  .fin-month{ height: 42px; }
+  /* sticky header je već uključen za sve — ovde samo veći tap i raspored */
+  .fin-back { height: 44px; border-radius: 14px; }
+  .fin-month{ height: 44px; }
 
   /* tabs kao full width i veća tap meta */
   .fin-tab { flex:1; height: 44px; border-radius: 14px; font-size:14px; }
@@ -581,24 +624,11 @@ const css = `
   .fin-input{ height: 44px; font-size: 15px; }
   .fin-btn{ height: 44px; width: 100%; border-radius: 14px; }
 
-  /* LISTE: raspored u kolonu da dugmad ne iskaču */
-  .fin-item{
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
-  .fin-item-right{
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .fin-item-right .fin-btn{
-    width: 100%;
-  }
-
-  /* sub-items: u dve linije na uskim ekranima */
-  .fin-subitem{
-    flex-direction: column; align-items: stretch; gap: 8px;
-  }
+  /* liste i podliste */
+  .fin-item{ flex-direction: column; align-items: stretch; gap: 8px; }
+  .fin-item-right{ justify-content: space-between; gap: 8px; }
+  .fin-item-right .fin-btn{ width: 100%; }
+  .fin-subitem{ flex-direction: column; align-items: stretch; gap: 8px; }
   .fin-sub-right{ text-align: left; }
 }
 

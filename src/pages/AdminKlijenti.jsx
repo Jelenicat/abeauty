@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../firebase";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
 /* mali hook za responsive */
 function useIsMobile(bp = 700) {
@@ -20,6 +21,7 @@ export default function AdminKlijenti() {
   const [clients, setClients] = useState([]);
   const [search, setSearch] = useState("");
   const isMobile = useIsMobile(700);
+  const nav = useNavigate();
 
   // učitaj jedinstvene klijente iz appointments (bez duplikata po name+phone)
   useEffect(() => {
@@ -44,7 +46,8 @@ export default function AdminKlijenti() {
   }, []);
 
   // helperi za pretragu
-  const normText = (s = "") => s.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const normText = (s = "") =>
+    s.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   const normPhone = (s = "") => s.toString().replace(/[^\d]/g, ""); // samo cifre
 
   const filtered = useMemo(() => {
@@ -67,6 +70,15 @@ export default function AdminKlijenti() {
       <style>{css}</style>
 
       <div style={panel}>
+        {/* Dugme Nazad */}
+        <button
+          onClick={() => nav(-1)}
+          style={backBtn}
+          aria-label="Vrati se na prethodnu stranu"
+        >
+          ← Nazad
+        </button>
+
         {/* NASLOV + PRETRAGA */}
         <div style={headRow(isMobile)}>
           <h2 style={title}>Klijenti</h2>
@@ -161,6 +173,19 @@ const panel = {
   borderRadius: 28,
   boxShadow: "0 24px 60px rgba(0,0,0,.25)",
   padding: "clamp(16px,4vw,28px)",
+};
+
+const backBtn = {
+  marginBottom: 16,
+  padding: "8px 16px",
+  borderRadius: 10,
+  border: "none",
+  background: "#ff69b4",
+  color: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+  boxShadow: "0 6px 14px rgba(0,0,0,.12)",
+  WebkitTapHighlightColor: "transparent",
 };
 
 const headRow = (mobile) => ({
