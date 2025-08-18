@@ -7,23 +7,28 @@ function json(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify(body));
 }
+const env = (k, d=undefined) => (process.env[k] ?? d);
 
-function env(name, def = undefined) {
-  return process.env[name] ?? def;
-}
-
-/* ---------- Firebase Admin init (jednom) ---------- */
+/* ---------- Firebase Admin init (iz FIREBASE_SERVICE_ACCOUNT_JSON) ---------- */
 function initAdmin() {
   if (getApps().length) return;
-  const projectId  = env('FB_PROJECT_ID');
-  const clientEmail = env('FB_CLIENT_EMAIL');
-  const privateKey  = (env('FB_PRIVATE_KEY') || '').replace(/\\n/g, '\n');
 
-  if (!projectId || !clientEmail || !privateKey) {
-    throw new Error('Firebase Admin env nije kompletan (FB_PROJECT_ID, FB_CLIENT_EMAIL, FB_PRIVATE_KEY).');
+  const svcRaw = env('FIREBASE_SERVICE_ACCOUNT_JSON');
+  if (!svcRaw) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON nije podešen.');
+
+  let svc;
+  try {
+    svc = JSON.parse(svcRaw);
+  } catch {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON nije validan JSON.');
   }
 
-  initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
+  // Obezbedi ispravan privateKey (sa \n)
+  if (svc.private_key) {
+    svc.private_key = svc.private_key.replace(/\\n/g, '\n');
+  }
+
+  initializeApp({ credential: cert(svc) });
 }
 
 /* ---------- helpers ---------- */
@@ -39,52 +44,41 @@ function formatDateTime(dateISO, timeHHMM, tz) {
   }).format(dt);
   return { fmtDate, fmtTime };
 }
-
 function getLocalHour(tz) {
-  const s = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz, hour: '2-digit', hour12: false
-  }).format(new Date());
+  const s = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(new Date());
   return Number(s);
 }
-
 function timeToMin(hhmm) {
   const [h, m] = String(hhmm || '00:00').split(':').map(x => parseInt(x || 0, 10));
   return h * 60 + m;
 }
-
-// 🔴 KLJUČNO: normalizacija na E.164 (+381…)
+// E.164 normalizacija za SRB
 function toE164RS(phone) {
-  const d = String(phone || "").replace(/\D/g, "");
+  const d = String(phone || '').replace(/\D/g, '');
   if (!d) return null;
-  if (d.startsWith("381")) return "+" + d;              // 3816… -> +3816…
-  if (d.startsWith("00"))  return "+" + d.slice(2);     // 003816… -> +3816…
-  if (d.startsWith("0"))   return "+381" + d.slice(1);  // 06… -> +3816…
-  if (d.startsWith("6"))   return "+381" + d;           // 6… -> +3816…
-  return null; // nepoznat format
+  if (d.startsWith('381')) return '+' + d;
+  if (d.startsWith('00'))  return '+' + d.slice(2);
+  if (d.startsWith('0'))   return '+381' + d.slice(1);
+  if (d.startsWith('6'))   return '+381' + d;
+  return null;
 }
 
+/* ---------- Brevo (Send SMS) ---------- */
 async function sendSMS({ apiKey, sender, to, text }) {
-  const body = {
-    sender,
-    recipient: to,
-    content: text,
-    type: 'transactional',
-    unicodeEnabled: true
-  };
+  const body = { sender, recipient: to, content: text, type: 'transactional', unicodeEnabled: true };
 
   const r = await fetch('https://api.brevo.com/v3/transactionalSMS/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
   const data = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, data };
 }
 
-/* === STVARNI termini za sutra iz Firestore-a === */
-async function getAppointmentsForTomorrow(tz) {
-  // odredi sutrašnji dateKey (YYYY-MM-DD)
+/* ---------- Sutrašnji termini iz Firestore-a ---------- */
+async function getAppointmentsForTomorrow() {
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
   const yyyy = tomorrow.getFullYear();
@@ -105,21 +99,22 @@ async function getAppointmentsForTomorrow(tz) {
     const a = doc.data();
     out.push({
       clientPhone: a.clientPhone,
-      serviceName: a.serviceName,    // bez .toLowerCase()
+      serviceName: a.serviceName,   // tačan naziv iz baze (bez .toLowerCase)
       employeeName: a.employeeName,
       startHHMM: a.startHHMM,
-      dateKey: a.dateKey
+      dateKey: a.dateKey,
     });
   });
   return out;
 }
 
+/* ---------- API handler ---------- */
 export default async function handler(req, res) {
   try {
     const apiKey = env('BREVO_API_KEY');
     const sender = env('BREVO_SENDER') || env('SMS_SENDER');
     const tz = env('LOCAL_TZ', 'Europe/Belgrade');
-    const salonPhone = env('REMINDER_SALON_PHONE') || '';
+    const salonPhone = env('REMINDER_SALON_PHONE') || ''; // broj koji ide u "Kontakt: …"
 
     if (!apiKey) return json(res, 500, { ok: false, error: 'BREVO_API_KEY missing' });
     if (!sender) return json(res, 400, { ok: false, error: 'BREVO_SENDER (or SMS_SENDER) missing' });
@@ -130,47 +125,37 @@ export default async function handler(req, res) {
     const mode   = isCron ? 'cron' : (force ? 'force' : 'manual');
 
     const localHour     = getLocalHour(tz);
-    const shouldSendNow = force || localHour === 15; // force = odmah; inače tačno u 15h
-    const allowed       = isCron || force;           // samo iz Vercel crona ili force
+    const shouldSendNow = force || localHour === 15; // slanje tačno u 15h, ili odmah uz ?force=1
+    const allowed       = isCron || force;
 
-    // Dohvati termine za sutra
-    const appointmentsAll = await getAppointmentsForTomorrow(tz);
+    const appts = await getAppointmentsForTomorrow();
 
-    // Filtriraj na 08:00–22:00 (uključivo)
-    const filtered = appointmentsAll.filter(a => {
+    // po želji filtar na radno vreme
+    const filtered = appts.filter(a => {
       const m = timeToMin(a.startHHMM);
       return m >= 8 * 60 && m <= 22 * 60;
     });
 
-    // Sastavljanje poruke u TRAŽENOM formatu
+    // format poruke koji si tražila
     const buildMsg = (a) => {
       const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
-      // Primer: "Imate zakazanu uslugu Manikir 19.08.2025. u 16:30h Kontakt: +3816655... | Vaš aBeauty ❤️"
       return `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate}. u ${fmtTime}h` +
-             (salonPhone ? ` Kontakt: ${salonPhone}` : '') +
-             ` | Vaš aBeauty ❤️`;
+             ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vaš aBeauty ❤️`;
     };
 
-    // Dry-run ili nije pravo vreme/dozvola
     if (dryRun || !shouldSendNow || !allowed) {
-      const preview = filtered.map(a => ({
+      const sample = filtered.slice(0, 5).map(a => ({
         to: a.clientPhone,
         toE164: toE164RS(a.clientPhone),
-        message: buildMsg(a)
+        message: buildMsg(a),
       }));
       return json(res, 200, {
-        ok: true,
-        tz,
-        mode,
-        localHour,
+        ok: true, tz, mode, localHour,
         willSend: shouldSendNow && allowed && filtered.length > 0 && !dryRun,
-        dryRun,
-        count: filtered.length,
-        sample: preview.slice(0, 5)
+        dryRun, count: filtered.length, sample,
       });
     }
 
-    // Stvarno slanje
     const results = [];
     for (const a of filtered) {
       try {
@@ -189,11 +174,9 @@ export default async function handler(req, res) {
 
     const okCount = results.filter(r => r.ok).length;
     return json(res, 200, {
-      ok: true,
-      tz,
-      mode,
+      ok: true, tz, mode,
       sent: results,
-      metrics: { total: filtered.length, ok: okCount, failed: results.length - okCount }
+      metrics: { total: filtered.length, ok: okCount, failed: results.length - okCount },
     });
   } catch (err) {
     return json(res, 500, { ok: false, error: String(err?.message || err) });
