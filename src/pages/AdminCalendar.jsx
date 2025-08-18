@@ -731,6 +731,7 @@ const apptBgFor = (a, colorForServiceId) => {
               fontWeight: 700,
               cursor: "pointer",
               fontSize: isMobile ? 14 : 16,
+              color: "#000",      
             }}
           >
             ← Nazad
@@ -1315,19 +1316,33 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false, chunkSize
   const selDay = selectedKey ? new Date(selectedKey + "T00:00:00").getDate() : 1;
   const [page, setPage] = useState(Math.floor((selDay - 1) / chunkSize));
 
+  // Ako se promeni selDay (npr. na današnji), prebacimo se na odgovarajuću stranu
   useEffect(() => {
     const newPage = Math.floor((selDay - 1) / chunkSize);
     if (newPage !== page) setPage(newPage);
-  }, [selDay, chunkSize]);
+    // scroll do selektovanog da bude skroz levo
+    const el = ref.current?.querySelector(`[data-daykey="${selectedKey}"]`);
+    if (el && ref.current) {
+      // postavi selektovani kao prvi u vidljivom delu
+      ref.current.scrollLeft = el.offsetLeft - 4;
+    }
+  }, [selDay, selectedKey, chunkSize, page]);
 
   const startDay = page * chunkSize + 1;
   const endDay = Math.min(startDay + chunkSize - 1, days);
+
+  // Rotiramo listu dana u okviru trenutne “stranice” tako da selektovani (npr. danas) bude prvi
+  const pageDays = Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i);
+  const idxSelInPage = pageDays.indexOf(selDay);
+  const orderedDays = idxSelInPage > -1
+    ? [...pageDays.slice(idxSelInPage), ...pageDays.slice(0, idxSelInPage)]
+    : pageDays;
 
   return (
     <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
       <button disabled={page === 0} onClick={() => setPage(page - 1)}>◀</button>
       <div style={stripWrap} ref={ref}>
-        {Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i).map((d) => {
+        {orderedDays.map((d) => {
           const k = `${base.getFullYear()}-${pad2(base.getMonth() + 1)}-${pad2(d)}`;
           const isSel = k === selectedKey;
           return (
@@ -1350,6 +1365,7 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false, chunkSize
     </div>
   );
 }
+
 
 /* -------------------- Day grid -------------------- */
 
@@ -2135,7 +2151,7 @@ const stripBtn = (selected, compact) => ({
   background: selected
     ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
     : "rgba(255,255,255,.12)",
-  color: "#000",
+  color: selected ? "#000" : "#fff",
   cursor: "pointer",
   boxShadow: selected ? "0 6px 16px rgba(255,127,181,.25)" : "none",
 });
