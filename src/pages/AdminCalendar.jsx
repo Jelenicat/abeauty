@@ -1964,13 +1964,13 @@ function ApptModal({
 /* -------------------- UI helpers & styles -------------------- */
 // kartica termina – zajednički stil za DayGrid i ScheduleGrid
 // kartica termina – jednostavan izgled (bez belog overlay-a)
-const apptCard = (top, height, bg, disabled = false) => ({
+const apptCard = (isMobile, top, height, bg, disabled = false) => ({
   position: "absolute",
   left: 6,
   right: 6,
   top,
   height,
-  background: bg,                              // ← direktno na boju termina
+  background: bg,
   borderRadius: 10,
   boxShadow: "0 10px 22px rgba(0,0,0,.18), inset 0 0 0 2px rgba(255,255,255,.35)",
   color: "#222",
@@ -1981,11 +1981,10 @@ const apptCard = (top, height, bg, disabled = false) => ({
   cursor: disabled ? "default" : "pointer",
   overflow: "hidden",
   whiteSpace: "normal",
-wordBreak: "break-word",
-overflowWrap: "anywhere",
-fontSize: isMobile ? 12 : 14,   // smanji font na mobilnom
-lineHeight: 1.3,                // sabij redove da sve stane
-
+  wordBreak: "break-word",
+  overflowWrap: "anywhere",
+  fontSize: isMobile ? 12 : 14,
+  lineHeight: 1.3,
 });
 
 // UMESTO: const cardTitle = { ... }
@@ -2331,7 +2330,18 @@ const pill = {
   color: "#111",
   boxShadow: "inset 0 0 0 1px rgba(0,0,0,.06)",
 };
-
+const pillLight = (isMobile) => ({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(0,0,0,.045)",
+  color: "#222",
+  boxShadow: "inset 0 0 0 1px rgba(0,0,0,.05)",
+  fontSize: isMobile ? 12 : 14,
+  lineHeight: 1.3,
+});
 const pillLight = {
   ...pillBase,
   background: "rgba(0,0,0,.045)",
