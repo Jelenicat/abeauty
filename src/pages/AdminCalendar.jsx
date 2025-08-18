@@ -1354,7 +1354,8 @@ function DayGrid({
   return (
     <div style={gridWrap} className="grid-day">
      {!isMobile && (
-  <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
+<div className="time-axis" style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
+
     {timeMarks(openMin, closeMin).map((t) => (
       <div key={t} style={markRow}>
         <span style={markLbl}>{minToTime(t)}</span>
@@ -1986,7 +1987,7 @@ const normPhone = (s) =>
     .replace(/^00/, "+")
     .trim();
 
-const pxFromMin = (min) => min * 2.8; // 30min ≈ 70px, 45min ≈ 106px
+const pxFromMin = (min) => min *3.5;//0min ≈ 70px, 45min ≈ 106px
 const gridHeight = (m) => pxFromMin(m);
 const timeMarks = (open, close) => {
   const arr = [];
@@ -2396,11 +2397,12 @@ const actionBtn = {
 /* --- Responsive fine-tuning --- */
 const responsiveCSS = `
 @media (max-width: 768px) {
-  .grid-day > div:first-child,
-  .grid-schedule > div:first-child { display: none; }
-
+  .grid-day .time-axis,
+  .grid-schedule .time-axis { display: none; }
   .grid-day,
   .grid-schedule { grid-template-columns: 1fr !important; }
+}
+
 
   .emp-strip-mobile{
     display:flex; overflow-x:auto; gap:6px; padding:6px 0; scrollbar-width:none;

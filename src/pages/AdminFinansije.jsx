@@ -445,23 +445,25 @@ const css = `
 .fin-panel { position: relative; }
 
 /* FIXED header (desktop + mobilni) */
-.fin-fixed{
+.fin-fixed {
   position: fixed;
   top: 8px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(1200px, calc(100% - 32px)); /* prati širinu panela i margine ekrana */
+  width: min(1200px, calc(100% - 32px));
   z-index: 20;
+
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px;
-  
-  backdrop-filter: blur(8px);
-
-  
-
+  padding: 0;              /* nema unutrašnjeg okvira */
+  background: none;        /* nema kutije iza */
+  border: none;            /* nema linije */
+  box-shadow: none;        /* nema senke */
+  backdrop-filter: none;   /* nema staklenog efekta */
 }
+
+
 .fin-fixed-spacer{
   height: 64px; /* rezerva prostora ispod fixed trake */
   margin-bottom: 10px;
