@@ -74,7 +74,7 @@
   margin-top: 6px; height: 46px;
   border: none; border-radius: 14px; cursor: pointer;
   background: linear-gradient(135deg, var(--abeauty-pink), var(--abeauty-pink-2));
-  color: #fff; font-weight: 700; letter-spacing: .2px; font-size: 15px;
+  color: #fff; font-weight: 600; letter-spacing: .2px; font-size: 15px;
   box-shadow: 0 12px 30px rgba(255,95,162,.35);
   transition: transform .08s ease, filter .15s;
 }
@@ -103,7 +103,7 @@
     width: min(520px, 94vw);
     padding: 20px 18px 22px;
     border-radius: 16px;
-    background: rgba(255,255,255,.6);       /* mrvicu providnije na tel. */
+    background: rgba(255,255,255,.75);    /* mrvicu providnije na tel. */
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
         width: 100%;

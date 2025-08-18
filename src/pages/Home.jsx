@@ -16,6 +16,76 @@ import {
   doc,
 } from "firebase/firestore";
 
+/* ======================= LazyThumb (thumbnail sa lazy-load) ======================= */
+function LazyThumb({ src, alt, onClick, isActive }) {
+  const ref = useRef(null);
+  const [inView, setInView] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setInView(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  const srcThumb = toThumb(src);
+
+  return (
+    <button
+      ref={ref}
+      onClick={onClick}
+      style={{
+        border: isActive ? "2px solid #ff7fb5" : "1px solid rgba(255,255,255,.35)",
+        padding: 0,
+        borderRadius: 10,
+        overflow: "hidden",
+        background: "rgba(255,255,255,.1)",
+        cursor: "pointer",
+        width: 76,
+        height: 76,
+        flex: "0 0 auto",
+      }}
+      aria-label={alt}
+      title={alt}
+    >
+      {inView ? (
+        <img
+          src={srcThumb}
+          alt={alt}
+          loading="lazy"
+          onLoad={() => setLoaded(true)}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            filter: loaded ? "none" : "blur(6px)",
+            transition: "filter .3s ease",
+            display: "block",
+          }}
+          onError={(e) => {
+            // ako thumb ne postoji – fallback na original
+            e.currentTarget.src = src;
+          }}
+        />
+      ) : (
+        <div style={{ width: "100%", height: "100%" }} />
+      )}
+    </button>
+  );
+}
+
+/* ======================= Komponenta Home ======================= */
+
 export default function Home() {
   const [scrolled, setScrolled] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -36,6 +106,10 @@ export default function Home() {
   );
   const [currentImage, setCurrentImage] = useState(0);
 
+  // Progressive loading state za glavnu (hi-res) sliku
+  const [heroLoaded, setHeroLoaded] = useState(false);
+  const [heroHiResReady, setHeroHiResReady] = useState(false);
+
   // Usluge (read-only + kategorije)
   const [servicesOpen, setServicesOpen] = useState(false);
   const [categories, setCategories] = useState([]); // {id, name, order}
@@ -51,6 +125,32 @@ export default function Home() {
   const { user, isLoggedIn, logout } = useAuth();
 
   /* ===== Helpers ===== */
+  // ---- Gallery helpers ----
+  const toThumb = (url) => {
+    // /galerija1.jpg  -> /thumbs/galerija1.jpg
+    if (!url) return url;
+    try {
+      const u = new URL(url, window.location.origin);
+      const parts = u.pathname.split("/");
+      const last = parts.pop(); // galerija1.jpg
+      return ["/thumbs", ...parts.filter(Boolean).slice(0, -0), last].join("/");
+    } catch {
+      // fallback: galerija1.jpg -> galerija1_thumb.jpg
+      return url.replace(/(\.[a-zA-Z]+)$/, "_thumb$1");
+    }
+  };
+
+  // Preload velike slike u pozadini
+  const preloadImage = (src) =>
+    new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(true);
+      img.onerror = rej;
+      img.src = src;
+      img.decoding = "async";
+      img.loading = "eager";
+    });
+
   const money = (v) =>
     v == null || v === ""
       ? ""
@@ -113,21 +213,43 @@ export default function Home() {
   const openGallery = () => {
     setGalleryOpen(true);
     setCurrentImage(0);
+    setHeroLoaded(false);
+    setHeroHiResReady(false);
     document.body.classList.add("gallery-open");
   };
   const closeGallery = () => {
     setGalleryOpen(false);
     document.body.classList.remove("gallery-open");
   };
-/* ===== Cancel modal scroll lock ===== */
-useEffect(() => {
-  if (cancelModalOpen) {
-    document.body.classList.add("gallery-open");
-  } else {
-    document.body.classList.remove("gallery-open");
-  }
-  return () => document.body.classList.remove("gallery-open");
-}, [cancelModalOpen]);
+
+  // Progressive load + preload susednih kada se promeni currentImage (dok je galerija otvorena)
+  useEffect(() => {
+    if (!galleryOpen) return;
+    setHeroLoaded(false);
+    setHeroHiResReady(false);
+
+    const cur = galleryImages[currentImage];
+    // Preload trenutne velike
+    preloadImage(cur).then(() => setHeroHiResReady(true)).catch(() => {});
+
+    // Preload suseda: next & prev
+    const next = galleryImages[(currentImage + 1) % galleryImages.length];
+    const prev =
+      galleryImages[(currentImage - 1 + galleryImages.length) % galleryImages.length];
+    preloadImage(next).catch(() => {});
+    preloadImage(prev).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galleryOpen, currentImage]);
+
+  /* ===== Cancel modal scroll lock ===== */
+  useEffect(() => {
+    if (cancelModalOpen) {
+      document.body.classList.add("gallery-open");
+    } else {
+      document.body.classList.remove("gallery-open");
+    }
+    return () => document.body.classList.remove("gallery-open");
+  }, [cancelModalOpen]);
 
   /* ===== Usluge (modal) ===== */
   const openServices = () => {
@@ -323,11 +445,11 @@ useEffect(() => {
         </button>
 
         {/* DODATO: Otkaži termin (vidljivo samo za korisnika koji nije admin i ima buduće termine) */}
-         {isLoggedIn && !user?.isAdmin && myAppointments.length > 0 && (
-   <button className="cancel-btn" onClick={() => setCancelModalOpen(true)}>
-     Otkaži termin
-   </button>
- )}
+        {isLoggedIn && !user?.isAdmin && myAppointments.length > 0 && (
+          <button className="cancel-btn" onClick={() => setCancelModalOpen(true)}>
+            Otkaži termin
+          </button>
+        )}
       </section>
 
       {/* O NAMA */}
@@ -383,12 +505,47 @@ useEffect(() => {
               </button>
             </div>
 
-            <div className="gallery-stage">
+            <div className="gallery-stage" style={{ position: "relative" }}>
+              {/* low-res preview (thumb) */}
+              <img
+                className="gallery-image"
+                src={toThumb(galleryImages[currentImage])}
+                alt={`Slika ${currentImage + 1} (preview)`}
+                loading="eager"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  filter: heroHiResReady ? "blur(0px)" : "blur(12px)",
+                  transition: "filter .35s ease",
+                }}
+                onError={(e) => {
+                  // ako nema thumb-a, fallback na veliku
+                  e.currentTarget.src = galleryImages[currentImage];
+                }}
+              />
+
+              {/* hi-res image (fade-in kad se učita) */}
               <img
                 className="gallery-image"
                 src={galleryImages[currentImage]}
                 alt={`Slika ${currentImage + 1}`}
+                onLoad={() => setHeroLoaded(true)}
+                style={{
+                  opacity: heroLoaded ? 1 : 0,
+                  transition: "opacity .35s ease",
+                  position: "relative",
+                  zIndex: 1,
+                  display: "block",
+                  margin: "0 auto",
+                  maxWidth: "100%",
+                  maxHeight: "70vh",
+                  objectFit: "contain",
+                }}
               />
+
               <button
                 className="gallery-nav gallery-prev"
                 onClick={() =>
@@ -407,6 +564,28 @@ useEffect(() => {
               >
                 ❯
               </button>
+            </div>
+
+            {/* Filmstrip sa lazy thumbovima */}
+            <div
+              className="gallery-thumbs"
+              style={{
+                marginTop: 8,
+                display: "flex",
+                gap: 8,
+                overflowX: "auto",
+                padding: "6px 2px",
+              }}
+            >
+              {galleryImages.map((src, i) => (
+                <LazyThumb
+                  key={src}
+                  src={src}
+                  alt={`Sličica ${i + 1}`}
+                  isActive={i === currentImage}
+                  onClick={() => setCurrentImage(i)}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -458,7 +637,9 @@ useEffect(() => {
                           <div className="svc2-price">
                             {money(s.price ?? s.cena)}
                             {s.duration ? <span className="svc2-dot">•</span> : null}
-                            {s.duration ? <span className="svc2-dur">{dur(s.duration)}</span> : null}
+                            {s.duration ? (
+                              <span className="svc2-dur">{dur(s.duration)}</span>
+                            ) : null}
                           </div>
                         </div>
                         {s.description || s.opis ? (
@@ -471,81 +652,82 @@ useEffect(() => {
               </main>
             </div>
 
-            <div className="services2-footer">
-           
-            </div>
+            <div className="services2-footer"></div>
           </div>
         </div>
       )}
 
-      {/* CANCEL MODAL */}
+      {/* CANCEL MODAL – NOVI DIZAJN */}
+      {cancelModalOpen && (
+        <div
+          className="gallery-overlay overlay--top"
+          onClick={() => setCancelModalOpen(false)}
+        >
+          <div
+            className="cancel-dialog"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Moji termini"
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ margin: 0 }}>Moji termini</h3>
+              <button className="gallery-close" onClick={() => setCancelModalOpen(false)} aria-label="Zatvori">
+                ✕
+              </button>
+            </div>
 
-{/* CANCEL MODAL – NOVI DIZAJN */}
-{cancelModalOpen && (
-  <div
-    className="gallery-overlay overlay--top"
-    onClick={() => setCancelModalOpen(false)}
-  >
-    <div
-      className="cancel-dialog"
-      onClick={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Moji termini"
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0 }}>Moji termini</h3>
-        <button className="gallery-close" onClick={() => setCancelModalOpen(false)} aria-label="Zatvori">
-          ✕
-        </button>
-      </div>
+            <p style={{ marginTop: 0, marginBottom: 8, fontSize: 13, lineHeight: 1.4 }}>
+              Besplatno otkazivanje je moguće do <b>6 sati</b> pre termina. Nakon toga,
+              biće naplaćeno <b>50%</b> iznosa pri sledećem zakazivanju.
+            </p>
 
-      <p style={{ marginTop: 0, marginBottom: 8, fontSize: 13, lineHeight: 1.4 }}>
-        Besplatno otkazivanje je moguće do <b>6 sati</b> pre termina. Nakon toga,
-        biće naplaćeno <b>50%</b> iznosa pri sledećem zakazivanju.
-      </p>
-
-      {!myAppointments.length ? (
-        <div style={{ opacity: 0.8 }}>Nema budućih termina.</div>
-      ) : (
-        <div className="cancel-list">
-          {myAppointments.map((a) => {
-            const dstr = new Intl.DateTimeFormat("sr-RS", {
-              weekday: "short", day: "2-digit", month: "2-digit", year: "numeric",
-            }).format(a.dateObj);
-            const hoursLeft = Math.max(0, Math.floor(diffHours(a.dateObj)));
-            return (
-              <div key={a.id} className="cancel-card">
-                <div>
-                  <div style={{ fontWeight: 800 }}>
-                    {dstr} u {a.startHHMM} — {a.serviceName || "Usluga"}
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>
-                    {a.employeeName ? `Radnica: ${a.employeeName}` : ""}
-                    {a.price ? ` • Cena: ${money(a.price)}` : ""}
-                    {` • Preostalo ~ ${hoursLeft}h`}
-                  </div>
-                </div>
-                <button
-                  onClick={() => cancelAppointment(a)}
-                  style={{
-                    background: "#ff6b81", color: "#fff", border: "none",
-                    borderRadius: 10, padding: "8px 12px", cursor: "pointer", fontWeight: 700,
-                  }}
-                >
-                  Otkaži
-                </button>
+            {!myAppointments.length ? (
+              <div style={{ opacity: 0.8 }}>Nema budućih termina.</div>
+            ) : (
+              <div className="cancel-list">
+                {myAppointments.map((a) => {
+                  const dstr = new Intl.DateTimeFormat("sr-RS", {
+                    weekday: "short",
+                    day: "2-digit",
+                    month: "2-digit",
+                    year: "numeric",
+                  }).format(a.dateObj);
+                  const hoursLeft = Math.max(0, Math.floor(diffHours(a.dateObj)));
+                  return (
+                    <div key={a.id} className="cancel-card">
+                      <div>
+                        <div style={{ fontWeight: 800 }}>
+                          {dstr} u {a.startHHMM} — {a.serviceName || "Usluga"}
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.8 }}>
+                          {a.employeeName ? `Radnica: ${a.employeeName}` : ""}
+                          {a.price ? ` • Cena: ${money(a.price)}` : ""}
+                          {` • Preostalo ~ ${hoursLeft}h`}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => cancelAppointment(a)}
+                        style={{
+                          background: "#ff6b81",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Otkaži
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       )}
-    </div>
-  </div>
-)}
-
-
-
 
       {/* LOGIN MODAL */}
       <LoginModal
@@ -558,4 +740,30 @@ useEffect(() => {
       />
     </div>
   );
+}
+
+/* ======================= POMOĆNE FUNKCIJE VAN KOMPONENTE ======================= */
+
+// ---- Gallery helpers (van komponente kako bi ih koristile i LazyThumb i Home) ----
+function toThumb(url) {
+  if (!url) return url;
+  try {
+    const u = new URL(url, window.location.origin);
+    const parts = u.pathname.split("/");
+    const last = parts.pop();
+    return ["/thumbs", ...parts.filter(Boolean).slice(0, -0), last].join("/");
+  } catch {
+    return url.replace(/(\.[a-zA-Z]+)$/, "_thumb$1");
+  }
+}
+
+function preloadImage(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(true);
+    img.onerror = rej;
+    img.src = src;
+    img.decoding = "async";
+    img.loading = "eager";
+  });
 }
