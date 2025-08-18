@@ -35,6 +35,17 @@ function timeToMin(hhmm) {
   return h * 60 + m;
 }
 
+// 🔴 KLJUČNO: normalizacija na E.164 (+381…)
+function toE164RS(phone) {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.startsWith("381")) return "+" + d;           // 3816… -> +3816…
+  if (d.startsWith("00"))  return "+" + d.slice(2);  // 003816… -> +3816…
+  if (d.startsWith("0"))   return "+381" + d.slice(1); // 06… -> +3816…
+  if (d.startsWith("6"))   return "+381" + d;        // 6… -> +3816…
+  return null; // nepoznat format
+}
+
 async function sendSMS({ apiKey, sender, to, text }) {
   const body = {
     sender,
@@ -66,7 +77,7 @@ async function getAppointmentsForTomorrow(tz) {
 
   return [
     {
-      clientPhone: env('REMINDER_TEST_PHONE') || '+381604204623',
+      clientPhone: env('REMINDER_TEST_PHONE') || '0604204623', // može lokalni 060… ili +381…
       serviceName: 'Manikir',
       employeeName: 'Masa',
       startHHMM: '14:30',
@@ -105,14 +116,14 @@ export default async function handler(req, res) {
 
     // Dry run ili nije pravo vreme / nije dozvoljeno
     if (dryRun || !shouldSendNow || !allowed) {
-      // mali preview poruka koje bi se poslale
       const preview = filtered.map(a => {
         const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
         const msg =
           `Imate zakazanu uslugu ${String(a.serviceName).toLowerCase()} ${fmtDate} u ${fmtTime}h` +
           (salonPhone ? ` Kontakt: ${salonPhone}` : '') +
           ` | Vaš aBeauty ❤️`;
-        return { to: a.clientPhone, message: msg };
+        // prikaži i E.164 koji bi se koristio
+        return { to: a.clientPhone, toE164: toE164RS(a.clientPhone), message: msg };
       });
 
       return json(res, 200, {
@@ -131,14 +142,20 @@ export default async function handler(req, res) {
     const results = [];
     for (const a of filtered) {
       try {
+        const to = toE164RS(a.clientPhone);
+        if (!to) {
+          results.push({ to: a.clientPhone, ok: false, error: 'Neispravan broj telefona' });
+          continue;
+        }
+
         const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
         const message =
           `Imate zakazanu uslugu ${String(a.serviceName).toLowerCase()} ${fmtDate} u ${fmtTime}h` +
           (salonPhone ? ` Kontakt: ${salonPhone}` : '') +
           ` | Vaš aBeauty ❤️`;
 
-        const resp = await sendSMS({ apiKey, sender, to: a.clientPhone, text: message });
-        results.push({ to: a.clientPhone, ok: resp.ok, status: resp.status, data: resp.data });
+        const resp = await sendSMS({ apiKey, sender, to, text: message });
+        results.push({ toOriginal: a.clientPhone, toE164: to, ok: resp.ok, status: resp.status, data: resp.data });
       } catch (e) {
         results.push({ to: a.clientPhone, ok: false, error: String(e?.message || e) });
       }
