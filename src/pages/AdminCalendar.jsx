@@ -97,9 +97,10 @@ const apptBgFor = (a, colorForServiceId) => {
     ? "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)"
     : colorForServiceId(a.serviceId) || "#ffffff";
 };
-const manyEmployees = employees.length > 10; // prag po želji
+
 
 export default function AdminCalendar() {
+  const manyEmployees = employees.length > 10; // prag po želji
   const nav = useNavigate();
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 
