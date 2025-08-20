@@ -18,6 +18,8 @@ import {
   serverTimestamp,
   deleteField,
 } from "firebase/firestore";
+import { runTransaction, writeBatch, increment } from "firebase/firestore";
+
 import {
   FiCalendar,
   FiUser,
@@ -505,28 +507,67 @@ function apptStartDate(appt) {
 }
 
   async function addItem() {
-    const dk = dateKey(dayDate);
-    const empId = selEmpId;
-    if (!empId) return alert("Odaberi radnicu.");
+  const dk = dateKey(dayDate);
+  const empId = selEmpId;
+  if (!empId) return alert("Odaberi radnicu.");
 
-    let start = timeToMin(startTime);
-    let end = start;
+  // --- BOOKING ---
+  if (mode === "booking") {
+    const srv = servicesById.get(selSrvId);
+    if (!srv) return alert("Odaberi uslugu.");
 
-    let payload = {
-      employeeId: empId,
-      employeeName: employeesById.get(empId)?.name || "",
-      dateKey: dk,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
+    const start = timeToMin(startTime);
+    const end   = start + Number(srv.durationMin || 0);
 
-    if (mode === "booking") {
-      const srv = servicesById.get(selSrvId);
-      if (!srv) return alert("Odaberi uslugu.");
-      end = start + Number(srv.durationMin || 0);
-      Object.assign(payload, {
+    // Validacije
+    if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+    if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+    if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+
+    const phoneN = normPhone(clientPhone);
+    const newRef = doc(collection(db, "appointments"));
+
+    await runTransaction(db, async (tx) => {
+      let penaltyApplied = null;
+
+      if (phoneN) {
+        const cRef = doc(db, "clients", phoneN);
+        const cSnap = await tx.get(cRef);
+        const pen = cSnap.exists() ? cSnap.data()?.pendingPenalty : null;
+
+        if (pen?.amount > 0) {
+          // Ako želiš UI potvrdu, uradi je PRE transakcije.
+          penaltyApplied = {
+            amount: Number(pen.amount || 0),
+            sourceApptId: pen.sourceApptId || "",
+            appliedAt: serverTimestamp(),
+          };
+          tx.set(
+            cRef,
+            { pendingPenalty: deleteField(), updatedAt: serverTimestamp() },
+            { merge: true }
+          );
+        } else if (!cSnap.exists()) {
+          // Kreiraj “kostur” klijenta
+          tx.set(
+            cRef,
+            {
+              phone: phoneN,
+              name: clientName || "",
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+      }
+
+      const apptDoc = {
         type: "booking",
         status: "booked",
+        employeeId: empId,
+        employeeName: employeesById.get(empId)?.name || "",
+        dateKey: dk,
         startHHMM: minToTime(start),
         endHHMM: minToTime(end),
         startMin: start,
@@ -537,83 +578,43 @@ function apptStartDate(appt) {
         color: colorForCategoryId(srv.categoryId),
         clientName: clientName.trim(),
         clientPhone: clientPhone.trim(),
-      });
-    } else {
-      end = timeToMin(endTime);
-      Object.assign(payload, {
-        type: "block",
-        status: "blocked",
-        startHHMM: minToTime(start),
-        endHHMM: minToTime(end),
-        startMin: start,
-        endMin: end,
-      });
-    }
+        price: Number(srv.price || 0),
+        penaltyApplied, // null ili objekat
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
 
-    if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
-    if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
-    if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
-if (mode === "booking") {
-  const srv = servicesById.get(selSrvId);
-  if (!srv) return alert("Odaberi uslugu.");
-  end = start + Number(srv.durationMin || 0);
+      tx.set(newRef, apptDoc);
+    });
 
-  // --- NOVO: provera da li postoji neiskorišćena kazna ---
-  let penaltyToApply = null;
-  const phoneN = normPhone(clientPhone);
-  if (phoneN) {
-    const cRef = doc(db, "clients", phoneN);
-    const snap = await getDoc(cRef);
-    const pen = snap.exists() ? snap.data()?.pendingPenalty : null;
-    if (pen && Number(pen.amount) > 0) {
-      // po želji: potvrda u UI-u da će biti primenjena kazna
-      const ok = confirm(`Klijent ima neiskorišćenu kaznu ${pen.amount} RSD. Primeni sada?`);
-      if (ok) penaltyToApply = pen;
-    }
+    setClientName("");
+    setClientPhone("");
+    return;
   }
 
-  Object.assign(payload, {
-    type: "booking",
-    status: "booked",
+  // --- BLOCK ---
+  const start = timeToMin(startTime);
+  const end   = timeToMin(endTime);
+
+  if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+  if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+  if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+
+  await addDoc(collection(db, "appointments"), {
+    type: "block",
+    status: "blocked",
+    employeeId: empId,
+    employeeName: employeesById.get(empId)?.name || "",
+    dateKey: dk,
     startHHMM: minToTime(start),
     endHHMM: minToTime(end),
     startMin: start,
     endMin: end,
-    serviceId: srv.id,
-    serviceName: srv.name,
-    durationMin: Number(srv.durationMin || 0),
-    color: colorForCategoryId(srv.categoryId),
-    clientName: clientName.trim(),
-    clientPhone: clientPhone.trim(),
-    // --- upiši cenu i eventualnu kaznu u sam termin ---
-    price: Number(srv.price || 0), // ako imaš cenu u service
-    penaltyApplied: penaltyToApply
-      ? {
-          amount: Number(penaltyToApply.amount || 0),
-          sourceApptId: penaltyToApply.sourceApptId || "",
-          appliedAt: new Date().toISOString(),
-        }
-      : null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
-
-  // napravi termin
-  const newDoc = await addDoc(collection(db, "appointments"), payload);
-
-  // ako je primenjena kazna – očisti je sa klijenta (jednokratna)
-  if (penaltyToApply && phoneN) {
-    const cRef = doc(db, "clients", phoneN);
-    await updateDoc(cRef, { pendingPenalty: deleteField(), updatedAt: serverTimestamp() });
-  }
-
-  // reset polja za unos
-  setClientName("");
-  setClientPhone("");
-   return; 
 }
 
-    await addDoc(collection(db, "appointments"), payload);
-  
-  }
 
   async function markAppt(id, patch) {
     await updateDoc(doc(db, "appointments", id), {
@@ -669,28 +670,27 @@ async function cancelApptWithRule(appt) {
 
 
   // mark no-show + increment client counter by phone
-  async function markNoShowWithClient(appt) {
-    if (!appt?.id) return;
-    await markAppt(appt.id, { status: "noshow" });
-    const phone = normPhone(appt.clientPhone);
-    if (!phone) return;
-    const cRef = doc(db, "clients", phone);
-    const snap = await getDoc(cRef);
-    const current = snap.exists() ? snap.data().noShowCount || 0 : 0;
-    await setDoc(
-      cRef,
-      {
-        phone,
-        name: appt.clientName || "",
-        noShowCount: current + 1,
-        updatedAt: serverTimestamp(),
-        createdAt: snap.exists()
-          ? snap.data().createdAt || serverTimestamp()
-          : serverTimestamp(),
-      },
-      { merge: true }
-    );
-  }
+async function markNoShowWithClient(appt) {
+  if (!appt?.id) return;
+  await markAppt(appt.id, { status: "noshow" });
+
+  const phone = normPhone(appt.clientPhone);
+  if (!phone) return;
+
+  const cRef = doc(db, "clients", phone);
+  await setDoc(
+    cRef,
+    {
+      phone,
+      name: appt.clientName || "",
+      noShowCount: increment(1),
+      updatedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
 
   /* ------------ month helpers ------------ */
 
