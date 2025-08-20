@@ -671,6 +671,7 @@ async function cancelApptWithRule(appt) {
 
   // mark no-show + increment client counter by phone
 // mark no-show + upiši kaznu 50% kao pendingPenalty
+// mark no-show + upiši kaznu 50% kao pendingPenalty
 async function markNoShowWithClient(appt) {
   if (!appt?.id) return;
   await markAppt(appt.id, { status: "noshow" });

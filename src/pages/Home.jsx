@@ -15,6 +15,7 @@ import {
   updateDoc,
   doc,
 } from "firebase/firestore";
+import { setDoc, serverTimestamp } from "firebase/firestore";
 
 /* ======================= LazyThumb (thumbnail sa lazy-load) ======================= */
 function LazyThumb({ src, alt, onClick, isActive }) {
@@ -125,32 +126,6 @@ export default function Home() {
   const { user, isLoggedIn, logout } = useAuth();
 
   /* ===== Helpers ===== */
-  // ---- Gallery helpers ----
-  const toThumb = (url) => {
-    // /galerija1.jpg  -> /thumbs/galerija1.jpg
-    if (!url) return url;
-    try {
-      const u = new URL(url, window.location.origin);
-      const parts = u.pathname.split("/");
-      const last = parts.pop(); // galerija1.jpg
-      return ["/thumbs", ...parts.filter(Boolean).slice(0, -0), last].join("/");
-    } catch {
-      // fallback: galerija1.jpg -> galerija1_thumb.jpg
-      return url.replace(/(\.[a-zA-Z]+)$/, "_thumb$1");
-    }
-  };
-
-  // Preload velike slike u pozadini
-  const preloadImage = (src) =>
-    new Promise((res, rej) => {
-      const img = new Image();
-      img.onload = () => res(true);
-      img.onerror = rej;
-      img.src = src;
-      img.decoding = "async";
-      img.loading = "eager";
-    });
-
   const money = (v) =>
     v == null || v === ""
       ? ""
@@ -381,11 +356,35 @@ export default function Home() {
       const hours = diffHours(appt.dateObj, new Date());
       const lateCancel = hours < 6; // manje od 6 sati do termina
 
+      // 1) Obeleži termin kao otkazan
       await updateDoc(doc(db, "appointments", appt.id), {
         status: "cancelled",
         cancelledAt: new Date(),
         lateCancel,
       });
+
+      // 2) Ako je <6h, upiši pendingPenalty 50% od cene (jednokratno na sledeći termin)
+      if (lateCancel && user?.phone) {
+        const phoneKey = normPhone(user.phone);
+        const basePrice = Number(appt.price ?? 0);
+        const penaltyAmount = Math.round(basePrice * 0.5);
+
+        await setDoc(
+          doc(db, "clients", phoneKey),
+          {
+            phone: phoneKey,
+            name: user.firstName || "",
+            pendingPenalty: {
+              amount: penaltyAmount,
+              sourceApptId: appt.id,
+              sourceService: appt.serviceName || "",
+              createdAt: serverTimestamp(),
+            },
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
 
       alert(
         lateCancel
@@ -766,4 +765,12 @@ function preloadImage(src) {
     img.decoding = "async";
     img.loading = "eager";
   });
+}
+
+// Normalizacija broja telefona: 06xx -> +3816xx, uklanja razmake, crtice itd.
+function normPhone(p) {
+  return String(p || "")
+    .replace(/[^\d+]/g, "")
+    .replace(/^00/, "+")
+    .replace(/^0(6\d+)/, "+381$1");
 }
