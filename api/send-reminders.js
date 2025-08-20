@@ -178,19 +178,18 @@ export default async function handler(req, res) {
     });
 
     // format poruke
-    const buildMsg = (a) => {
-      const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
-      let txt =
-        `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate}. u ${fmtTime}h` +
-        ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vaš aBeauty ❤️`;
-      if (asciiOnly) {
-        // bez emoji + dijakritika; "Vaš" -> "Vas"
-        txt = toAscii(
-          txt.replace('Vaš aBeauty ❤️', 'Vas aBeauty')
-        );
-      }
-      return txt;
-    };
+// format poruke
+const buildMsg = (a) => {
+  const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
+  let txt =
+    `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate}. u ${fmtTime}h` +
+    ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vas aBeauty`;
+  if (asciiOnly) {
+    txt = toAscii(txt); // (opciono) dodatno uklanja sve ne-ASCII znakove
+  }
+  return txt;
+};
+
 
     // Dry-run ili zabranjeno vreme
     if (dryRun || !shouldSendNow || !allowed) {
