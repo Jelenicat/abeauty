@@ -111,17 +111,17 @@ export default function BookTime() {
 
   const { user } = useAuth();
   const nav = useNavigate();
-const backBtn = {
-  height: 40,
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,.12)",
-  padding: "0 16px",
-  fontWeight: 900,
-  cursor: "pointer",
-  background: "#fff",
-  color: "#000",
-  boxShadow: "0 6px 16px rgba(0,0,0,.08)",
-};
+  const backBtn = {
+    height: 40,
+    borderRadius: 12,
+    border: "1px solid rgba(0,0,0,.12)",
+    padding: "0 16px",
+    fontWeight: 900,
+    cursor: "pointer",
+    background: "#fff",
+    color: "#000",
+    boxShadow: "0 6px 16px rgba(0,0,0,.08)",
+  };
 
   const isMobile = useIsMobile();
 
@@ -375,15 +375,15 @@ const backBtn = {
   const allBooked = selectedServices.length === 0;
 
   /* ---------- LAYOUT ---------- */
-if (isMobile) {
-  return (
-    <div style={wrap(isMobile)}>
-      <div style={panel(isMobile)}>
-        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
-          <button onClick={() => nav(-1)} style={backBtn}>
-            ← Nazad
-          </button>
-        </div>
+  if (isMobile) {
+    return (
+      <div style={wrap(isMobile)}>
+        <div style={panel(isMobile)}>
+          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
+            <button onClick={() => nav(-1)} style={backBtn}>
+              ← Nazad
+            </button>
+          </div>
           {noServices ? (
             <>
               <h2 style={title}>Nema izabranih usluga</h2>
@@ -503,10 +503,9 @@ if (isMobile) {
                       </button>
                     );
                   })
-          ) : (
-  <div style={emptyMsg}>Nema slobodnih termina za izabrani dan.</div>
-)}
-
+                ) : (
+                  <div style={emptyMsg}>Nema slobodnih termina za izabrani dan.</div>
+                )}
               </div>
 
               {allBooked && (
@@ -544,10 +543,10 @@ if (isMobile) {
           <div style={layoutDesktop}>
             {/* leva kolona: usluge */}
             <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
-  <button onClick={() => nav(-1)} style={backBtn}>
-    ← Nazad
-  </button>
-</div>
+              <button onClick={() => nav(-1)} style={backBtn}>
+                ← Nazad
+              </button>
+            </div>
 
             <div style={leftCol}>
               {selectedServices.map((s) => {
@@ -560,10 +559,10 @@ if (isMobile) {
                     style={srvItemDesktop(active, booked)}
                     type="button"
                   >
-                    <div style={{ fontWeight: 900, lineHeight: 1.3 }}>
+                    <div style={{ fontWeight: 900, lineHeight: 1.3, fontSize: 16 }}>
                       {s.name}
                     </div>
-                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                    <div style={{ fontSize: 13, opacity: 0.85 }}>
                       {Number(s.durationMin || 0)} min{" "}
                       {finalPriceOf(s) != null && <>• {money(finalPriceOf(s))}</>}
                     </div>
@@ -589,7 +588,7 @@ if (isMobile) {
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
-                  gap: 10,
+                  gap: 16,
                   alignItems: "end",
                 }}
               >
@@ -597,10 +596,10 @@ if (isMobile) {
                   <div style={{ fontSize: 12, opacity: 0.85, color: "#fff" }}>
                     Usluga
                   </div>
-                  <div style={{ fontWeight: 900, color: "#fff" }}>
+                  <div style={{ fontWeight: 900, color: "#fff", fontSize: 18 }}>
                     {activeService.name}
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.9, color: "#fff" }}>
+                  <div style={{ fontSize: 13, opacity: 0.9, color: "#fff" }}>
                     Trajanje: <b>{Number(activeService.durationMin || 0)} min</b>{" "}
                     {finalPriceOf(activeService) != null && (
                       <>
@@ -613,8 +612,8 @@ if (isMobile) {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 160px",
-                    gap: 8,
+                    gridTemplateColumns: "1fr 200px",
+                    gap: 10,
                     alignItems: "end",
                   }}
                 >
@@ -687,7 +686,6 @@ if (isMobile) {
               )}
 
               {/* termini */}
-            
               <div style={pillsGrid}>
                 {loading ? (
                   <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
@@ -707,21 +705,20 @@ if (isMobile) {
                         disabled={busyAction}
                         title={e?.name || "Radnica"}
                       >
-                        <div style={{ fontWeight: 800 }}>
+                        <div style={{ fontWeight: 800, fontSize: 16 }}>
                           {minToTime(s.startMin)}
                         </div>
                         {p.mode !== "specific" && (
-                          <div style={{ fontSize: 11, opacity: 0.85 }}>
+                          <div style={{ fontSize: 12, opacity: 0.85 }}>
                             {e?.name || "Radnica"}
                           </div>
                         )}
                       </button>
                     );
                   })
-              ) : (
-  <div style={emptyMsg}>Nema slobodnih termina za izabrani dan.</div>
-)}
-
+                ) : (
+                  <div style={emptyMsg}>Nema slobodnih termina za izabrani dan.</div>
+                )}
               </div>
 
               {allBooked && (
@@ -851,11 +848,10 @@ function StylistsStrip({ employees, selectedId, onSelect, mobile = false }) {
   }
 
   // === mobilne varijante dimenzija ===
-const AV = mobile ? 110 : 70;   // veći avatar na mobilnom
-const GAP = mobile ? 4 : 8;
-const MINW = mobile ? 110 : 160;
-const PAD = mobile ? 4 : 10;
-
+  const AV = mobile ? 110 : 70;   // veći avatar na mobilnom
+  const GAP = mobile ? 4 : 8;
+  const MINW = mobile ? 110 : 160;
+  const PAD = mobile ? 4 : 10;
 
   const stripWrap = {
     display: "grid",
@@ -1069,19 +1065,19 @@ function ConfirmModal({ data, onCancel, onConfirm }) {
 const wrap = (mobile) => ({
   minHeight: "100vh",
   background: "url('/slika7.webp') center/cover fixed no-repeat",
-  padding: mobile ? 12 : 18,
+  padding: mobile ? 12 : 24,
   display: "flex",
   justifyContent: "center",
   alignItems: "flex-start",
 });
 const panel = (mobile) => ({
-  width: mobile ? "min(860px, 100%)" : "min(1400px, 100%)",
+  width: mobile ? "min(860px, 100%)" : "min(1600px, 100%)", // šire na desktopu
   background: "rgba(255,255,255,.12)",
   border: "1px solid rgba(255,255,255,.35)",
   backdropFilter: "blur(10px)",
   borderRadius: 24,
   boxShadow: "0 24px 60px rgba(0,0,0,.25)",
-  padding: mobile ? 14 : "clamp(16px,3vw,24px)",
+  padding: mobile ? 14 : "clamp(18px,2.5vw,28px)",
 });
 const title = {
   marginTop: 0,
@@ -1089,11 +1085,12 @@ const title = {
   textShadow: "0 2px 14px rgba(0,0,0,.25)",
 };
 
-const layoutDesktop = { display: "grid", gridTemplateColumns: "360px 1fr", gap: 12 };
-const leftCol = { display: "grid", gap: 8, alignContent: "start" };
+// širi grid na desktopu
+const layoutDesktop = { display: "grid", gridTemplateColumns: "420px 1fr", gap: 16 };
+const leftCol = { display: "grid", gap: 10, alignContent: "start" };
 const rightCol = {
   borderRadius: 16,
-  padding: 12,
+  padding: 16, // malo veći padding na desktopu
   border: "1px solid transparent",
   background:
     "linear-gradient(rgba(12,12,12,.55), rgba(12,12,12,.55)) padding-box, linear-gradient(135deg, rgba(255,127,181,.55), rgba(143,151,255,.55)) border-box",
@@ -1104,7 +1101,7 @@ const rightCol = {
 /* USLUGE – desktop */
 const srvItemDesktop = (active, booked) => ({
   textAlign: "left",
-  padding: 12,
+  padding: 16,
   borderRadius: 14,
   border: active ? "none" : "1px solid rgba(255,255,255,.35)",
   background: active
@@ -1139,7 +1136,7 @@ const srvItemMobile = (active /* , booked */) => ({
 /* kontrole */
 const lbl = { color: "#fff", fontWeight: 900, fontSize: 12, opacity: 0.95 };
 const inp = {
-  height: 40,
+  height: 42,
   borderRadius: 10,
   border: "1px solid #e8e8e8",
   background: "#fff",
@@ -1293,14 +1290,14 @@ const stylName = {
 /* --- Pil dugmići vremena --- */
 const pillsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))",
-  gap: 8,
+  gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", // širi pilovi
+  gap: 10,
 };
 const pillBtn = {
   display: "grid",
   justifyItems: "center",
-  gap: 2,
-  padding: "10px 12px",
+  gap: 4,
+  padding: "12px 14px", // veći padding
   borderRadius: 999,
   border: "1px solid #efcddc",
   background: "#fff",
@@ -1324,7 +1321,7 @@ const pillBtnMobile = {
   boxShadow: "0 4px 12px rgba(0,0,0,.08)",
 };
 const emptyMsg = {
-  gridColumn: "1 / -1",   // raširi poruku preko cele širine grida
+  gridColumn: "1 / -1",
   textAlign: "center",
   color: "#fff",
   opacity: 0.9,
@@ -1332,7 +1329,6 @@ const emptyMsg = {
   fontWeight: 600,
   padding: "12px 8px",
 };
-
 
 /* --- Modal styles --- */
 // original overlay je bio centriran; sada ga držimo uz sam vrh ekrana
