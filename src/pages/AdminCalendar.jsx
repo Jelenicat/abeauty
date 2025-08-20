@@ -237,9 +237,13 @@ export default function AdminCalendar() {
       collection(db, "appointments"),
       where("dateKey", "==", dk)
     );
-    const offA = onSnapshot(qAppts, (s) =>
-      setAppointments(s.docs.map((d) => ({ id: d.id, ...d.data() })))
-    );
+const offA = onSnapshot(qAppts, (s) => {
+  const all = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Prikaži sve koji NISU booking ili su booking ali aktivni (status === "booked")
+  const visible = all.filter(a => a.type !== "booking" || a.status === "booked");
+  setAppointments(visible);
+});
+
     const offS = onSnapshot(qShifts, (s) =>
       setDayShifts(s.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
@@ -292,11 +296,13 @@ export default function AdminCalendar() {
   // schedule tab: bookings for selected day
   useEffect(() => {
     const dk = dateKey(schedDate);
-    const q = query(
-      collection(db, "appointments"),
-      where("dateKey", "==", dk),
-      where("type", "==", "booking")
-    );
+const q = query(
+  collection(db, "appointments"),
+  where("dateKey", "==", dk),
+  where("type", "==", "booking"),
+  where("status", "==", "booked")
+);
+
     const off = onSnapshot(q, (s) =>
       setSchedAppts(
         s
