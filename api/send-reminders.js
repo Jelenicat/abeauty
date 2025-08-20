@@ -132,6 +132,31 @@ async function getAppointmentsForTomorrow() {
   return out;
 }
 
+/* ---------- Anti-duplicate helperi (Firestore) ---------- */
+async function wasRecentlySent(fs, key, windowMinutes = 120) {
+  const ref = fs.collection('smsReminders').doc(key);
+  const doc = await ref.get();
+  if (!doc.exists) return false;
+  const ts = doc.data()?.sentAt;
+  const last = typeof ts === 'number' ? ts : (ts?.toMillis?.() ?? 0);
+  if (!last) return false;
+  return (Date.now() - last) < windowMinutes * 60 * 1000;
+}
+async function markSent(fs, key, payload) {
+  const ref = fs.collection('smsReminders').doc(key);
+  await ref.set(
+    {
+      sentAt: Date.now(),
+      payload,
+      count: (await ref.get()).exists ? (ref.get().then(d => (d.data()?.count || 0) + 1)) : 1,
+    },
+    { merge: true }
+  ).catch(async () => {
+    // fallback bez čitanja
+    await ref.set({ sentAt: Date.now(), payload, count: 1 }, { merge: true });
+  });
+}
+
 /* ---------- API handler ---------- */
 export default async function handler(req, res) {
   try {
@@ -148,6 +173,14 @@ export default async function handler(req, res) {
       String(req.query.ascii || env('SMS_ASCII_ONLY') || '')
     );
     const useFallbackSender = /^(1|true)$/i.test(String(req.query.fallback || ''));
+    const onlyParam = String(req.query.only || '').trim(); // npr. ?only=+38160xxxxxxx
+    const onlyE164 = onlyParam ? toE164RS(onlyParam) : null;
+
+    // Anti-duplikat prozor (minuta) – možeš proslediti ?dedupeMin=90
+    const dedupeMin = Math.max(
+      0,
+      parseInt(String(req.query.dedupeMin || ''), 10) || 120
+    );
 
     // Izbor sender-a
     const chosenSender =
@@ -169,27 +202,31 @@ export default async function handler(req, res) {
     const shouldSendNow = force || localHour === 15; // slanje tačno u 15h, ili odmah uz ?force=1
     const allowed = isCron || force;
 
+    // Učitaj termine
     const appts = await getAppointmentsForTomorrow();
 
     // po želji filtar na radno vreme
-    const filtered = appts.filter((a) => {
+    let filtered = appts.filter((a) => {
       const m = timeToMin(a.startHHMM);
       return m >= 8 * 60 && m <= 22 * 60;
     });
 
-    // format poruke
-// format poruke
-const buildMsg = (a) => {
-  const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
-  let txt =
-    `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate} u ${fmtTime}h` +
-    ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vas aBeauty`;
-  if (asciiOnly) {
-    txt = toAscii(txt); // (opciono) dodatno uklanja sve ne-ASCII znakove
-  }
-  return txt;
-};
+    // opcioni filter: slanje samo na jedan broj (debug / target)
+    if (onlyE164) {
+      filtered = filtered.filter(a => toE164RS(a.clientPhone) === onlyE164);
+    }
 
+    // format poruke (čist ASCII potpis, bez srca)
+    const buildMsg = (a) => {
+      const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
+      let txt =
+        `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate} u ${fmtTime}h` +
+        ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vas aBeauty`;
+      if (asciiOnly) {
+        txt = toAscii(txt);
+      }
+      return txt;
+    };
 
     // Dry-run ili zabranjeno vreme
     if (dryRun || !shouldSendNow || !allowed) {
@@ -208,12 +245,17 @@ const buildMsg = (a) => {
         count: filtered.length,
         asciiOnly,
         sender: chosenSender,
+        only: onlyE164 || null,
+        dedupeMin,
         sample,
       });
     }
 
-    // Slanje
+    // Slanje (sa anti-dupliciranjem)
+    const fs = getFirestore();
+    const inRunSet = new Set(); // da ne šaljemo isti ključ i u istom run-u
     const results = [];
+
     for (const a of filtered) {
       try {
         const to = toE164RS(a.clientPhone);
@@ -225,6 +267,21 @@ const buildMsg = (a) => {
           });
           continue;
         }
+
+        const key = `${a.dateKey}-${a.startHHMM}-${to}`; // jedinstveno po terminu i primaocu
+
+        // skip ako je isti ključ već poslat nedavno
+        if (inRunSet.has(key) || (dedupeMin > 0 && await wasRecentlySent(fs, key, dedupeMin))) {
+          results.push({
+            toOriginal: a.clientPhone,
+            toE164: to,
+            ok: true,
+            status: 208,
+            data: { skipped: 'duplicate_recent', windowMin: dedupeMin },
+          });
+          continue;
+        }
+
         const message = buildMsg(a);
         const resp = await sendSMS({
           apiKey,
@@ -233,6 +290,12 @@ const buildMsg = (a) => {
           text: message,
           unicodeEnabled: !asciiOnly, // ako radimo ASCII fallback, ne treba UCS-2
         });
+
+        inRunSet.add(key);
+        if (resp.ok) {
+          await markSent(fs, key, { status: resp.status, messageId: resp.data?.messageId });
+        }
+
         results.push({
           toOriginal: a.clientPhone,
           toE164: to,
@@ -256,6 +319,8 @@ const buildMsg = (a) => {
       mode,
       asciiOnly,
       sender: chosenSender,
+      only: onlyE164 || null,
+      dedupeMin,
       sent: results,
       metrics: { total: filtered.length, ok: okCount, failed: results.length - okCount },
     });
