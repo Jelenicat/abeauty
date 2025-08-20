@@ -502,114 +502,120 @@ export default function AdminCalendar() {
     return new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}:00`);
   }
 
-  async function addItem() {
-    const dk = dateKey(dayDate);
-    const empId = selEmpId;
-    if (!empId) return alert("Odaberi radnicu.");
+async function addItem() {
+  const dk = dateKey(dayDate);
+  const empId = selEmpId;
+  if (!empId) return alert("Odaberi radnicu.");
 
-    // --- BOOKING ---
-    if (mode === "booking") {
-      const srv = servicesById.get(selSrvId);
-      if (!srv) return alert("Odaberi uslugu.");
+  // --- BOOKING ---
+  if (mode === "booking") {
+    const srv = servicesById.get(selSrvId);
+    if (!srv) return alert("Odaberi uslugu.");
 
-      const start = timeToMin(startTime);
-      const end = start + Number(srv.durationMin || 0);
-
-      // Validacije
-      if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
-      if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
-      if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
-
-      const phoneN = normPhone(clientPhone);
-      const newRef = doc(collection(db, "appointments"));
-
-      await runTransaction(db, async (tx) => {
-        let penaltyApplied = null;
-
-        if (phoneN) {
-          const cRef = doc(db, "clients", phoneN);
-          const cSnap = await tx.get(cRef);
-          const pen = cSnap.exists() ? cSnap.data()?.pendingPenalty : null;
-
-          if (pen?.amount > 0) {
-            // primeni i obriši pendingPenalty — SAMO PRVI SLEDEĆI TERMIN
-            penaltyApplied = {
-              amount: Number(pen.amount || 0),
-              sourceApptId: pen.sourceApptId || "",
-              appliedAt: serverTimestamp(),
-            };
-            tx.set(
-              cRef,
-              { pendingPenalty: deleteField(), updatedAt: serverTimestamp() },
-              { merge: true }
-            );
-          } else if (!cSnap.exists()) {
-            // kreiraj klijenta (osnovno)
-            tx.set(
-              cRef,
-              {
-                phone: phoneN,
-                name: clientName || "",
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              },
-              { merge: true }
-            );
-          }
-        }
-
-        const apptDoc = {
-          type: "booking",
-          status: "booked",
-          employeeId: empId,
-          employeeName: employeesById.get(empId)?.name || "",
-          dateKey: dk,
-          startHHMM: minToTime(start),
-          endHHMM: minToTime(end),
-          startMin: start,
-          endMin: end,
-          serviceId: srv.id,
-          serviceName: srv.name,
-          durationMin: Number(srv.durationMin || 0),
-          color: colorForCategoryId(srv.categoryId),
-          clientName: clientName.trim(),
-          clientPhone: phoneN,
-          price: Number(srv.price || 0),
-          penaltyApplied, // null ili objekat
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-
-        tx.set(newRef, apptDoc);
-      });
-
-      setClientName("");
-      setClientPhone("");
+    // ⬇⬇⬇ NOVO: telefon je obavezan da bi se kazna/no-show istorija vezali
+    const phoneN = normPhone(clientPhone);
+    if (!phoneN) {
+      alert("Unesi broj telefona (kazna i istorija se vežu po telefonu).");
       return;
     }
 
-    // --- BLOCK ---
     const start = timeToMin(startTime);
-    const end = timeToMin(endTime);
+    const end = start + Number(srv.durationMin || 0);
 
+    // Validacije
     if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
     if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
     if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
 
-    await addDoc(collection(db, "appointments"), {
-      type: "block",
-      status: "blocked",
-      employeeId: empId,
-      employeeName: employeesById.get(empId)?.name || "",
-      dateKey: dk,
-      startHHMM: minToTime(start),
-      endHHMM: minToTime(end),
-      startMin: start,
-      endMin: end,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+    const newRef = doc(collection(db, "appointments"));
+
+    await runTransaction(db, async (tx) => {
+      let penaltyApplied = null;
+
+      // Klijent + eventualna kazna
+      const cRef = doc(db, "clients", phoneN);
+      const cSnap = await tx.get(cRef);
+      const pen = cSnap.exists() ? cSnap.data()?.pendingPenalty : null;
+
+      if (pen?.amount > 0) {
+        // primeni i obriši pendingPenalty — SAMO PRVI SLEDEĆI TERMIN
+        penaltyApplied = {
+          amount: Number(pen.amount || 0),
+          sourceApptId: pen.sourceApptId || "",
+          appliedAt: serverTimestamp(),
+        };
+        tx.set(
+          cRef,
+          { pendingPenalty: deleteField(), updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      } else if (!cSnap.exists()) {
+        // kreiraj klijenta (osnovno)
+        tx.set(
+          cRef,
+          {
+            phone: phoneN,
+            name: clientName || "",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+
+      const apptDoc = {
+        type: "booking",
+        status: "booked",
+        employeeId: empId,
+        employeeName: employeesById.get(empId)?.name || "",
+        dateKey: dk,
+        startHHMM: minToTime(start),
+        endHHMM: minToTime(end),
+        startMin: start,
+        endMin: end,
+        serviceId: srv.id,
+        serviceName: srv.name,
+        durationMin: Number(srv.durationMin || 0),
+        color: colorForCategoryId(srv.categoryId),
+        clientName: clientName.trim(),
+        clientPhone: phoneN,
+        price: Number(srv.price || 0),
+        penaltyApplied, // null ili objekat
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      tx.set(newRef, apptDoc);
     });
+
+    setClientName("");
+    setClientPhone("");
+    return;
   }
+
+  // --- BLOCK ---
+  const start = timeToMin(startTime);
+  const end = timeToMin(endTime);
+
+  if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+  if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+  if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+
+  await addDoc(collection(db, "appointments"), {
+    type: "block",
+    status: "blocked",
+    employeeId: empId,
+    employeeName: employeesById.get(empId)?.name || "",
+    dateKey: dk,
+    startHHMM: minToTime(start),
+    endHHMM: minToTime(end),
+    startMin: start,
+    endMin: end,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
 
   async function markAppt(id, patch) {
     await updateDoc(doc(db, "appointments", id), {
@@ -664,37 +670,51 @@ export default function AdminCalendar() {
     }
   }
 
-  // mark no-show + upiši kaznu 50% kao pendingPenalty
-  async function markNoShowWithClient(appt) {
-    if (!appt?.id) return;
-    await markAppt(appt.id, { status: "noshow" });
+async function markNoShowWithClient(appt) {
+  if (!appt?.id) return;
 
-    const phone = normPhone(appt.clientPhone);
-    if (!phone) return;
-
-    const cRef = doc(db, "clients", phone);
-    const srvPrice = servicesById.get(appt.serviceId)?.price;
-    const basePrice = Number(appt.price ?? srvPrice ?? 0);
-    const penaltyAmount = Math.round(basePrice * 0.5);
-
-    await setDoc(
-      cRef,
-      {
-        phone,
-        name: appt.clientName || "",
-        noShowCount: increment(1),
-        pendingPenalty: {
-          amount: penaltyAmount,
-          sourceApptId: appt.id,
-          sourceService: appt.serviceName || "",
-          createdAt: serverTimestamp(),
-        },
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
+  // bez telefona nema no-show jer nema klijenta
+  const phone = normPhone(appt.clientPhone);
+  if (!phone) {
+    alert("No-show zahteva broj telefona (vezivanje za klijenta).");
+    return;
   }
+
+  // prvo obeleži termin
+  await markAppt(appt.id, { status: "noshow" });
+
+  const cRef = doc(db, "clients", phone);
+  const snap = await getDoc(cRef);
+
+  const srvPrice = servicesById.get(appt.serviceId)?.price;
+  const basePrice = Number(appt.price ?? srvPrice ?? 0);
+  const penaltyAmount = Math.round(basePrice * 0.5);
+
+  const existingPen = snap.exists() ? snap.data()?.pendingPenalty : null;
+
+  const patch = {
+    phone,
+    name: appt.clientName || "",
+    noShowCount: increment(1),
+    updatedAt: serverTimestamp(),
+    createdAt: snap.exists()
+      ? (snap.data().createdAt || serverTimestamp())
+      : serverTimestamp(),
+  };
+
+  // ⬇ kaznu postavi SAMO ako već ne postoji aktivna
+  if (!(existingPen?.amount > 0)) {
+    patch.pendingPenalty = {
+      amount: penaltyAmount,
+      sourceApptId: appt.id,
+      sourceService: appt.serviceName || "",
+      createdAt: serverTimestamp(),
+    };
+  }
+
+  await setDoc(cRef, patch, { merge: true });
+}
+
 
   /* ------------ month helpers ------------ */
 
@@ -1049,6 +1069,22 @@ export default function AdminCalendar() {
                     </div>
                   </>
                 )}
+{/* HINT: prikaži ako će se kazna primeniti */}
+{mode === "booking" && normPhone(clientPhone) && (() => {
+  const pen = pendingPenaltyByPhone.get(normPhone(clientPhone));
+  return pen?.amount > 0 ? (
+    <div style={{ gridColumn: "1 / -1" }}>
+      <div style={{
+        marginTop: 6, padding: "6px 10px", borderRadius: 10,
+        background: "#fff3cd", color: "#5c3d00", fontWeight: 800
+      }}>
+        Kazna {pen.amount} RSD će biti primenjena na ovaj termin.
+      </div>
+    </div>
+  ) : null;
+})()}
+
+
 
                 <div style={{ ...ctlItem, alignSelf: "flex-end" }}>
                   <button style={primaryBtn} onClick={addItem}>
@@ -2314,13 +2350,18 @@ function ApptModal({
             <FiSave style={{ marginRight: 6 }} />
             Sačuvaj izmene
           </button>
+{appt.type === "booking" && appt.status === "booked" && (
+  <button
+    style={dangerBtn}
+    onClick={onNoShow}
+    title="Označi kao no-show i upiši kaznu"
+    disabled={!normPhone(appt.clientPhone)} // ⬅ bez telefona nema no-show
+  >
+    <FiSlash style={{ marginRight: 6 }} />
+    No-show
+  </button>
+)}
 
-          {appt.type === "booking" && appt.status === "booked" && (
-            <button style={dangerBtn} onClick={onNoShow} title="Označi kao no-show i upiši kaznu">
-              <FiSlash style={{ marginRight: 6 }} />
-              No-show
-            </button>
-          )}
 
           {appt.type === "booking" && (
             <button style={warnBtn} onClick={onCancel} title="Otkazivanje (pravilo 6h)">
