@@ -15,7 +15,7 @@ import {
   updateDoc,
   doc,
 } from "firebase/firestore";
-import { setDoc, serverTimestamp } from "firebase/firestore";
+import { setDoc, serverTimestamp, runTransaction, getDocs, deleteField } from "firebase/firestore";
 
 /* ======================= LazyThumb (thumbnail sa lazy-load) ======================= */
 function LazyThumb({ src, alt, onClick, isActive }) {
@@ -153,6 +153,52 @@ export default function Home() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+async function applyPendingToEarliestAppt(db, phone, amount) {
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+
+  const qAppt = query(
+    collection(db, "appointments"),
+    where("clientPhone", "==", phone),
+    where("status", "==", "booked"),
+    where("dateKey", ">=", todayKey),
+    orderBy("dateKey", "asc"),
+    orderBy("startMin", "asc")
+  );
+
+  const snap = await getDocs(qAppt);
+  const first = snap.docs[0];
+  if (!first) return;
+
+  const apptRef = first.ref;
+  const clientRef = doc(db, "clients", phone);
+
+  await runTransaction(db, async (tx) => {
+    const cSnap = await tx.get(clientRef);
+    const cData = cSnap.exists() ? cSnap.data() : {};
+    const pen = cData.pendingPenalty;
+    if (!pen || Number(pen.amount || 0) <= 0) return;
+
+    const aSnap = await tx.get(apptRef);
+    if (!aSnap.exists()) return;
+    if (aSnap.data()?.penaltyApplied?.amount > 0) return;
+
+    tx.update(apptRef, {
+      penaltyApplied: {
+        amount: Number(pen.amount || amount || 0),
+        sourceApptId: pen.sourceApptId || "",
+        appliedAt: serverTimestamp(),
+      },
+      updatedAt: serverTimestamp(),
+    });
+
+    tx.set(
+      clientRef,
+      { pendingPenalty: deleteField(), updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+  });
+}
 
   /* ===== Splash ===== */
   const closeSplash = () => {
@@ -363,28 +409,45 @@ export default function Home() {
         lateCancel,
       });
 
-      // 2) Ako je <6h, upiši pendingPenalty 50% od cene (jednokratno na sledeći termin)
+      // 2) Ako je <6h: transakcijski — upiši pending samo ako ne postoji,
+      //    zatim pokušaj odmah da ga zakačiš na najbliži budući termin
       if (lateCancel && user?.phone) {
         const phoneKey = normPhone(user.phone);
-        const basePrice = Number(appt.price ?? 0);
-        const penaltyAmount = Math.round(basePrice * 0.5);
+      const basePrice = Number(appt.price ?? 0);
+       const penaltyAmount = Math.round(basePrice * 0.5);
 
-        await setDoc(
-          doc(db, "clients", phoneKey),
-          {
-            phone: phoneKey,
-            name: user.firstName || "",
-            pendingPenalty: {
-              amount: penaltyAmount,
-              sourceApptId: appt.id,
-              sourceService: appt.serviceName || "",
-              createdAt: serverTimestamp(),
+       const created = await runTransaction(db, async (tx) => {
+          const cRef = doc(db, "clients", phoneKey);
+         const snap = await tx.get(cRef);
+         const data = snap.exists() ? snap.data() : {};
+          const hasActive =
+           data.pendingPenalty && Number(data.pendingPenalty.amount || 0) > 0;
+         if (hasActive) return 0;
+         tx.set(
+           cRef,
+           {
+             phone: phoneKey,
+             name: user.firstName || "",
+             pendingPenalty: {
+               amount: penaltyAmount,
+               sourceApptId: appt.id,
+               sourceService: appt.serviceName || "",
+               createdAt: serverTimestamp(),
+             },
+             updatedAt: serverTimestamp(),
+              createdAt: snap.exists()
+                ? (data.createdAt || serverTimestamp())
+                : serverTimestamp(),
             },
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
+            { merge: true }
+          );
+          return penaltyAmount;
+        });
+
+     if (created > 0) {
+         await applyPendingToEarliestAppt(db, phoneKey, created);
+       }
+   }
 
       alert(
         lateCancel
