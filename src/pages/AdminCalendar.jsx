@@ -97,6 +97,7 @@ const apptBgFor = (a, colorForServiceId) => {
     ? "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)"
     : colorForServiceId(a.serviceId) || "#ffffff";
 };
+const manyEmployees = employees.length > 10; // prag po želji
 
 export default function AdminCalendar() {
   const nav = useNavigate();
@@ -1065,25 +1066,26 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
             </div>
             {/* DESKTOP TRAKA RADNICA */}
 {!isMobile && (
-  <div
-    className="emp-strip-desktop"
-    style={{
-      display: "flex",
-      flexWrap: "nowrap",
-      overflowX: "auto",
-      gap: 8,
-      padding: "6px 0",
-      WebkitOverflowScrolling: "touch",
-      scrollbarWidth: "none",
-      marginTop: 6,
-    }}
+ <div
+   className="emp-strip-desktop"
+  style={{
+     display: "flex",
+     flexWrap: "wrap",        // ⇐ dozvoli prelamanje u više redova
+    overflowX: "visible",    // ⇐ bez horizontalnog skrola
+    gap: 8,
+     rowGap: 6,               // ⇐ malo vertikalnog razmaka između redova
+     padding: "6px 0",
+     marginTop: 6,
+     alignItems: "center",
+   }}
   >
     {/* Pomoćna dugmad levo */}
     <button
       onClick={() => { setSelEmpId(null); setOnlyWorking(true); }}
       style={{
         flex: "0 0 auto",
-        padding: "8px 14px",
+ padding: manyEmployees ? "6px 10px" : "8px 14px",
+     marginBottom: 6,
         borderRadius: 999,
         border: "1px solid rgba(255,255,255,.35)",
         background: "linear-gradient(135deg,#ffffff,#eaf5ff)",
@@ -1100,7 +1102,8 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
      onClick={() => { setSelEmpId(null); setOnlyWorking(false); }}
       style={{
         flex: "0 0 auto",
-        padding: "8px 14px",
+           padding: manyEmployees ? "6px 10px" : "8px 14px",
+    marginBottom: 6,
         borderRadius: 999,
         border: "1px solid rgba(255,255,255,.35)",
         background: "linear-gradient(135deg,#ffffff,#ffe3ef)",
@@ -1124,7 +1127,8 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
           onClick={() => setSelEmpId(e.id)}
           style={{
             flex: "0 0 auto",
-            padding: "8px 14px",
+             padding: manyEmployees ? "6px 10px" : "8px 14px",
+           marginBottom: 6,
             borderRadius: 999,
             border: "1px solid rgba(255,255,255,.35)",
             background: isSelected
@@ -1134,6 +1138,7 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
               : "rgba(255,255,255,.12)",
             color: isSelected ? "#fff" : "#000",
             fontWeight: 800,
+               fontSize: manyEmployees ? 13 : 16,
             cursor: "pointer",
             whiteSpace: "nowrap",
           }}
