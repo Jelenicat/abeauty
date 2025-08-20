@@ -85,6 +85,18 @@ function hashToColor(str) {
 }
 
 /* -------------------- component -------------------- */
+// --- helpers (ostaje gde jeste) ---
+
+// ⬇⬇⬇ DODAJ OVDE, van komponente
+const apptBgFor = (a, colorForServiceId) => {
+  return a.type === "vacation"
+    ? "repeating-linear-gradient(-45deg,#ffc6cf 0 10px,#ffadb9 10px 20px)"
+    : a.type === "break"
+    ? "repeating-linear-gradient(-45deg,#ffd88a 0 10px,#ffcb66 10px 20px)"
+    : a.type === "block"
+    ? "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)"
+    : colorForServiceId(a.serviceId) || "#ffffff";
+};
 
 export default function AdminCalendar() {
   const nav = useNavigate();
@@ -442,15 +454,7 @@ const idsToRender = useMemo(() => {
 
 
 // jedinstvena pozadina za sve vrste "termina"
-const apptBgFor = (a, colorForServiceId) => {
-  return a.type === "vacation"
-    ? "repeating-linear-gradient(-45deg,#ffc6cf 0 10px,#ffadb9 10px 20px)"
-    : a.type === "break"
-    ? "repeating-linear-gradient(-45deg,#ffd88a 0 10px,#ffcb66 10px 20px)"
-    : a.type === "block"
-    ? "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)"
-    : colorForServiceId(a.serviceId) || "#ffffff";
-};
+
 function apptStartDate(appt) {
   // lokalno vreme browsera (koristi Europe/Belgrade kod tebe)
   return new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}:00`);
@@ -578,7 +582,9 @@ if (mode === "booking") {
     await deleteDoc(doc(db, "appointments", id));
   }
 async function cancelApptWithRule(appt) {
-  if (!appt?.id) return;
+  if (!appt?.id)
+    if (!confirm("Otkazati termin?")) 
+     return;
 
   // 1) Izračunaj preostalo vreme
   const now = new Date();
@@ -1825,7 +1831,7 @@ function ScheduleGrid({
                 key={a.id}
                 onClick={() => onApptClick(a)}
                 style={{
-                  ...apptCard(top, height, colorForServiceId(a.serviceId) || "#fff"),
+                  ...apptCard(top, height, apptBgFor(a, colorForServiceId)),
                   left: `calc(${leftPct}% + 6px)`,
                   width: `calc(${widthPct}% - 12px)`,
                 }}
