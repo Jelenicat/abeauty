@@ -100,7 +100,7 @@ const apptBgFor = (a, colorForServiceId) => {
 
 
 export default function AdminCalendar() {
-  const manyEmployees = employees.length > 10; // prag po želji
+    const manyEmployees = useMemo(() => employees.length > 10, [employees]);
   const nav = useNavigate();
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 
