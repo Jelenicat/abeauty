@@ -16,6 +16,7 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  deleteField,
 } from "firebase/firestore";
 import {
   FiCalendar,
@@ -368,11 +369,18 @@ const q = query(
   }, [employees, dayShifts]);
 
   // Koje kolone da prikažemo u gridu
-  const idsToRender = useMemo(() => {
-    if (isMobile) return selEmpId ? [selEmpId] : [];
-    if (onlyWorking) return workingTodayIds;
-    return employees.map((e) => e.id);
-  }, [isMobile, selEmpId, onlyWorking, workingTodayIds, employees]);
+const idsToRender = useMemo(() => {
+  // Ako je izabrana konkretna radnica – prikaži samo nju (i desktop i mobilni)
+  if (selEmpId) return [selEmpId];
+
+  // Mobilni bez izbora => prazno (čeka izbor iz trake)
+  if (isMobile) return [];
+
+  // Desktop bez izbora => sve ili samo one koje rade
+  if (onlyWorking) return workingTodayIds;
+  return employees.map((e) => e.id);
+}, [selEmpId, isMobile, onlyWorking, workingTodayIds, employees]);
+
 
   const shiftsByEmp = useMemo(() => {
     const m = new Map();
@@ -441,6 +449,10 @@ const apptBgFor = (a, colorForServiceId) => {
     ? "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)"
     : colorForServiceId(a.serviceId) || "#ffffff";
 };
+function apptStartDate(appt) {
+  // lokalno vreme browsera (koristi Europe/Belgrade kod tebe)
+  return new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}:00`);
+}
 
   async function addItem() {
     const dk = dateKey(dayDate);
@@ -491,12 +503,66 @@ const apptBgFor = (a, colorForServiceId) => {
     if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
     if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
     if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+if (mode === "booking") {
+  const srv = servicesById.get(selSrvId);
+  if (!srv) return alert("Odaberi uslugu.");
+  end = start + Number(srv.durationMin || 0);
+
+  // --- NOVO: provera da li postoji neiskorišćena kazna ---
+  let penaltyToApply = null;
+  const phoneN = normPhone(clientPhone);
+  if (phoneN) {
+    const cRef = doc(db, "clients", phoneN);
+    const snap = await getDoc(cRef);
+    const pen = snap.exists() ? snap.data()?.pendingPenalty : null;
+    if (pen && Number(pen.amount) > 0) {
+      // po želji: potvrda u UI-u da će biti primenjena kazna
+      const ok = confirm(`Klijent ima neiskorišćenu kaznu ${pen.amount} RSD. Primeni sada?`);
+      if (ok) penaltyToApply = pen;
+    }
+  }
+
+  Object.assign(payload, {
+    type: "booking",
+    status: "booked",
+    startHHMM: minToTime(start),
+    endHHMM: minToTime(end),
+    startMin: start,
+    endMin: end,
+    serviceId: srv.id,
+    serviceName: srv.name,
+    durationMin: Number(srv.durationMin || 0),
+    color: colorForCategoryId(srv.categoryId),
+    clientName: clientName.trim(),
+    clientPhone: clientPhone.trim(),
+    // --- upiši cenu i eventualnu kaznu u sam termin ---
+    price: Number(srv.price || 0), // ako imaš cenu u service
+    penaltyApplied: penaltyToApply
+      ? {
+          amount: Number(penaltyToApply.amount || 0),
+          sourceApptId: penaltyToApply.sourceApptId || "",
+          appliedAt: new Date().toISOString(),
+        }
+      : null,
+  });
+
+  // napravi termin
+  const newDoc = await addDoc(collection(db, "appointments"), payload);
+
+  // ako je primenjena kazna – očisti je sa klijenta (jednokratna)
+  if (penaltyToApply && phoneN) {
+    const cRef = doc(db, "clients", phoneN);
+    await updateDoc(cRef, { pendingPenalty: deleteField(), updatedAt: serverTimestamp() });
+  }
+
+  // reset polja za unos
+  setClientName("");
+  setClientPhone("");
+   return; 
+}
 
     await addDoc(collection(db, "appointments"), payload);
-    if (mode === "booking") {
-      setClientName("");
-      setClientPhone("");
-    }
+  
   }
 
   async function markAppt(id, patch) {
@@ -509,6 +575,53 @@ const apptBgFor = (a, colorForServiceId) => {
     if (!confirm("Obrisati stavku?")) return;
     await deleteDoc(doc(db, "appointments", id));
   }
+async function cancelApptWithRule(appt) {
+  if (!appt?.id) return;
+
+  // 1) Izračunaj preostalo vreme
+  const now = new Date();
+  const start = apptStartDate(appt);
+  const diffHours = (start - now) / 36e5;
+
+  // 2) Uvek ukloni termin iz kalendara (brisanje dokumenta)
+  await deleteDoc(doc(db, "appointments", appt.id));
+
+  // 3) Ako < 6h do početka i booking je, zabeleži kaznu 50% za sledeći put
+  if (appt.type === "booking" && diffHours < 6) {
+    const phone = normPhone(appt.clientPhone);
+    if (phone) {
+      const cRef = doc(db, "clients", phone);
+      const snap = await getDoc(cRef);
+
+      // izračunaj 50% (ako nema price, stavi 0)
+     // probaj appt.price, pa cena sa usluge (ako postoji), pa 0
+const srvPrice = servicesById.get(appt.serviceId)?.price;
+const basePrice = Number(appt.price ?? srvPrice ?? 0);
+
+      const penaltyAmount = Math.round(basePrice * 0.5);
+
+      await setDoc(
+        cRef,
+        {
+          phone,
+          name: appt.clientName || "",
+          // pendingPenalty se odnosi na sledeći termin
+          pendingPenalty: {
+            amount: penaltyAmount,
+            sourceApptId: appt.id,
+            sourceService: appt.serviceName || "",
+            createdAt: serverTimestamp(),
+          },
+          updatedAt: serverTimestamp(),
+          createdAt: snap.exists()
+            ? snap.data().createdAt || serverTimestamp()
+            : serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  }
+}
 
   // mark no-show + increment client counter by phone
   async function markNoShowWithClient(appt) {
@@ -940,6 +1053,89 @@ const apptBgFor = (a, colorForServiceId) => {
                 </div>
               )}
             </div>
+            {/* DESKTOP TRAKA RADNICA */}
+{!isMobile && (
+  <div
+    className="emp-strip-desktop"
+    style={{
+      display: "flex",
+      flexWrap: "nowrap",
+      overflowX: "auto",
+      gap: 8,
+      padding: "6px 0",
+      WebkitOverflowScrolling: "touch",
+      scrollbarWidth: "none",
+      marginTop: 6,
+    }}
+  >
+    {/* Pomoćna dugmad levo */}
+    <button
+      onClick={() => { setSelEmpId(""); setOnlyWorking(true); }}
+      style={{
+        flex: "0 0 auto",
+        padding: "8px 14px",
+        borderRadius: 999,
+        border: "1px solid rgba(255,255,255,.35)",
+        background: "linear-gradient(135deg,#ffffff,#eaf5ff)",
+        color: "#000",
+        fontWeight: 800,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+      title="Prikaži samo radnice koje danas imaju smenu"
+    >
+      Ko radi danas
+    </button>
+    <button
+      onClick={() => { setSelEmpId(""); setOnlyWorking(false); }}
+      style={{
+        flex: "0 0 auto",
+        padding: "8px 14px",
+        borderRadius: 999,
+        border: "1px solid rgba(255,255,255,.35)",
+        background: "linear-gradient(135deg,#ffffff,#ffe3ef)",
+        color: "#000",
+        fontWeight: 800,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+      title="Prikaži sve radnice"
+    >
+      Sve radnice
+    </button>
+
+    {/* Lista radnica desno */}
+    {employees.map((e) => {
+      const isWorking = workingTodayIds.includes(e.id);
+      const isSelected = selEmpId === e.id;
+      return (
+        <button
+          key={e.id}
+          onClick={() => setSelEmpId(e.id)}
+          style={{
+            flex: "0 0 auto",
+            padding: "8px 14px",
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,.35)",
+            background: isSelected
+              ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+              : isWorking
+              ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
+              : "rgba(255,255,255,.12)",
+            color: isSelected ? "#fff" : "#000",
+            fontWeight: 800,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+          title={isWorking ? "Radi danas" : "Nije u smeni danas"}
+        >
+          {e.name}
+        </button>
+      );
+    })}
+  </div>
+)}
+
 
             {/* GRID */}
             <DayGrid
@@ -1295,10 +1491,11 @@ const apptBgFor = (a, colorForServiceId) => {
                 await markNoShowWithClient(activeAppt);
                 setActiveAppt(null);
               }}
-              onCancel={async () => {
-                await markAppt(activeAppt.id, { status: "cancelled" });
-                setActiveAppt(null);
-              }}
+             onCancel={async () => {
+  await cancelApptWithRule(activeAppt);
+  setActiveAppt(null);
+}}
+
               onDelete={async () => {
                 await deleteAppt(activeAppt.id);
                 setActiveAppt(null);
@@ -1435,13 +1632,8 @@ function DayGrid({
                   const isVacation = a.type === "vacation";
                   const top = pxFromMin(a.startMin - openMin);
                   const height = pxFromMin(a.endMin - a.startMin);
-                  const bg = isVacation
-                    ? "repeating-linear-gradient(-45deg,#ffc6cf 0 10px,#ffadb9 10px 20px)"
-                    : isBreak
-                    ? "repeating-linear-gradient(-45deg,#ffd88a 0 10px,#ffcb66 10px 20px)"
-                    : isBlock
-                    ? "repeating-linear-gradient(-45deg,#c7c7c7 0 8px,#b9b9b9 8px 16px)"
-                    : colorForServiceId(a.serviceId);
+               const bg = apptBgFor(a, colorForServiceId);
+
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -2512,21 +2704,7 @@ const responsiveCSS = `
   .emp-strip-mobile::-webkit-scrollbar { display: none; }
 }
 
-/* VEOMA MALI TELEFONI */
-@media (max-width: 420px) {
-  .ctl .ctl-row-a { grid-template-columns: 1fr !important; }
 
-  .month-wrap .month-row { grid-template-columns: 1fr !important; }
-
-  .daystrip button {
-    min-width: 52px !important;
-    padding: 5px 5px !important;
-  }
-
-  .grid-day span, .grid-schedule span {
-    font-size: 12px !important;
-  }
-}
   /* VEOMA MALI TELEFONI */
 @media (max-width: 420px) {
   .ctl .ctl-row-a { grid-template-columns: 1fr !important; }
@@ -2544,53 +2722,30 @@ const responsiveCSS = `
 }
 
 /* --- Scrollbar za kartice termina --- */
-.grid-day button::-webkit-scrollbar,
-.grid-schedule button::-webkit-scrollbar { 
-  width: 6px; 
-}
-
-.grid-day button::-webkit-scrollbar-thumb,
-.grid-schedule button::-webkit-scrollbar-thumb { 
-  background: rgba(0,0,0,.15); 
-  border-radius: 6px; 
-}
-
-/* Firefox varijanta */
-.grid-day button,
-.grid-schedule button {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0,0,0,.15) transparent;
-}
-  /* --- Scrollbar za kartice termina --- */
-
-/* Default: nema scrollbar */
+/* Default skriven */
 .grid-day button::-webkit-scrollbar,
 .grid-schedule button::-webkit-scrollbar { 
   width: 0; 
   background: transparent;
 }
-
-/* Kad hoveruješ karticu – pojavi se scrollbar */
+/* Hover – pojavi se */
 .grid-day button:hover::-webkit-scrollbar,
 .grid-schedule button:hover::-webkit-scrollbar {
   width: 6px;
 }
-
 .grid-day button:hover::-webkit-scrollbar-thumb,
 .grid-schedule button:hover::-webkit-scrollbar-thumb {
   background: rgba(0,0,0,.2);
   border-radius: 6px;
 }
-
-/* Firefox varijanta */
-.grid-day button,
-.grid-schedule button {
-  scrollbar-width: none; /* default: skriven */
-}
-.grid-day button:hover,
-.grid-schedule button:hover {
-  scrollbar-width: thin; 
+/* Firefox: none → thin na hover */
+.grid-day button, .grid-schedule button { scrollbar-width: none; }
+.grid-day button:hover, .grid-schedule button:hover {
+  scrollbar-width: thin;
   scrollbar-color: rgba(0,0,0,.2) transparent;
 }
+
+
+
 
 `;
