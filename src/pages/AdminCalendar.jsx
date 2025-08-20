@@ -670,6 +670,7 @@ async function cancelApptWithRule(appt) {
 
 
   // mark no-show + increment client counter by phone
+// mark no-show + upiši kaznu 50% kao pendingPenalty
 async function markNoShowWithClient(appt) {
   if (!appt?.id) return;
   await markAppt(appt.id, { status: "noshow" });
@@ -678,18 +679,29 @@ async function markNoShowWithClient(appt) {
   if (!phone) return;
 
   const cRef = doc(db, "clients", phone);
+  const srvPrice = servicesById.get(appt.serviceId)?.price;
+  const basePrice = Number(appt.price ?? srvPrice ?? 0);
+  const penaltyAmount = Math.round(basePrice * 0.5);
+
   await setDoc(
     cRef,
     {
       phone,
       name: appt.clientName || "",
       noShowCount: increment(1),
+      pendingPenalty: {
+        amount: penaltyAmount,
+        sourceApptId: appt.id,
+        sourceService: appt.serviceName || "",
+        createdAt: serverTimestamp(),
+      },
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     },
     { merge: true }
   );
 }
+
 
 
   /* ------------ month helpers ------------ */
