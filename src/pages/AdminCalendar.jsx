@@ -439,6 +439,20 @@ const idsToRender = useMemo(() => {
     const catId = srv?.categoryId;
     return colorForCategoryId(catId);
   };
+  function apptBgFor(appt, colorForServiceId) {
+  if (appt.type === "vacation") {
+    return "repeating-linear-gradient(45deg,#ffe1e1,#ffe1e1 10px,#fff 10px,#fff 20px)";
+  }
+  if (appt.type === "break") {
+    return "repeating-linear-gradient(135deg,#ffeec2,#ffeec2 10px,#fff 10px,#fff 20px)";
+  }
+  if (appt.type === "block") {
+    return "repeating-linear-gradient(135deg,#e0e0e0,#e0e0e0 10px,#fff 10px,#fff 20px)";
+  }
+  // default = usluga
+  return colorForServiceId(appt.serviceId);
+}
+
 // jedinstvena pozadina za sve vrste "termina"
 const apptBgFor = (a, colorForServiceId) => {
   return a.type === "vacation"
