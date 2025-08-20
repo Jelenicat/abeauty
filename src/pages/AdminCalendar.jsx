@@ -100,7 +100,7 @@ const apptBgFor = (a, colorForServiceId) => {
 
 
 export default function AdminCalendar() {
-    const manyEmployees = useMemo(() => employees.length > 10, [employees]);
+  
   const nav = useNavigate();
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 
@@ -109,7 +109,9 @@ export default function AdminCalendar() {
 
   // collections
   const [employees, setEmployees] = useState([]);
+  
   const [services, setServices] = useState([]);
+  const manyEmployees = employees.length > 10
 
   // day view
   const [dayDate, setDayDate] = useState(() => new Date());
