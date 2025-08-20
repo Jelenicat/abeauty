@@ -689,96 +689,82 @@ function apptStartDate(appt) {
 }
 
 
-   async function deleteAppt(id) {
+  async function markAppt(id, patch) {
+    await updateDoc(doc(db, "appointments", id), {
+      ...patch,
+      updatedAt: serverTimestamp(),
+    });
+  }
+  async function deleteAppt(id) {
     if (!confirm("Obrisati stavku?")) return;
     await deleteDoc(doc(db, "appointments", id));
   }
-
-// mark no-show + uvećaj noShowCount ...
-async function markNoShowWithClient(appt) {
-
-    if (!confirm("Obrisati stavku?")) return;
-    await deleteDoc(doc(db, "appointments", id));
-  }
-
-   }
- 
-
-// mark no-show + uvećaj noShowCount + pending kazna ako je < 6h
-async function markNoShowWithClient(appt) {
-  if (!appt?.id) return;
-
-  // 1) označi termin kao no-show
-  await updateDoc(doc(db, "appointments", appt.id), {
-    status: "no-show",
-    noShowAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  // 2) uvećaj noShowCount klijentu (po telefonu)
-  const phone = normPhone(appt.clientPhone);
-  if (phone) {
-    const cRef = doc(db, "clients", phone);
-    await runTransaction(db, async (tx) => {
-      const cSnap = await tx.get(cRef);
-      const data = cSnap.exists() ? cSnap.data() : {};
-      const cur = Number(data.noShowCount || 0);
-
-      tx.set(
-        cRef,
-        {
-          phone,
-          name: appt.clientName || "",
-          noShowCount: cur + 1,
-          updatedAt: serverTimestamp(),
-          createdAt: cSnap.exists() ? (data.createdAt || serverTimestamp()) : serverTimestamp(),
-        },
-        { merge: true }
-      );
-    });
-  }
-
-  // 3) ako je do termina ostalo < 6h -> pending kazna (kao u cancelApptWithRule)
-  const apptDate = new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}`);
-  const diffHours = (apptDate.getTime() - Date.now()) / 36e5;
-
-  if (appt.type === "booking" && diffHours < 6 && phone) {
-    const created = await runTransaction(db, async (tx) => {
-      const cRef = doc(db, "clients", phone);
-      const snap = await tx.get(cRef);
-      const data = snap.exists() ? snap.data() : {};
-      const hasActivePenalty = data.pendingPenalty && Number(data.pendingPenalty.amount || 0) > 0;
-      if (hasActivePenalty) return 0;
-
-      const penaltyAmount = computePenaltyAmountFromAppt(appt, servicesById);
-      tx.set(
-        cRef,
-        {
-          phone,
-          name: appt.clientName || "",
-          pendingPenalty: {
-            amount: penaltyAmount,
-            sourceApptId: appt.id,
-            sourceService: appt.serviceName || "",
-            createdAt: serverTimestamp(),
-          },
-          updatedAt: serverTimestamp(),
-          createdAt: snap.exists() ? (data.createdAt || serverTimestamp()) : serverTimestamp(),
-        },
-        { merge: true }
-      );
-      return penaltyAmount;
-    });
-
-    if (created > 0) {
-      await applyPendingToEarliestAppt(db, phone, created);
-    }
-  }
-}
-
 
   // mark no-show + increment client counter by phone
- async function cancelApptWithRule(appt) {
+  async function markNoShowWithClient(appt) {
+    if (!appt?.id) return;
+
+    // status -> no-show
+    await updateDoc(doc(db, "appointments", appt.id), {
+      status: "no-show",
+      noShowAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // razlika u satima do termina (lokalno)
+    const apptDate = new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}`);
+    const diffHours = (apptDate.getTime() - Date.now()) / 36e5;
+
+    const phone = normPhone(appt.clientPhone);
+    if (phone) {
+      const cRef = doc(db, "clients", phone);
+
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(cRef);
+        const data = snap.exists() ? snap.data() : {};
+
+        tx.set(
+          cRef,
+          {
+            phone,
+            name: appt.clientName || "",
+            noShowCount: increment(1),
+            updatedAt: serverTimestamp(),
+            createdAt: snap.exists()
+              ? (data.createdAt || serverTimestamp())
+              : serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        // < 6h => pending kazna ako je još nema
+        if (appt.type === "booking" && diffHours < 6) {
+          const hasActivePenalty =
+            data.pendingPenalty && Number(data.pendingPenalty.amount || 0) > 0;
+          if (hasActivePenalty) return;
+
+          const penaltyAmount = computePenaltyAmountFromAppt(appt, servicesById);
+
+          tx.set(
+            cRef,
+            {
+              pendingPenalty: {
+                amount: penaltyAmount,
+                sourceApptId: appt.id,
+                sourceService: appt.serviceName || "",
+                createdAt: serverTimestamp(),
+              },
+            },
+            { merge: true }
+          );
+        }
+      });
+
+      await applyPendingToEarliestAppt(db, phone);
+    }
+  }
+
+  async function cancelApptWithRule(appt) {
   if (!appt?.id) return;
 
   // status -> cancelled
@@ -1714,7 +1700,7 @@ background: isSelected
       </div>
     </div>
   );
-
+}
 
 /* -------------------- DayStrip (horizontal days) -------------------- */
 
@@ -2053,7 +2039,8 @@ const hasPendingPenalty = !!pendingPen;
 const penaltyApplied = a?.penaltyApplied?.amount > 0;
 
 const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
-const showPendingPenaltyHere = !!(hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id);
+const showPendingPenaltyHere = hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id;
+
 
             return (
               <button
