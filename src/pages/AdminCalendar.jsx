@@ -182,6 +182,9 @@ const autoPickedRef = useRef(false);
   // UI state
   const [hoverApptId, setHoverApptId] = useState(null);
   const [activeAppt, setActiveAppt] = useState(null); // opens modal
+  // clients with pending penalty (by phone)
+const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
+
 
   // --- mobile detect (≤640px) ---
   const [isMobile, setIsMobile] = useState(false);
@@ -251,7 +254,7 @@ const autoPickedRef = useRef(false);
       }
     );
     // clients with pending penalty (by phone)
-const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
+
 const offClientsPenalty = onSnapshot(
   query(collection(db, "clients"), where("pendingPenalty.amount", ">", 0)),
   (s) => {
@@ -269,6 +272,7 @@ const offClientsPenalty = onSnapshot(
     setPendingPenaltyByPhone(m);
   }
 );
+
 
     return () => {
       offEmp();
@@ -622,30 +626,23 @@ if (mode === "booking") {
     await deleteDoc(doc(db, "appointments", id));
   }
 async function cancelApptWithRule(appt) {
-  if (!appt?.id)
-    if (!confirm("Otkazati termin?")) 
-     return;
+  if (!appt?.id) return;
+  if (!confirm("Otkazati termin?")) return;
 
-  // 1) Izračunaj preostalo vreme
   const now = new Date();
   const start = apptStartDate(appt);
   const diffHours = (start - now) / 36e5;
 
-  // 2) Uvek ukloni termin iz kalendara (brisanje dokumenta)
   await deleteDoc(doc(db, "appointments", appt.id));
 
-  // 3) Ako < 6h do početka i booking je, zabeleži kaznu 50% za sledeći put
   if (appt.type === "booking" && diffHours < 6) {
     const phone = normPhone(appt.clientPhone);
     if (phone) {
       const cRef = doc(db, "clients", phone);
       const snap = await getDoc(cRef);
 
-      // izračunaj 50% (ako nema price, stavi 0)
-     // probaj appt.price, pa cena sa usluge (ako postoji), pa 0
-const srvPrice = servicesById.get(appt.serviceId)?.price;
-const basePrice = Number(appt.price ?? srvPrice ?? 0);
-
+      const srvPrice = servicesById.get(appt.serviceId)?.price;
+      const basePrice = Number(appt.price ?? srvPrice ?? 0);
       const penaltyAmount = Math.round(basePrice * 0.5);
 
       await setDoc(
@@ -653,7 +650,6 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
         {
           phone,
           name: appt.clientName || "",
-          // pendingPenalty se odnosi na sledeći termin
           pendingPenalty: {
             amount: penaltyAmount,
             sourceApptId: appt.id,
@@ -670,6 +666,7 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
     }
   }
 }
+
 
   // mark no-show + increment client counter by phone
   async function markNoShowWithClient(appt) {
@@ -1895,6 +1892,10 @@ function ScheduleGrid({
 
             const phone = normPhone(a.clientPhone);
             const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
+            const pendingPen = a.clientPhone ? pendingPenaltyByPhone.get(normPhone(a.clientPhone)) : null;
+const hasPendingPenalty = !!pendingPen;
+const penaltyApplied = a?.penaltyApplied?.amount > 0;
+
 
             return (
               <button
@@ -1926,13 +1927,26 @@ function ScheduleGrid({
                 </div>
 
                 {hasNoShowHistory && (
-                  <div style={badgeNoShow}>
-                    <FiAlertTriangle style={{ marginRight: 6 }} />
-                    No-show istorija
-                  </div>
-                )}
-              </button>
-            );
+      <div style={badgeNoShow}>
+        <FiAlertTriangle style={{ marginRight: 6 }} />
+        No-show istorija
+      </div>
+    )}
+    {hasPendingPenalty && !penaltyApplied && (
+      <div style={badgePenalty}>
+        <FiInfo style={{ marginRight: 6 }} />
+        Kazna za naplatu
+      </div>
+    )}
+    {penaltyApplied && (
+      <div style={badgePenalty}>
+        <FiInfo style={{ marginRight: 6 }} />
+        Kazna primenjena
+      </div>
+    )}
+  </button>
+);
+
           })}
           {!laid.length && (
             <div
@@ -2120,6 +2134,10 @@ function ApptModal({
 
   const dow = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
   const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
+  const phoneN = normPhone(appt.clientPhone);
+const pendingPen = phoneN ? pendingPenaltyByPhone.get(phoneN) : null;
+const penaltyApplied = appt?.penaltyApplied?.amount > 0;
+
 
   return (
     <div style={modalBackdrop} onClick={onClose}>
@@ -2178,6 +2196,17 @@ function ApptModal({
               </div>
             )}
           </div>
+          {pendingPen && !penaltyApplied && (
+  <div style={{ ...badge, background: "#fff7e6", color: "#7a3d0b" }}>
+    <FiInfo /> Kazna za naplatu: <b>{pendingPen.amount} RSD</b>
+  </div>
+)}
+{penaltyApplied && (
+  <div style={{ ...badge, background: "#e8fff0", color: "#0b7a3d" }}>
+    <FiInfo /> Kazna primenjena: <b>{appt.penaltyApplied.amount} RSD</b>
+  </div>
+)}
+
 
           {(appt.clientName || appt.clientPhone) && (
             <div style={infoBox}>
