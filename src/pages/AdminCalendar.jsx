@@ -689,13 +689,14 @@ function apptStartDate(appt) {
 }
 
 
-  async function markAppt(id, patch) {
-    await updateDoc(doc(db, "appointments", id), {
-      ...patch,
-      updatedAt: serverTimestamp(),
-    });
+   async function deleteAppt(id) {
+    if (!confirm("Obrisati stavku?")) return;
+    await deleteDoc(doc(db, "appointments", id));
   }
-  async function deleteAppt(id) {
+
+// mark no-show + uvećaj noShowCount ...
+async function markNoShowWithClient(appt) {
+
     if (!confirm("Obrisati stavku?")) return;
     await deleteDoc(doc(db, "appointments", id));
   }
@@ -2051,6 +2052,8 @@ function ScheduleGrid({
 const hasPendingPenalty = !!pendingPen;
 const penaltyApplied = a?.penaltyApplied?.amount > 0;
 
+const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
+const showPendingPenaltyHere = !!(hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id);
 
             return (
               <button
