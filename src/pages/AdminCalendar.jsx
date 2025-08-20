@@ -117,7 +117,8 @@ export default function AdminCalendar() {
 
   // create (day): 'booking' | 'block'
   const [mode, setMode] = useState("booking");
-  const [selEmpId, setSelEmpId] = useState("");
+const [selEmpId, setSelEmpId] = useState(null);
+const autoPickedRef = useRef(false);
   const [selSrvId, setSelSrvId] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
@@ -328,11 +329,12 @@ const q = query(
   }, [schedDate]);
 
   // defaults
-  useEffect(() => {
-    if (!selEmpId && employees.length && !isMobile) {
-      setSelEmpId(employees[0].id);
-    }
-  }, [employees, selEmpId, isMobile]);
+ useEffect(() => {
+  if (!autoPickedRef.current && selEmpId == null && employees.length && !isMobile) {
+  setSelEmpId(employees[0].id);
+     autoPickedRef.current = true; // auto-pick samo prvi put
+   }
+ }, [employees, isMobile, selEmpId]);
 
   useEffect(() => setSelSrvId(""), [selEmpId]);
 
@@ -1078,7 +1080,7 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
   >
     {/* Pomoćna dugmad levo */}
     <button
-      onClick={() => { setSelEmpId(""); setOnlyWorking(true); }}
+      onClick={() => { setSelEmpId(null); setOnlyWorking(true); }}
       style={{
         flex: "0 0 auto",
         padding: "8px 14px",
@@ -1095,7 +1097,7 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
       Ko radi danas
     </button>
     <button
-      onClick={() => { setSelEmpId(""); setOnlyWorking(false); }}
+     onClick={() => { setSelEmpId(null); setOnlyWorking(false); }}
       style={{
         flex: "0 0 auto",
         padding: "8px 14px",
