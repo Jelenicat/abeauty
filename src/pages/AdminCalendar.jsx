@@ -111,6 +111,18 @@ export default function AdminCalendar() {
   const [employees, setEmployees] = useState([]);
   
   const [services, setServices] = useState([]);
+  // DESKTOP multi-select
+const [selectedEmpIds, setSelectedEmpIds] = useState([]);
+const toggleEmp = (id) =>
+  setSelectedEmpIds(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  );
+
+// ako lista radnica stigne/menja se, očisti nevažeće ID-jeve iz selekcije
+useEffect(() => {
+  const valid = new Set(employees.map(e => e.id));
+  setSelectedEmpIds(prev => prev.filter(id => valid.has(id)));
+}, [employees]);
   const manyEmployees = employees.length > 10
 
   // day view
@@ -388,16 +400,17 @@ const q = query(
 
   // Koje kolone da prikažemo u gridu
 const idsToRender = useMemo(() => {
-  // Ako je izabrana konkretna radnica – prikaži samo nju (i desktop i mobilni)
-  if (selEmpId) return [selEmpId];
+  // MOBILNI: jedna izabrana ili ništa dok ne izabereš
+  if (isMobile) return selEmpId ? [selEmpId] : [];
 
-  // Mobilni bez izbora => prazno (čeka izbor iz trake)
-  if (isMobile) return [];
+  // DESKTOP: ako je nešto ručno izabrano — prikaži baš to
+  if (selectedEmpIds.length) return selectedEmpIds;
 
-  // Desktop bez izbora => sve ili samo one koje rade
+  // Fallback ponašanje kao ranije
   if (onlyWorking) return workingTodayIds;
-  return employees.map((e) => e.id);
-}, [selEmpId, isMobile, onlyWorking, workingTodayIds, employees]);
+  return employees.map(e => e.id);
+}, [isMobile, selEmpId, selectedEmpIds, onlyWorking, workingTodayIds, employees]);
+
 
 
   const shiftsByEmp = useMemo(() => {
@@ -1084,7 +1097,9 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
   >
     {/* Pomoćna dugmad levo */}
     <button
-      onClick={() => { setSelEmpId(null); setOnlyWorking(true); }}
+      onClick={() => { setSelEmpId(null); setOnlyWorking(true); setSelectedEmpIds(workingTodayIds); }}
+
+
       style={{
         flex: "0 0 auto",
  padding: manyEmployees ? "6px 10px" : "8px 14px",
@@ -1102,7 +1117,8 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
       Ko radi danas
     </button>
     <button
-     onClick={() => { setSelEmpId(null); setOnlyWorking(false); }}
+   onClick={() => { setSelEmpId(null); setOnlyWorking(false); setSelectedEmpIds(employees.map(e => e.id)); }}
+
       style={{
         flex: "0 0 auto",
            padding: manyEmployees ? "6px 10px" : "8px 14px",
@@ -1123,22 +1139,23 @@ const basePrice = Number(appt.price ?? srvPrice ?? 0);
     {/* Lista radnica desno */}
     {employees.map((e) => {
       const isWorking = workingTodayIds.includes(e.id);
-      const isSelected = selEmpId === e.id;
+      const isSelected = selectedEmpIds.includes(e.id);
       return (
         <button
           key={e.id}
-          onClick={() => setSelEmpId(e.id)}
+        onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
           style={{
             flex: "0 0 auto",
              padding: manyEmployees ? "6px 10px" : "8px 14px",
            marginBottom: 6,
             borderRadius: 999,
             border: "1px solid rgba(255,255,255,.35)",
-            background: isSelected
-              ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
-              : isWorking
-              ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-              : "rgba(255,255,255,.12)",
+background: isSelected
+  ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+  : isWorking
+  ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
+  : "rgba(255,255,255,.12)",
+
             color: isSelected ? "#fff" : "#000",
             fontWeight: 800,
                fontSize: manyEmployees ? 13 : 16,
