@@ -7,7 +7,7 @@ function json(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify(body));
 }
-const env = (k, d=undefined) => (process.env[k] ?? d);
+const env = (k, d = undefined) => (process.env[k] ?? d);
 
 /* ---------- Firebase Admin init (iz FIREBASE_SERVICE_ACCOUNT_JSON) ---------- */
 function initAdmin() {
@@ -37,19 +37,30 @@ function formatDateTime(dateISO, timeHHMM, tz) {
   const [y, m, d] = dateISO.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d, H, M, 0));
   const fmtDate = new Intl.DateTimeFormat('sr-RS', {
-    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).format(dt);
   const fmtTime = new Intl.DateTimeFormat('sr-RS', {
-    timeZone: tz, hour: '2-digit', minute: '2-digit'
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(dt);
   return { fmtDate, fmtTime };
 }
 function getLocalHour(tz) {
-  const s = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(new Date());
+  const s = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    hour: '2-digit',
+    hour12: false,
+  }).format(new Date());
   return Number(s);
 }
 function timeToMin(hhmm) {
-  const [h, m] = String(hhmm || '00:00').split(':').map(x => parseInt(x || 0, 10));
+  const [h, m] = String(hhmm || '00:00')
+    .split(':')
+    .map((x) => parseInt(x || 0, 10));
   return h * 60 + m;
 }
 // E.164 normalizacija za SRB
@@ -57,15 +68,28 @@ function toE164RS(phone) {
   const d = String(phone || '').replace(/\D/g, '');
   if (!d) return null;
   if (d.startsWith('381')) return '+' + d;
-  if (d.startsWith('00'))  return '+' + d.slice(2);
-  if (d.startsWith('0'))   return '+381' + d.slice(1);
-  if (d.startsWith('6'))   return '+381' + d;
+  if (d.startsWith('00')) return '+' + d.slice(2);
+  if (d.startsWith('0')) return '+381' + d.slice(1);
+  if (d.startsWith('6')) return '+381' + d;
   return null;
+}
+// ASCII fallback (skidanje dijakritika i emoji-ja)
+function toAscii(s = '') {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // dijakritike
+    .replace(/[^\x20-\x7E]/g, ''); // van-ASCII (emoji itd.)
 }
 
 /* ---------- Brevo (Send SMS) ---------- */
-async function sendSMS({ apiKey, sender, to, text }) {
-  const body = { sender, recipient: to, content: text, type: 'transactional', unicodeEnabled: true };
+async function sendSMS({ apiKey, sender, to, text, unicodeEnabled }) {
+  const body = {
+    sender,
+    recipient: to,
+    content: text,
+    type: 'transactional',
+    unicodeEnabled: !!unicodeEnabled,
+  };
 
   const r = await fetch('https://api.brevo.com/v3/transactionalSMS/send', {
     method: 'POST',
@@ -95,11 +119,11 @@ async function getAppointmentsForTomorrow() {
     .get();
 
   const out = [];
-  snap.forEach(doc => {
+  snap.forEach((doc) => {
     const a = doc.data();
     out.push({
       clientPhone: a.clientPhone,
-      serviceName: a.serviceName,   // tačan naziv iz baze (bez .toLowerCase)
+      serviceName: a.serviceName, // tačan naziv iz baze (bez .toLowerCase)
       employeeName: a.employeeName,
       startHHMM: a.startHHMM,
       dateKey: a.dateKey,
@@ -112,73 +136,136 @@ async function getAppointmentsForTomorrow() {
 export default async function handler(req, res) {
   try {
     const apiKey = env('BREVO_API_KEY');
-    const sender = env('BREVO_SENDER') || env('SMS_SENDER');
+    const senderMain = env('BREVO_SENDER') || env('SMS_SENDER');
+    const senderFallback = env('BREVO_SENDER_FALLBACK') || env('SMS_SENDER_FALLBACK'); // opcioni numeric
     const tz = env('LOCAL_TZ', 'Europe/Belgrade');
     const salonPhone = env('REMINDER_SALON_PHONE') || ''; // broj koji ide u "Kontakt: …"
 
-    if (!apiKey) return json(res, 500, { ok: false, error: 'BREVO_API_KEY missing' });
-    if (!sender) return json(res, 400, { ok: false, error: 'BREVO_SENDER (or SMS_SENDER) missing' });
-
+    // Query/ENV opcije
     const dryRun = /^(1|true)$/i.test(String(req.query.dryRun || ''));
-    const force  = /^(1|true)$/i.test(String(req.query.force  || ''));
-    const isCron = !!req.headers['x-vercel-cron'];
-    const mode   = isCron ? 'cron' : (force ? 'force' : 'manual');
+    const force = /^(1|true)$/i.test(String(req.query.force || ''));
+    const asciiOnly = /^(1|true)$/i.test(
+      String(req.query.ascii || env('SMS_ASCII_ONLY') || '')
+    );
+    const useFallbackSender = /^(1|true)$/i.test(String(req.query.fallback || ''));
 
-    const localHour     = getLocalHour(tz);
+    // Izbor sender-a
+    const chosenSender =
+      useFallbackSender && senderFallback ? senderFallback : senderMain;
+
+    if (!apiKey) return json(res, 500, { ok: false, error: 'BREVO_API_KEY missing' });
+    if (!chosenSender)
+      return json(res, 400, {
+        ok: false,
+        error:
+          'BREVO_SENDER (or SMS_SENDER) missing' +
+          (useFallbackSender ? ' – fallback nije postavljen' : ''),
+      });
+
+    // Cron/force gate
+    const isCron = !!req.headers['x-vercel-cron'];
+    const mode = isCron ? 'cron' : force ? 'force' : 'manual';
+    const localHour = getLocalHour(tz);
     const shouldSendNow = force || localHour === 15; // slanje tačno u 15h, ili odmah uz ?force=1
-    const allowed       = isCron || force;
+    const allowed = isCron || force;
 
     const appts = await getAppointmentsForTomorrow();
 
     // po želji filtar na radno vreme
-    const filtered = appts.filter(a => {
+    const filtered = appts.filter((a) => {
       const m = timeToMin(a.startHHMM);
       return m >= 8 * 60 && m <= 22 * 60;
     });
 
-    // format poruke koji si tražila
+    // format poruke
     const buildMsg = (a) => {
       const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
-      return `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate}. u ${fmtTime}h` +
-             ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vaš aBeauty ❤️`;
+      let txt =
+        `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate}. u ${fmtTime}h` +
+        ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vaš aBeauty ❤️`;
+      if (asciiOnly) {
+        // bez emoji + dijakritika; "Vaš" -> "Vas"
+        txt = toAscii(
+          txt.replace('Vaš aBeauty ❤️', 'Vas aBeauty')
+        );
+      }
+      return txt;
     };
 
+    // Dry-run ili zabranjeno vreme
     if (dryRun || !shouldSendNow || !allowed) {
-      const sample = filtered.slice(0, 5).map(a => ({
+      const sample = filtered.slice(0, 5).map((a) => ({
         to: a.clientPhone,
         toE164: toE164RS(a.clientPhone),
         message: buildMsg(a),
       }));
       return json(res, 200, {
-        ok: true, tz, mode, localHour,
+        ok: true,
+        tz,
+        mode,
+        localHour,
         willSend: shouldSendNow && allowed && filtered.length > 0 && !dryRun,
-        dryRun, count: filtered.length, sample,
+        dryRun,
+        count: filtered.length,
+        asciiOnly,
+        sender: chosenSender,
+        sample,
       });
     }
 
+    // Slanje
     const results = [];
     for (const a of filtered) {
       try {
         const to = toE164RS(a.clientPhone);
         if (!to) {
-          results.push({ to: a.clientPhone, ok: false, error: 'Neispravan broj telefona' });
+          results.push({
+            to: a.clientPhone,
+            ok: false,
+            error: 'Neispravan broj telefona',
+          });
           continue;
         }
         const message = buildMsg(a);
-        const resp = await sendSMS({ apiKey, sender, to, text: message });
-        results.push({ toOriginal: a.clientPhone, toE164: to, ok: resp.ok, status: resp.status, data: resp.data });
+        const resp = await sendSMS({
+          apiKey,
+          sender: chosenSender,
+          to,
+          text: message,
+          unicodeEnabled: !asciiOnly, // ako radimo ASCII fallback, ne treba UCS-2
+        });
+        results.push({
+          toOriginal: a.clientPhone,
+          toE164: to,
+          ok: resp.ok,
+          status: resp.status,
+          data: resp.data,
+        });
       } catch (e) {
-        results.push({ to: a.clientPhone, ok: false, error: String(e?.message || e) });
+        results.push({
+          to: a.clientPhone,
+          ok: false,
+          error: String(e?.message || e),
+        });
       }
     }
 
-    const okCount = results.filter(r => r.ok).length;
+    const okCount = results.filter((r) => r.ok).length;
     return json(res, 200, {
-      ok: true, tz, mode,
+      ok: true,
+      tz,
+      mode,
+      asciiOnly,
+      sender: chosenSender,
       sent: results,
       metrics: { total: filtered.length, ok: okCount, failed: results.length - okCount },
     });
   } catch (err) {
-    return json(res, 500, { ok: false, error: String(err?.message || err) });
+    // malo bogatiji error za lakšu dijagnostiku u cron "Details"
+    return json(res, 500, {
+      ok: false,
+      error: String(err?.message || err),
+      stack: err?.stack || null,
+    });
   }
 }
