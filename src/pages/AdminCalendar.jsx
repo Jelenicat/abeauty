@@ -250,10 +250,31 @@ const autoPickedRef = useRef(false);
         setNoShowByPhone(m);
       }
     );
+    // clients with pending penalty (by phone)
+const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
+const offClientsPenalty = onSnapshot(
+  query(collection(db, "clients"), where("pendingPenalty.amount", ">", 0)),
+  (s) => {
+    const m = new Map();
+    s.docs.forEach((d) => {
+      const data = d.data();
+      if (data.phone && data.pendingPenalty?.amount > 0) {
+        m.set(normPhone(data.phone), {
+          amount: Number(data.pendingPenalty.amount || 0),
+          sourceApptId: data.pendingPenalty.sourceApptId || "",
+          createdAt: data.pendingPenalty.createdAt || null,
+        });
+      }
+    });
+    setPendingPenaltyByPhone(m);
+  }
+);
+
     return () => {
       offEmp();
       offSrv();
       offClients();
+        offClientsPenalty(); // <— novo
     };
   }, []);
 
@@ -1191,6 +1212,7 @@ background: isSelected
               onColDragOver={onColDragOver}
               onColDrop={onColDrop}
               noShowByPhone={noShowByPhone}
+                pendingPenaltyByPhone={pendingPenaltyByPhone} 
               isMobile={isMobile}
             />
           </>
@@ -1460,6 +1482,7 @@ background: isSelected
                 colorForServiceId={colorForServiceId}
                 onApptClick={openApptModal}
                 noShowByPhone={noShowByPhone}
+                  pendingPenaltyByPhone={pendingPenaltyByPhone} 
                 isMobile={isMobile}
               />
             </div>
@@ -1477,6 +1500,7 @@ background: isSelected
               employeesById={employeesById}
               salonHours={salonHours}
               shiftsByEmp={shiftsByEmp}
+                pendingPenaltyByPhone={pendingPenaltyByPhone}
               colorForServiceId={colorForServiceId}
               onSave={async (patch) => {
                 // validacija pre snimanja
@@ -1610,6 +1634,7 @@ function DayGrid({
   onColDragOver,
   onColDrop,
   noShowByPhone,
+    pendingPenaltyByPhone, 
   isMobile,
 }) {
   return (
@@ -1672,6 +1697,10 @@ function DayGrid({
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
+                  const pendingPen = a.clientPhone ? pendingPenaltyByPhone.get(normPhone(a.clientPhone)) : null;
+const hasPendingPenalty = !!pendingPen;
+const penaltyApplied = a?.penaltyApplied?.amount > 0;
+
 
                   return (
                     <button
@@ -1736,6 +1765,19 @@ function DayGrid({
                           No-show istorija
                         </div>
                       )}
+                      {!isBreak && !isBlock && !isVacation && hasPendingPenalty && !penaltyApplied && (
+  <div style={badgePenalty}>
+    <FiInfo style={{ marginRight: 6 }} />
+    Kazna za naplatu
+  </div>
+)}
+{!isBreak && !isBlock && !isVacation && penaltyApplied && (
+  <div style={badgePenalty}>
+    <FiInfo style={{ marginRight: 6 }} />
+    Kazna primenjena
+  </div>
+)}
+
 
                       {hoverApptId === a.id && !isBreak && !isBlock && !isVacation && (
                         <div style={hoverHint}>
@@ -1765,6 +1807,7 @@ function ScheduleGrid({
   colorForServiceId,
   onApptClick,
   noShowByPhone,
+  pendingPenaltyByPhone, 
   isMobile,
 }) {
   const dow = DOW[dateObj.getDay()];
@@ -2066,6 +2109,7 @@ function ApptModal({
   onCancel,
   onDelete,
   noShowByPhone,
+   pendingPenaltyByPhone, 
 }) {
   const [empId, setEmpId] = useState(appt.employeeId);
   const [start, setStart] = useState(appt.startHHMM);
@@ -2449,6 +2493,19 @@ const badgeNoShow = {
   fontSize: 12,
   fontWeight: 800,
 };
+const badgePenalty = {
+  alignSelf: "flex-start",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "2px 8px",
+  borderRadius: 999,
+  background: "#fff7e6",   // blago narandžasto
+  color: "#7a3d0b",
+  fontSize: 12,
+  fontWeight: 800,
+};
+
 
 const hoverHint = {
   position: "absolute",
