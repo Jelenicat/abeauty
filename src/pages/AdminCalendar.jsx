@@ -1316,33 +1316,19 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false, chunkSize
   const selDay = selectedKey ? new Date(selectedKey + "T00:00:00").getDate() : 1;
   const [page, setPage] = useState(Math.floor((selDay - 1) / chunkSize));
 
-  // Ako se promeni selDay (npr. na današnji), prebacimo se na odgovarajuću stranu
   useEffect(() => {
     const newPage = Math.floor((selDay - 1) / chunkSize);
     if (newPage !== page) setPage(newPage);
-    // scroll do selektovanog da bude skroz levo
-    const el = ref.current?.querySelector(`[data-daykey="${selectedKey}"]`);
-    if (el && ref.current) {
-      // postavi selektovani kao prvi u vidljivom delu
-      ref.current.scrollLeft = el.offsetLeft - 4;
-    }
-  }, [selDay, selectedKey, chunkSize, page]);
+  }, [selDay, chunkSize]);
 
   const startDay = page * chunkSize + 1;
   const endDay = Math.min(startDay + chunkSize - 1, days);
-
-  // Rotiramo listu dana u okviru trenutne “stranice” tako da selektovani (npr. danas) bude prvi
-  const pageDays = Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i);
-  const idxSelInPage = pageDays.indexOf(selDay);
-  const orderedDays = idxSelInPage > -1
-    ? [...pageDays.slice(idxSelInPage), ...pageDays.slice(0, idxSelInPage)]
-    : pageDays;
 
   return (
     <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
       <button disabled={page === 0} onClick={() => setPage(page - 1)}>◀</button>
       <div style={stripWrap} ref={ref}>
-        {orderedDays.map((d) => {
+        {Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i).map((d) => {
           const k = `${base.getFullYear()}-${pad2(base.getMonth() + 1)}-${pad2(d)}`;
           const isSel = k === selectedKey;
           return (
@@ -1365,7 +1351,6 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false, chunkSize
     </div>
   );
 }
-
 
 /* -------------------- Day grid -------------------- */
 
@@ -1966,6 +1951,7 @@ function ApptModal({
 
 /* -------------------- UI helpers & styles -------------------- */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
+/* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
 const apptCard = (top, height, bg, disabled = false) => ({
   position: "absolute",
   left: 6,
@@ -1979,31 +1965,30 @@ const apptCard = (top, height, bg, disabled = false) => ({
   padding: 8,
   display: "flex",
   flexDirection: "column",
-  justifyContent: "space-between",
+  gap: 4,
   cursor: disabled ? "default" : "pointer",
-  overflow: "hidden",
+  /* ključne promene: */
+  overflowX: "hidden",
+  overflowY: "auto",
+  WebkitOverflowScrolling: "touch",
   whiteSpace: "normal",
   wordBreak: "break-word",
   overflowWrap: "anywhere",
   lineHeight: 1.3,
 });
 
+
 /* naslov na kartici – funkcija da možemo proslediti isMobile */
+/* naslov na kartici – bez sečenja, uvek ceo tekst */
 const cardTitle = (isMobile) => ({
   fontWeight: 800,
   fontSize: isMobile ? 16 : 14,
   lineHeight: 1.18,
   marginBottom: 4,
   textAlign: "left",
-  ...(isMobile
-    ? {}
-    : {
-        display: "-webkit-box",
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: "vertical",
-        overflow: "hidden",
-      }),
+  // bez WebkitLineClamp – prikazuj ceo naslov
 });
+
 
 const metaRow = {
   display: "flex",
@@ -2151,7 +2136,7 @@ const stripBtn = (selected, compact) => ({
   background: selected
     ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
     : "rgba(255,255,255,.12)",
-  color: selected ? "#000" : "#fff",
+  color: "#000",
   cursor: "pointer",
   boxShadow: selected ? "0 6px 16px rgba(255,127,181,.25)" : "none",
 });
@@ -2536,4 +2521,70 @@ const responsiveCSS = `
     font-size: 12px !important;
   }
 }
+  /* VEOMA MALI TELEFONI */
+@media (max-width: 420px) {
+  .ctl .ctl-row-a { grid-template-columns: 1fr !important; }
+
+  .month-wrap .month-row { grid-template-columns: 1fr !important; }
+
+  .daystrip button {
+    min-width: 52px !important;
+    padding: 5px 5px !important;
+  }
+
+  .grid-day span, .grid-schedule span {
+    font-size: 12px !important;
+  }
+}
+
+/* --- Scrollbar za kartice termina --- */
+.grid-day button::-webkit-scrollbar,
+.grid-schedule button::-webkit-scrollbar { 
+  width: 6px; 
+}
+
+.grid-day button::-webkit-scrollbar-thumb,
+.grid-schedule button::-webkit-scrollbar-thumb { 
+  background: rgba(0,0,0,.15); 
+  border-radius: 6px; 
+}
+
+/* Firefox varijanta */
+.grid-day button,
+.grid-schedule button {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,.15) transparent;
+}
+  /* --- Scrollbar za kartice termina --- */
+
+/* Default: nema scrollbar */
+.grid-day button::-webkit-scrollbar,
+.grid-schedule button::-webkit-scrollbar { 
+  width: 0; 
+  background: transparent;
+}
+
+/* Kad hoveruješ karticu – pojavi se scrollbar */
+.grid-day button:hover::-webkit-scrollbar,
+.grid-schedule button:hover::-webkit-scrollbar {
+  width: 6px;
+}
+
+.grid-day button:hover::-webkit-scrollbar-thumb,
+.grid-schedule button:hover::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.2);
+  border-radius: 6px;
+}
+
+/* Firefox varijanta */
+.grid-day button,
+.grid-schedule button {
+  scrollbar-width: none; /* default: skriven */
+}
+.grid-day button:hover,
+.grid-schedule button:hover {
+  scrollbar-width: thin; 
+  scrollbar-color: rgba(0,0,0,.2) transparent;
+}
+
 `;
