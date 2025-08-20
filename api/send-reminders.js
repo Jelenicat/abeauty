@@ -182,7 +182,7 @@ export default async function handler(req, res) {
 const buildMsg = (a) => {
   const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
   let txt =
-    `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate}. u ${fmtTime}h` +
+    `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate} u ${fmtTime}h` +
     ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vas aBeauty`;
   if (asciiOnly) {
     txt = toAscii(txt); // (opciono) dodatno uklanja sve ne-ASCII znakove
