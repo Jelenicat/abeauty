@@ -146,6 +146,68 @@ const apptBgFor = (a, colorForServiceId) => {
     ? "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)"
     : colorForServiceId(a.serviceId) || "#ffffff";
 };
+// --- UI za izbor opsega dana (Pon..Ned) ---
+const DOW_SR_SHORT = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
+
+function BlockDaysBar({ visible, anchorDate, onConfirm, onCancel }) {
+  const [start, setStart] = React.useState(null);
+  const [end, setEnd] = React.useState(null);
+
+  React.useEffect(() => { if (!visible) { setStart(null); setEnd(null); } }, [visible]);
+  if (!visible) return null;
+
+  const at0 = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+  const add = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+  const startOfWeek = (d) => { const x = at0(d); const w=(x.getDay()||7); return add(x, 1-w); };
+
+  const sow = startOfWeek(anchorDate);
+  const days = Array.from({length:7}, (_,i)=>add(sow,i));
+
+  const pick = (d) => {
+    if (!start || (start && end)) { setStart(d); setEnd(null); return; }
+    if (d < start) { setEnd(start); setStart(d); } else { setEnd(d); }
+  };
+  const inRange = (d) => {
+    if (!start) return false;
+    const t=+at0(d), s=+at0(start), e=+(end?at0(end):at0(start));
+    return t>=s && t<=e;
+  };
+
+  return (
+    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:8}}>
+      {days.map((d,i)=>(
+        <button key={i} onClick={()=>pick(d)} title={d.toLocaleDateString("sr-RS")}
+          style={{
+            padding:"8px 10px", borderRadius:10, fontWeight:800, minWidth:64,
+            border: inRange(d) ? "2px solid #ff5fa2" : "1px solid rgba(255,255,255,.35)",
+            background: inRange(d)
+              ? "rgba(255,95,162,.18)"
+              : "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+            color:"#fff"
+          }}>
+          <div style={{fontSize:12,opacity:.85}}>{DOW_SR_SHORT[i]}</div>
+          <div style={{fontSize:12}}>{d.toLocaleDateString("sr-RS")}</div>
+        </button>
+      ))}
+      <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+        <button onClick={onCancel}
+          style={{padding:"8px 12px",borderRadius:10,fontWeight:700,
+          border:"1px solid rgba(255,255,255,.35)",background:"rgba(0,0,0,.1)",color:"#000"}}>
+          Otkaži
+        </button>
+        <button
+          onClick={()=> start && onConfirm(start, end || start)}
+          disabled={!start}
+          style={{padding:"8px 12px",borderRadius:10,fontWeight:700,
+          border:"1px solid rgba(255,255,255,.35)",
+          background:"linear-gradient(180deg,#ff5fa2,#ff77b3)",
+          color:"#fff", opacity: start?1:.6}}>
+          Blokiraj izabrane dane
+        </button>
+      </div>
+    </div>
+  );
+}
 
 
 export default function AdminCalendar() {
@@ -181,6 +243,7 @@ useEffect(() => {
   const [dayShifts, setDayShifts] = useState([]);
 
   // create (day): 'booking' | 'block'
+  const [showBlockDaysUI, setShowBlockDaysUI] = useState(false);
   const [mode, setMode] = useState("booking");
 const [selEmpId, setSelEmpId] = useState(null);
 const autoPickedRef = useRef(false);
@@ -583,6 +646,38 @@ const idsToRender = useMemo(() => {
 function apptStartDate(appt) {
   // lokalno vreme browsera (koristi Europe/Belgrade kod tebe)
   return new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}:00`);
+}
+async function blockWholeDaysRange({ employeeId, fromDate, toDate }) {
+  if (!employeeId) return alert("Odaberi radnicu.");
+
+  // normalizuj na ponoć
+  const at0 = (d) => { const x=new Date(d); x.setHours(0,0,0,0); return x; };
+  const add = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+  const S = at0(fromDate), E = at0(toDate);
+
+  for (let d = new Date(S); d <= E; d = add(d, 1)) {
+    const dowKey = DOW[d.getDay()]; // "sun"..."sat"
+    const hours = (salonHours[dowKey] || DEFAULT_SALON_HOURS[dowKey]);
+    const openMinLocal  = timeToMin(hours.open);
+    const closeMinLocal = timeToMin(hours.close);
+    if (!(closeMinLocal > openMinLocal)) continue;
+
+    await addDoc(collection(db, "appointments"), {
+      type: "block",
+      status: "blocked",
+      employeeId,
+      employeeName: (employeesById.get(employeeId)?.name || ""),
+      dateKey: `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`,
+      startHHMM: minToTime(openMinLocal),
+      endHHMM:   minToTime(closeMinLocal),
+      startMin:  openMinLocal,
+      endMin:    closeMinLocal,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  alert("Blokada je upisana za izabrane dane.");
 }
 
   async function addItem() {
@@ -1093,134 +1188,160 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
           <>
             {/* CONTROLS */}
             <div style={ctlWrap} className="ctl">
-              <div style={ctlRowA} className="ctl-row-a">
-                <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiCalendar /> Datum
-                  </label>
-                  <input
-                    type="date"
-                    value={dateKey(dayDate)}
-                    onChange={(e) =>
-                      setDayDate(new Date(e.target.value + "T00:00:00"))
-                    }
-                    style={inp}
-                  />
-                </div>
-                
+             <div style={ctlRowA} className="ctl-row-a">
+  <div style={ctlItem}>
+    <label style={lbl}>
+      <FiCalendar /> Datum
+    </label>
+    <input
+      type="date"
+      value={dateKey(dayDate)}
+      onChange={(e) => setDayDate(new Date(e.target.value + "T00:00:00"))}
+      style={inp}
+    />
+  </div>
 
-                <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiUser /> Radnica
-                  </label>
-                  <select
-                    value={selEmpId}
-                    onChange={(e) => setSelEmpId(e.target.value)}
-                    style={inp}
-                  >
-                    {employees.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+  <div style={ctlItem}>
+    <label style={lbl}>
+      <FiUser /> Radnica
+    </label>
+    <select
+      value={selEmpId}
+      onChange={(e) => setSelEmpId(e.target.value)}
+      style={inp}
+    >
+      {employees.map((e) => (
+        <option key={e.id} value={e.id}>
+          {e.name}
+        </option>
+      ))}
+    </select>
+  </div>
 
-                <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiClock /> Početak
-                  </label>
-                  <input
-                    type="time"
-                    step="300"
-                    lang="sr-RS"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    style={inp}
-                    min={dayHours.open}
-                    max={dayHours.close}
-                  />
-                </div>
+  {/* Početak — SAKRIJ kad je block + panel sa danima */}
+  {!(mode === "block" && showBlockDaysUI) && (
+    <div style={ctlItem}>
+      <label style={lbl}>
+        <FiClock /> Početak
+      </label>
+      <input
+        type="time"
+        step="300"
+        lang="sr-RS"
+        value={startTime}
+        onChange={(e) => setStartTime(e.target.value)}
+        style={inp}
+        min={dayHours.open}
+        max={dayHours.close}
+      />
+    </div>
+  )}
 
-                {/* Termin / Blokada */}
-                <div style={ctlItem}>
-                  <label style={lbl}>Režim</label>
-                  <div style={segWrap}>
-                    {["booking", "block"].map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setMode(m)}
-                        style={segBtn(mode === m)}
-                      >
-                        {m === "booking" ? "Termin" : "Blokada"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+  {/* Termin / Blokada */}
+  <div style={ctlItem}>
+    <label style={lbl}>Režim</label>
+    <div style={segWrap}>
+      {["booking", "block"].map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => {
+            setMode(m);
+            // ako je blokada → otvori panel sa danima; termin → zatvori
+            setShowBlockDaysUI(m === "block");
+          }}
+          style={segBtn(mode === m)}
+        >
+          {m === "booking" ? "Termin" : "Blokada"}
+        </button>
+      ))}
+    </div>
+  </div>
 
-                {mode === "booking" ? (
-                  <div style={ctlItem}>
-                    <label style={lbl}>Usluga</label>
-                    <select
-                      value={selSrvId}
-                      onChange={(e) => setSelSrvId(e.target.value)}
-                      style={inp}
-                    >
-                      <option value="">— Odaberi —</option>
-                      {allowedServicesForSelectedEmp.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.durationMin} min)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div style={ctlItem}>
-                    <label style={lbl}>Kraj</label>
-                    <input
-                      type="time"
-                      step="300"
-                      lang="sr-RS"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      style={inp}
-                      min={dayHours.open}
-                      max={dayHours.close}
-                    />
-                  </div>
-                )}
+  {mode === "booking" ? (
+    <div style={ctlItem}>
+      <label style={lbl}>Usluga</label>
+      <select
+        value={selSrvId}
+        onChange={(e) => setSelSrvId(e.target.value)}
+        style={inp}
+      >
+        <option value="">— Odaberi —</option>
+        {allowedServicesForSelectedEmp.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name} ({s.durationMin} min)
+          </option>
+        ))}
+      </select>
+    </div>
+  ) : (
+    // Kraj — SAKRIJ kad je block + panel sa danima
+    !(mode === "block" && showBlockDaysUI) && (
+      <div style={ctlItem}>
+        <label style={lbl}>Kraj</label>
+        <input
+          type="time"
+          step="300"
+          lang="sr-RS"
+          value={endTime}
+          onChange={(e) => setEndTime(e.target.value)}
+          style={inp}
+          min={dayHours.open}
+          max={dayHours.close}
+        />
+      </div>
+    )
+  )}
 
-                {mode === "booking" && (
-                  <>
-                    <div style={ctlItem}>
-                      <label style={lbl}>Klijent</label>
-                      <input
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        style={inp}
-                        placeholder="Ime klijenta"
-                      />
-                    </div>
-                    <div style={ctlItem}>
-                      <label style={lbl}>Telefon</label>
-                      <input
-                        value={clientPhone}
-                        onChange={(e) => setClientPhone(e.target.value)}
-                        style={inp}
-                        placeholder="Telefon"
-                      />
-                    </div>
-                  </>
-                )}
+  {mode === "booking" && (
+    <>
+      <div style={ctlItem}>
+        <label style={lbl}>Klijent</label>
+        <input
+          value={clientName}
+          onChange={(e) => setClientName(e.target.value)}
+          style={inp}
+          placeholder="Ime klijenta"
+        />
+      </div>
+      <div style={ctlItem}>
+        <label style={lbl}>Telefon</label>
+        <input
+          value={clientPhone}
+          onChange={(e) => setClientPhone(e.target.value)}
+          style={inp}
+          placeholder="Telefon"
+        />
+      </div>
+    </>
+  )}
 
-                <div style={{ ...ctlItem, alignSelf: "flex-end" }}>
-                  <button style={primaryBtn} onClick={addItem}>
-                    <FiPlus style={{ marginRight: 6 }} />
-                    {mode === "booking" ? "Dodaj termin" : "Blokiraj period"}
-                  </button>
-                </div>
-              </div>
+  {/* Glavno dugme — SAKRIJ kad je block + panel sa danima */}
+  {!(mode === "block" && showBlockDaysUI) && (
+    <div style={{ ...ctlItem, alignSelf: "flex-end" }}>
+      <button style={primaryBtn} onClick={addItem}>
+        <FiPlus style={{ marginRight: 6 }} />
+        {mode === "booking" ? "Dodaj termin" : "Blokiraj period"}
+      </button>
+    </div>
+  )}
+</div>
+
+{/* Panel za izbor dana — prikazuje se ispod kontrola */}
+<BlockDaysBar
+  visible={mode === "block" && showBlockDaysUI}
+  anchorDate={dayDate}
+  onCancel={() => setShowBlockDaysUI(false)}
+  onConfirm={async (dStart, dEnd) => {
+    await blockWholeDaysRange({
+      employeeId: selEmpId,
+      fromDate: dStart,
+      toDate: dEnd,
+    });
+    setShowBlockDaysUI(false);
+  }}
+/>
+
 
               {/* MOBILNA TRAKA RADNICA */}
               {isMobile && (
@@ -1740,7 +1861,6 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false, chunkSize
 }
 
 /* -------------------- Day grid -------------------- */
-/* -------------------- Day grid -------------------- */
 function DayGrid({
   employees,
   employeesById,
@@ -1771,10 +1891,22 @@ function DayGrid({
   const [previewHeight, setPreviewHeight] = useState(0);
   const [dragCurrentMin, setDragCurrentMin] = useState(null);
 
-  // SNAP: grublje na mobilnom da bude lakše pogoditi
+  // Armiranje draga na mobilnom (dozvoli prirodan scroll dok ne pređe prag)
+  const [isArming, setIsArming] = useState(false);
+  const armStartYRef = useRef(0);
+  const armStartMinRef = useRef(0);
+
+  // Ref-ovi na tela kolona da bismo skrolovali najbliži scroll container
+  const colRefs = useRef(new Map());
+
+  const DRAG_THRESHOLD_PX = 8;   // prag za početak draga na mobilnom
+  const EDGE_PX = 60;            // edge zona za autoscroll
+  const AUTOSCROLL_STEP = 16;    // brzina autoscroll-a (px po koraku)
+
+  // SNAP: grublje na mobilnom (lakše pogoditi), finije na desktopu
   const SNAP_MIN = isMobile ? 15 : 5;
 
-  // Malo “×” dugme za brisanje BLOKA
+  // “×” dugme za brisanje BLOKA
   const blockDeleteBtn = {
     position: "absolute",
     right: 8,
@@ -1791,28 +1923,35 @@ function DayGrid({
     zIndex: 5,
   };
 
-  // Dugme i header red (samo mobilni)
-  const blockDayBtn = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    fontSize: 12,
-    fontWeight: 700,
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,.35)",
-    background: "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
-    backdropFilter: "blur(6px)",
-    color: "#fff",
-    cursor: "pointer",
-  };
-  const mobileHeaderRow = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 8px 0 8px",
-  };
+  // Mobile header red i dugme – kompaktnije da se ne preklapa
+// Red iznad imena (samo mobilni) – uredno poravnan i kompaktan
+const mobileHeaderRow = {
+  display: "flex",
+  justifyContent: "flex-start", // ili "flex-end" ako želiš desno poravnanje
+  alignItems: "center",
+  gap: 1,
+  padding: "0 8px 6px 8px",      // ispod malo prostora pre imena
+  marginTop: 10,
+};
+
+// Kompaktno dugme (bez preklapanja)
+const blockDayBtn = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "6px 10px",
+  fontSize: 12,
+  fontWeight: 700,
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,.35)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+  color: "#fff",
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+  lineHeight: 1,
+  boxShadow: "0 2px 6px rgba(0,0,0,.15)",
+};
+
 
   const getClientY = (e) => {
     const t = e.touches?.[0] || e.changedTouches?.[0];
@@ -1831,6 +1970,40 @@ function DayGrid({
     min = Math.round(min / SNAP_MIN) * SNAP_MIN;
 
     return clamp(min, openMin, closeMin);
+  };
+
+  const getScrollContainer = (el) => {
+    // nađi najbližeg scrollable roditelja; ako nema, vrati window
+    let node = el;
+    while (node && node !== document.body) {
+      const style = window.getComputedStyle(node);
+      const oy = style.overflowY;
+      if (/(auto|scroll|overlay)/.test(oy) && node.scrollHeight > node.clientHeight) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return window;
+  };
+
+  const autoScrollOnEdge = (clientY, anchorEl) => {
+    const scroller = getScrollContainer(anchorEl);
+    if (scroller === window) {
+      // skroluj prozor
+      if (clientY > window.innerHeight - EDGE_PX) {
+        window.scrollBy(0, AUTOSCROLL_STEP);
+      } else if (clientY < EDGE_PX) {
+        window.scrollBy(0, -AUTOSCROLL_STEP);
+      }
+    } else {
+      // skroluj najbliži scroll container
+      const rect = scroller.getBoundingClientRect();
+      if (clientY > rect.bottom - EDGE_PX) {
+        scroller.scrollTop += AUTOSCROLL_STEP;
+      } else if (clientY < rect.top + EDGE_PX) {
+        scroller.scrollTop -= AUTOSCROLL_STEP;
+      }
+    }
   };
 
   // Blokiraj ceo dan: koristi smene ako postoje, inače radno vreme salona
@@ -1861,6 +2034,10 @@ function DayGrid({
   const handleMouseMove = (e, empId) => {
     if (!isDragging || dragEmpId !== empId) return;
     const currentMin = getMinFromEvent(e);
+    const clientY = getClientY(e);
+    const anchorEl = colRefs.current.get(empId) || e.currentTarget;
+    autoScrollOnEdge(clientY, anchorEl);
+
     setDragCurrentMin(currentMin);
     const min1 = Math.min(dragStartMin, currentMin);
     const min2 = Math.max(dragStartMin, currentMin);
@@ -1887,33 +2064,64 @@ function DayGrid({
 
   /* -------------------- Touch drag (telefon) -------------------- */
   const handleTouchStart = (e, empId) => {
-    e.preventDefault(); // 🔒 sprečava skrol start
+    // Ne blokiramo scroll odmah — prvo "armiramo" drag
     const startMin = getMinFromEvent(e);
-    setIsDragging(true);
+    armStartYRef.current = getClientY(e);
+    armStartMinRef.current = startMin;
+    setIsArming(true);
+    setIsDragging(false);
     setDragEmpId(empId);
-    setDragStartMin(startMin);
-    setDragCurrentMin(startMin);
-    setPreviewTop(pxFromMin(startMin - openMin));
-    setPreviewHeight(0);
   };
+
   const handleTouchMove = (e, empId) => {
-    if (!isDragging || dragEmpId !== empId) return;
     if (e.touches.length !== 1) return;
-    e.preventDefault(); // 🔒 drži ekran mirnim
+
+    const clientY = getClientY(e);
+    const dy = clientY - armStartYRef.current;
+
+    // Ako još "armiramo" i nije pređen prag — dozvoli prirodan skrol
+    if (isArming && Math.abs(dy) < DRAG_THRESHOLD_PX) {
+      return;
+    }
+
+    // Kreće drag
+    if (isArming) {
+      setIsArming(false);
+      setIsDragging(true);
+      const startMin = armStartMinRef.current;
+      setDragStartMin(startMin);
+      setDragCurrentMin(startMin);
+      setPreviewTop(pxFromMin(startMin - openMin));
+      setPreviewHeight(0);
+    }
+
+    if (!isDragging || dragEmpId !== empId) return;
+
+    // Sada blokiraj scroll i radi selekciju
+    e.preventDefault();
     const currentMin = getMinFromEvent(e);
+    const anchorEl = colRefs.current.get(empId) || e.currentTarget;
+    autoScrollOnEdge(clientY, anchorEl);
+
     setDragCurrentMin(currentMin);
     const min1 = Math.min(dragStartMin, currentMin);
     const min2 = Math.max(dragStartMin, currentMin);
     setPreviewTop(pxFromMin(min1 - openMin));
     setPreviewHeight(pxFromMin(min2 - min1));
   };
+
   const handleTouchEnd = (e, empId) => {
-    if (!isDragging || dragEmpId !== empId) return;
+    if (!isDragging || dragEmpId !== empId) {
+      setIsArming(false);
+      setDragEmpId(null);
+      return;
+    }
     const endMin = getMinFromEvent(e);
     const start = Math.min(dragStartMin, endMin);
     const end = Math.max(dragStartMin, endMin);
     if (end - start >= 5) onCreateBlock(empId, start, end);
     setIsDragging(false);
+    setIsArming(false);
     setDragEmpId(null);
     setDragCurrentMin(null);
   };
@@ -1963,7 +2171,7 @@ function DayGrid({
               onDragOver={onColDragOver}
               onDrop={onColDrop(empId)}
             >
-              {/* MOBILE: dugme iznad imena radnice */}
+              {/* MOBILE: dugme iznad imena (kompaktno, bez preklapanja) */}
               {isMobile && (
                 <div style={mobileHeaderRow}>
                   <button
@@ -1981,10 +2189,15 @@ function DayGrid({
               <div style={colHeader}>{emp?.name || "—"}</div>
 
               <div
+                ref={(el) => {
+                  if (el) colRefs.current.set(empId, el);
+                  else colRefs.current.delete(empId);
+                }}
                 style={{
                   ...colBody,
-                  touchAction: "none",          // 🔒 potpuno blokira gestove dok radimo
-                  overscrollBehavior: "none",
+                  // Dozvoli prirodan skrol kad NE vučemo, a tokom draga ga zaključaj
+                  touchAction: isDragging ? "none" : "pan-y",
+                  overscrollBehavior: "contain",
                   WebkitUserSelect: "none",
                   userSelect: "none",
                   height: gridHeight(closeMin - openMin),
