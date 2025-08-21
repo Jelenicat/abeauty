@@ -1,3 +1,4 @@
+
 // src/pages/AdminCalendar.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -558,8 +559,13 @@ const idsToRender = useMemo(() => {
   /* ------------ validations & actions (day) ------------ */
 
   const withinSalon = (s, e) => s >= openMin && e <= closeMin && e > s;
-  const withinShift = (empId, s, e) =>
-    (shiftsByEmp.get(empId) || []).some((seg) => s >= seg.start && e <= seg.end);
+  const withinShift = (empId, s, e) => {
+    const segs = shiftsByEmp.get(empId) || [];
+    if (segs.length === 0) {
+      return s >= openMin && e <= closeMin;
+    }
+    return segs.some((seg) => s >= seg.start && e <= seg.end);
+  };
   const noOverlap = (empId, s, e, ignoreId) =>
     !(apptsByEmp.get(empId) || []).some(
       (a) => a.id !== ignoreId && overlaps(s, e, a.startMin, a.endMin)
@@ -989,7 +995,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     const segs = shiftsByEmp.get(empIdTarget) || [];
     a.startMin = a.startMin ?? timeToMin(a.startHHMM);
     a.endMin = a.endMin ?? timeToMin(a.endHHMM);
-    const okShift = segs.some(
+    const okShift = segs.length === 0 ? (a.startMin >= openMin && a.endMin <= closeMin) : segs.some(
       (seg) => a.startMin >= seg.start && a.endMin <= seg.end
     );
     if (!okShift) {
@@ -1101,6 +1107,17 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                     style={inp}
                   />
                 </div>
+                    {/* TRAKA DATUMA (Schedule) */}
+    <div style={{ marginTop: 6 }}>
+      <DayStrip
+        monthStr={`${schedDate.getFullYear()}-${pad2(schedDate.getMonth() + 1)}`}
+        selectedKey={dateKey(schedDate)}
+        onPickDay={(k) => setSchedDate(new Date(k + "T00:00:00"))}
+        compact={isMobile}
+        chunkSize={isMobile ? 5 : 7}
+      />
+    </div>
+
 
                 <div style={ctlItem}>
                   <label style={lbl}>
@@ -1392,7 +1409,6 @@ background: isSelected
                     onChange={(e) => setMonthEmpId(e.target.value)}
                     style={inp}
                   >
-                    <option value="">— Odaberi —</option>
                     {employees.map((e) => (
                       <option key={e.id} value={e.id}>
                         {e.name}
@@ -1419,7 +1435,7 @@ background: isSelected
                   </label>
                   <input
                     type="time"
-                    step={300}
+                    step="300"
                     lang="sr-RS"
                     value={tplStart}
                     onChange={(e) => setTplStart(e.target.value)}
@@ -1433,53 +1449,50 @@ background: isSelected
                   </label>
                   <input
                     type="time"
-                    step={300}
+                    step="300"
                     lang="sr-RS"
                     value={tplEnd}
                     onChange={(e) => setTplEnd(e.target.value)}
                     style={inp}
                   />
                 </div>
-              </div>
 
-              {/* DANI U NEDELJI */}
-              <div style={btnRow} className="tpl-days">
-                {DOW_SR.map((d, i) => (
-                  <button
-                    key={i}
-                    onClick={() => toggleTplDay(i)}
-                    style={dayChip(templateDays.has(i))}
-                  >
-                    {d}
+                <div style={ctlItem}>
+                  <label style={lbl}>Dani u nedelji</label>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {DOW_SR.map((d, i) => (
+                      <button
+                        key={i}
+                        style={dayChip(templateDays.has(i))}
+                        onClick={() => toggleTplDay(i)}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={btnRow}>
+                  <button onClick={pickWorkdays} style={primaryBtn}>
+                    Radni dani
                   </button>
-                ))}
-                <button onClick={pickWorkdays} style={dayChip(false)}>
-                  Radni dani
-                </button>
-                <button onClick={pickAllDays} style={dayChip(false)}>
-                  Svi dani
-                </button>
-                <button onClick={clearTplDays} style={dayChip(false)}>
-                  Očisti
-                </button>
+                  <button onClick={pickAllDays} style={primaryBtn}>
+                    Cela nedelja
+                  </button>
+                  <button onClick={clearTplDays} style={primaryBtn}>
+                    Očisti
+                  </button>
+                  <button disabled={busy} onClick={applyMonthTemplate} style={primaryBtn}>
+                    {busy ? "..." : "Primeni šablon"}
+                  </button>
+                </div>
               </div>
 
-              {/* DUGMAD ZA PRIMENU */}
-              <div style={{ ...btnRow, marginTop: 8 }}>
-                <button
-                  style={primaryBtn}
-                  onClick={applyMonthTemplate}
-                  disabled={busy}
-                >
-                  {busy ? "Upisujem..." : "Primeni šablon na mesec"}
-                </button>
-              </div>
-
-              {/* JEDAN DAN */}
-              <div style={{ ...row, marginTop: 16 }} className="month-row">
+              {/* RED 2: single day */}
+              <div style={row} className="month-row">
                 <div style={ctlItem}>
                   <label style={lbl}>
-                    <FiCalendar /> Jedan dan
+                    <FiCalendar /> Pojedinačni dan
                   </label>
                   <input
                     type="date"
@@ -1488,50 +1501,47 @@ background: isSelected
                     style={inp}
                   />
                 </div>
+
                 <div style={ctlItem}>
                   <label style={lbl}>
                     <FiClock /> Početak
                   </label>
                   <input
                     type="time"
-                    step={300}
+                    step="300"
                     lang="sr-RS"
                     value={oneStart}
                     onChange={(e) => setOneStart(e.target.value)}
                     style={inp}
                   />
                 </div>
+
                 <div style={ctlItem}>
                   <label style={lbl}>
                     <FiClock /> Kraj
                   </label>
                   <input
                     type="time"
-                    step={300}
+                    step="300"
                     lang="sr-RS"
                     value={oneEnd}
                     onChange={(e) => setOneEnd(e.target.value)}
                     style={inp}
                   />
                 </div>
-                <div style={ctlItem}>
-                  <button
-                    style={primaryBtn}
-                    onClick={applySingleDayShift}
-                    disabled={busy}
-                  >
-                    {busy ? "Upisujem..." : "Postavi za taj dan"}
+
+                <div style={{ ...ctlItem, alignSelf: "flex-end" }}>
+                  <button disabled={busy} onClick={applySingleDayShift} style={primaryBtn}>
+                    {busy ? "..." : "Postavi smenu"}
                   </button>
                 </div>
               </div>
 
-              {/* ODMOR */}
-              <div style={{ ...row, alignItems: "end", marginTop: 8 }}
-                className="month-row"
-              >
+              {/* RED 3: vacation */}
+              <div style={row} className="month-row">
                 <div style={ctlItem}>
                   <label style={lbl}>
-                    <FiCalendar /> Početak odmora (datum)
+                    <FiCalendar /> Početni dan odmora
                   </label>
                   <input
                     type="date"
@@ -1540,56 +1550,47 @@ background: isSelected
                     style={inp}
                   />
                 </div>
+
                 <div style={ctlItem}>
-                  <label style={lbl}>Trajanje (dana)</label>
+                  <label style={lbl}>
+                    <FiClock /> Broj dana
+                  </label>
                   <input
                     type="number"
-                    min={1}
-                    step={1}
+                    min="1"
+                    max="31"
                     value={vacDays}
                     onChange={(e) => setVacDays(e.target.value)}
                     style={inp}
                   />
                 </div>
-                <div style={{ ...ctlItem }}>
-                  <button
-                    style={primaryBtn}
-                    onClick={applyVacationRange}
-                    disabled={busyVac}
-                  >
-                    {busyVac ? "Upisujem…" : "Postavi odmor"}
+
+                <div style={{ ...ctlItem, alignSelf: "flex-end" }}>
+                  <button disabled={busyVac} onClick={applyVacationRange} style={primaryBtn}>
+                    {busyVac ? "..." : "Postavi odmor"}
                   </button>
                 </div>
               </div>
 
-              {/* Roster prozor */}
+              {/* ROSTER WINDOW */}
               <MonthRosterWindow
                 monthStr={monthAnchor}
                 shifts={monthShifts}
-                breaks={[...timeOffs]}
+                breaks={timeOffs}
                 employeesById={employeesById}
                 isMobile={isMobile}
               />
             </div>
           </>
-        ) : (
+        ) : tab === "schedule" ? (
           <>
-            {/* RASPORED */}
-            <div style={monthWrap} className="month-wrap">
-              <div style={row} className="month-row">
+            {/* SCHEDULE CONTROLS */}
+            <div style={ctlWrap} className="ctl">
+              <div style={ctlRowA} className="ctl-row-a">
                 <div style={ctlItem}>
                   <label style={lbl}>
-                    <FiCalendar /> Mesec
+                    <FiCalendar /> Datum
                   </label>
-                  <input
-                    type="month"
-                    value={monthAnchor}
-                    onChange={(e) => setMonthAnchor(e.target.value)}
-                    style={inp}
-                  />
-                </div>
-                <div style={ctlItem}>
-                  <label style={lbl}>Dan</label>
                   <input
                     type="date"
                     value={dateKey(schedDate)}
@@ -1600,54 +1601,46 @@ background: isSelected
                   />
                 </div>
               </div>
-
-              <DayStrip
-                monthStr={monthAnchor}
-                selectedKey={dateKey(schedDate)}
-                onPickDay={(key) => setSchedDate(new Date(key + "T00:00:00"))}
-              />
-
-              <ScheduleGrid
-                dateObj={schedDate}
-                appts={schedAppts}
-                salonHours={salonHours}
-                employeesById={employeesById}
-                servicesById={servicesById}
-                colorForServiceId={colorForServiceId}
-                onApptClick={openApptModal}
-                noShowByPhone={noShowByPhone}
-                  pendingPenaltyByPhone={pendingPenaltyByPhone}
-                earliestApptIdByPhone={firstUpcomingApptIdByPhone}
-                isMobile={isMobile}
-              />
             </div>
-          </>
-        )}
 
-        {/* Modal za termin */}
+            {/* SCHEDULE GRID */}
+            <ScheduleGrid
+              dateObj={schedDate}
+              appts={schedAppts}
+              salonHours={salonHours}
+              employeesById={employeesById}
+              servicesById={servicesById}
+              colorForServiceId={colorForServiceId}
+              onApptClick={openApptModal}
+              noShowByPhone={noShowByPhone}
+              pendingPenaltyByPhone={pendingPenaltyByPhone}
+              earliestApptIdByPhone={firstUpcomingApptIdByPhone}
+              isMobile={isMobile}
+            />
+          </>
+        ) : null}
+
+        {/* MODAL */}
         {activeAppt &&
           createPortal(
             <ApptModal
               appt={activeAppt}
               onClose={closeApptModal}
               employees={employees}
-              servicesById={servicesById}
               employeesById={employeesById}
+              servicesById={servicesById}
               salonHours={salonHours}
               shiftsByEmp={shiftsByEmp}
-                pendingPenaltyByPhone={pendingPenaltyByPhone}
-                 earliestApptIdByPhone={firstUpcomingApptIdByPhone}
+              pendingPenaltyByPhone={pendingPenaltyByPhone}
+              earliestApptIdByPhone={firstUpcomingApptIdByPhone}
               colorForServiceId={colorForServiceId}
               onSave={async (patch) => {
-                // validacija pre snimanja
-                const { startHHMM, employeeId } = patch;
-                const a = activeAppt;
-                const srv = servicesById.get(a.serviceId);
-                const duration = a.durationMin || srv?.durationMin || 0;
-                const newStart = timeToMin(startHHMM || a.startHHMM);
+                const srv = servicesById.get(activeAppt.serviceId);
+                const duration = activeAppt.durationMin || srv?.durationMin || 0;
+                const newStart = timeToMin(patch.startHHMM || activeAppt.startHHMM);
                 const newEnd = newStart + duration;
 
-                const dow = DOW[new Date(a.dateKey + "T00:00:00").getDay()];
+                const dow = DOW[new Date(activeAppt.dateKey + "T00:00:00").getDay()];
                 const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
                 const open = timeToMin(hours.open);
                 const close = timeToMin(hours.close);
@@ -1656,21 +1649,26 @@ background: isSelected
                   alert("Vreme je van radnog vremena salona.");
                   return;
                 }
-                const emp = employeeId || a.employeeId;
+                const emp = patch.employeeId || activeAppt.employeeId;
                 const segs = shiftsByEmp.get(emp) || [];
-                const okShift = segs.some(
-                  (seg) => newStart >= seg.start && newEnd <= seg.end
-                );
+                let okShift;
+                if (segs.length === 0) {
+                  okShift = newStart >= open && newEnd <= close;
+                } else {
+                  okShift = segs.some(
+                    (seg) => newStart >= seg.start && newEnd <= seg.end
+                  );
+                }
                 if (!okShift) {
                   alert("Vreme je van smene radnice.");
                   return;
                 }
-                if (!noOverlap(emp, newStart, newEnd, a.id)) {
+                if (!noOverlap(emp, newStart, newEnd, activeAppt.id)) {
                   alert("Preklapanje sa postojećim terminom.");
                   return;
                 }
 
-                await updateDoc(doc(db, "appointments", a.id), {
+                await updateDoc(doc(db, "appointments", activeAppt.id), {
                   ...patch,
                   employeeId: emp,
                   employeeName: employeesById.get(emp)?.name || "",
@@ -1751,7 +1749,6 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false, chunkSize
 }
 
 /* -------------------- Day grid -------------------- */
-
 function DayGrid({
   employees,
   employeesById,
@@ -1770,16 +1767,35 @@ function DayGrid({
   onColDragOver,
   onColDrop,
   noShowByPhone,
-    pendingPenaltyByPhone, 
-    earliestApptIdByPhone,
-    isMobile,
-    onCreateBlock,
+  pendingPenaltyByPhone,
+  earliestApptIdByPhone,
+  isMobile,
+  onCreateBlock,
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragEmpId, setDragEmpId] = useState(null);
   const [dragStartMin, setDragStartMin] = useState(0);
   const [previewTop, setPreviewTop] = useState(0);
   const [previewHeight, setPreviewHeight] = useState(0);
+  /* NEW: trenutna pozicija selekcije za prikaz vremena */
+  const [dragCurrentMin, setDragCurrentMin] = useState(null);
+
+  // Malo “×” dugme za brisanje BLOKA
+  const blockDeleteBtn = {
+    position: "absolute",
+    right: 8,
+    top: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 12,
+    border: "1px solid rgba(0,0,0,.35)",
+    background: "rgba(255,255,255,.9)",
+    fontWeight: 800,
+    lineHeight: "20px",
+    textAlign: "center",
+    cursor: "pointer",
+    zIndex: 5,
+  };
 
   const getMinFromEvent = (e) => {
     const touch = e.touches?.[0] || e.changedTouches?.[0];
@@ -1798,19 +1814,19 @@ function DayGrid({
     setIsDragging(true);
     setDragEmpId(empId);
     setDragStartMin(startMin);
+    setDragCurrentMin(startMin);               // NEW
     setPreviewTop(pxFromMin(startMin - openMin));
     setPreviewHeight(0);
   };
-
   const handleMouseMove = (e, empId) => {
     if (!isDragging || dragEmpId !== empId) return;
     const currentMin = getMinFromEvent(e);
+    setDragCurrentMin(currentMin);             // NEW
     const min1 = Math.min(dragStartMin, currentMin);
     const min2 = Math.max(dragStartMin, currentMin);
     setPreviewTop(pxFromMin(min1 - openMin));
     setPreviewHeight(pxFromMin(min2 - min1));
   };
-
   const handleMouseUp = (e, empId) => {
     if (!isDragging || dragEmpId !== empId) return;
     const endMin = getMinFromEvent(e);
@@ -1819,17 +1835,19 @@ function DayGrid({
     if (endMinFinal - startMinFinal < 5) {
       setIsDragging(false);
       setDragEmpId(null);
+      setDragCurrentMin(null);                 // NEW
       return;
     }
     onCreateBlock(empId, startMinFinal, endMinFinal);
     setIsDragging(false);
     setDragEmpId(null);
+    setDragCurrentMin(null);                   // NEW
   };
-
   const handleMouseLeave = () => {
     if (isDragging) {
       setIsDragging(false);
       setDragEmpId(null);
+      setDragCurrentMin(null);                 // NEW
     }
   };
 
@@ -1838,26 +1856,27 @@ function DayGrid({
     setIsDragging(true);
     setDragEmpId(empId);
     setDragStartMin(startMin);
+    setDragCurrentMin(startMin);               // NEW
     setPreviewTop(pxFromMin(startMin - openMin));
     setPreviewHeight(0);
   };
-
   const handleTouchMove = (e, empId) => {
     if (!isDragging || dragEmpId !== empId) return;
     if (e.touches.length !== 1) return;
     e.preventDefault();
     const currentMin = getMinFromEvent(e);
+    setDragCurrentMin(currentMin);             // NEW
     const min1 = Math.min(dragStartMin, currentMin);
     const min2 = Math.max(dragStartMin, currentMin);
     setPreviewTop(pxFromMin(min1 - openMin));
     setPreviewHeight(pxFromMin(min2 - min1));
   };
-
   const handleTouchEnd = (e, empId) => {
     if (!isDragging || dragEmpId !== empId) return;
     if (e.changedTouches.length !== 1) {
       setIsDragging(false);
       setDragEmpId(null);
+      setDragCurrentMin(null);                 // NEW
       return;
     }
     const endMin = getMinFromEvent(e);
@@ -1866,49 +1885,70 @@ function DayGrid({
     if (endMinFinal - startMinFinal < 5) {
       setIsDragging(false);
       setDragEmpId(null);
+      setDragCurrentMin(null);                 // NEW
       return;
     }
     onCreateBlock(empId, startMinFinal, endMinFinal);
     setIsDragging(false);
     setDragEmpId(null);
+    setDragCurrentMin(null);                   // NEW
   };
 
   return (
- <div
-  style={{ ...gridWrap, gridTemplateColumns: isMobile ? "36px 1fr" : "80px 1fr" }}
-  className="grid-day"
->
+    <div style={{ ...gridWrap, paddingLeft: 0 }} className="grid-day">
+      {/* GLOBALNA vremenska traka: trenutno sakrivena istim stilom koji već koristiš */}
+      {!isMobile ? (
+        <div
+          className="time-axis"
+          style={{
+            ...timeAxis,
+            width: 0,
+            minWidth: 0,
+            padding: 0,
+            border: "none",
+            opacity: 0,
+            pointerEvents: "none",
+            height: gridHeight(closeMin - openMin),
+          }}
+        />
+      ) : null}
 
-      <div className="time-axis" style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
-        {timeMarks(openMin, closeMin).map((t) => (
-          <div key={t} style={markRow}>
-           <span style={markLbl(isMobile)}>{minToTime(t)}</span>
-
-          </div>
-        ))}
-      </div>
-
-      <div style={colsWrap}>
+      {/* Kolone radnica (uvek pune širine) */}
+      <div style={{ ...colsWrap, flex: 1, minWidth: 0, width: "100%" }}>
         {employeeIdsForDay.map((empId) => {
           const emp = employeesById.get(empId);
-          const segs = shiftsByEmp.get(empId) || [];
-          const appts = (appointments || []).filter(
-            (a) => a.employeeId === empId
-          );
+
+          // Fallback: ako nema smene → važi radno vreme salona
+          let segs = shiftsByEmp.get(empId) || [];
+          if (segs.length === 0) {
+            segs = [{ start: minToTime(openMin), end: minToTime(closeMin) }];
+          }
+
+          const appts = (appointments || []).filter((a) => a.employeeId === empId);
+          const gutterW = isMobile ? 36 : 46;
+
+          const isSingle = employeeIdsForDay.length === 1;
+          const colStyle = isSingle
+            ? { ...colBox, flex: "1 1 100%", width: "100%", maxWidth: "100%" }
+            : colBox;
 
           return (
             <div
               key={empId}
-              style={colBox}
+              style={colStyle}
               onDragOver={onColDragOver}
               onDrop={onColDrop(empId)}
             >
               <div style={colHeader}>{emp?.name || "—"}</div>
+
               <div
-              
-  style={{ ...colBody, height: gridHeight(closeMin - openMin), touchAction: "none" }}
- 
-  
+                style={{
+                  ...colBody,
+                  height: gridHeight(closeMin - openMin),
+                  paddingLeft: gutterW,
+                  paddingTop: 8,
+                  position: "relative",
+                }}
                 onMouseDown={(e) => handleMouseDown(e, empId)}
                 onMouseMove={(e) => handleMouseMove(e, empId)}
                 onMouseUp={(e) => handleMouseUp(e, empId)}
@@ -1917,6 +1957,60 @@ function DayGrid({
                 onTouchMove={(e) => handleTouchMove(e, empId)}
                 onTouchEnd={(e) => handleTouchEnd(e, empId)}
               >
+                {/* LOKALNA vremenska osa u koloni */}
+                <div
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: gutterW,
+                    pointerEvents: "none",
+                    zIndex: 3,
+                  }}
+                >
+                  {timeMarks(openMin, closeMin).map((t) => {
+                    const y = pxFromMin(t - openMin);
+                    const safeTop = Math.max(10, y);
+                    return (
+                      <div key={t}>
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: 0,
+                            right: 0,
+                            top: y,
+                            height: 1,
+                            transform: "translateY(-0.5px)",
+                            borderTop: "1px dashed rgba(255,255,255,.25)",
+                          }}
+                        />
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: 6,
+                            top: safeTop,
+                            transform: "translateY(-50%)",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            lineHeight: 1,
+                            padding: "2px 6px",
+                            borderRadius: 6,
+                            background: "rgba(0,0,0,.35)",
+                            color: "#fff",
+                            textShadow: "0 1px 2px rgba(0,0,0,.35)",
+                            zIndex: 4,
+                          }}
+                        >
+                          {minToTime(t)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Smena (ili fallback zona) */}
                 {segs.map((s, i) => (
                   <div
                     key={i}
@@ -1935,28 +2029,30 @@ function DayGrid({
                   />
                 ))}
 
+                {/* Termini / blokade */}
                 {appts.map((a) => {
                   const isBlock = a.type === "block";
                   const isBreak = a.type === "break";
                   const isVacation = a.type === "vacation";
                   const top = pxFromMin(a.startMin - openMin);
                   const height = pxFromMin(a.endMin - a.startMin);
-                  const styleForCard = a.type === "block"
-  ? apptBlockStripe(top, height)                      // uzana traka
-  : apptCard(top, height, bg, isBreak || isVacation); // ostali puni
-
-               const bg = apptBgFor(a, colorForServiceId);
-
+                  const bg = apptBgFor(a, colorForServiceId);
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
-                  const pendingPen = a.clientPhone ? pendingPenaltyByPhone.get(normPhone(a.clientPhone)) : null;
-const hasPendingPenalty = !!pendingPen;
-const penaltyApplied = a?.penaltyApplied?.amount > 0;
+                  const pendingPen = a.clientPhone
+                    ? pendingPenaltyByPhone.get(normPhone(a.clientPhone))
+                    : null;
+                  const hasPendingPenalty = !!pendingPen;
+                  const penaltyApplied = a?.penaltyApplied?.amount > 0;
 
-const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
-const showPendingPenaltyHere = !!(hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id);
-const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
+                  const earliestIdForPhone = phone
+                    ? earliestApptIdByPhone.get(phone)
+                    : null;
+                  const showPendingPenaltyHere =
+                    !!(hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id);
+                  const showNoShowHere =
+                    !!(hasNoShowHistory && earliestApptIdByPhone.get(phone) === a.id);
 
                   return (
                     <button
@@ -1968,7 +2064,7 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                       onClick={() =>
                         !isBreak && !isBlock && !isVacation && onApptClick(a)
                       }
-                      tyle={styleForCard}
+                      style={apptCard(top, height, bg, isBreak || isBlock || isVacation)}
                       title={
                         isVacation
                           ? "Odmor"
@@ -1990,6 +2086,16 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                           ? "Blokirano"
                           : a.serviceName || "Usluga"}
                       </div>
+
+                      {/* Vreme na BLOKADI */}
+                      {isBlock && (
+                        <div style={metaRow}>
+                          <span style={pill}>
+                            <FiClock style={{ marginRight: 6 }} />
+                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                          </span>
+                        </div>
+                      )}
 
                       {!isBreak && !isBlock && !isVacation && (
                         <div style={metaRow}>
@@ -2015,52 +2121,97 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                         </div>
                       )}
 
-                     {!isBreak && !isBlock && !isVacation && showNoShowHere && (
+                      {!isBreak && !isBlock && !isVacation && showNoShowHere && (
                         <div style={badgeNoShow}>
                           <FiAlertTriangle style={{ marginRight: 6 }} />
                           No-show istorija
                         </div>
                       )}
                       {!isBreak && !isBlock && !isVacation && showPendingPenaltyHere && (
-  <div style={badgePenalty}>
-    <FiInfo style={{ marginRight: 6 }} />
-    Kazna za naplatu
-  </div>
-)}
-{!isBreak && !isBlock && !isVacation && penaltyApplied && (
-  <div style={badgePenalty}>
-    <FiInfo style={{ marginRight: 6 }} />
-    Kazna primenjena
-  </div>
-)}
-
-
-                      {hoverApptId === a.id && !isBreak && !isBlock && !isVacation && (
-                        <div style={hoverHint}>
-                          <FiEdit3 /> Klikni za detalje
+                        <div style={badgePenalty}>
+                          <FiInfo style={{ marginRight: 6 }} />
+                          Kazna za naplatu
                         </div>
                       )}
+                      {!isBreak && !isBlock && !isVacation && penaltyApplied && (
+                        <div style={badgePenalty}>
+                          <FiInfo style={{ marginRight: 6 }} />
+                          Kazna primenjena
+                        </div>
+                      )}
+
+                      {/* × dugme za brisanje BLOKA */}
+                      {isBlock && (
+                        <button
+                          type="button"
+                          title="Obriši blokadu"
+                          style={blockDeleteBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            try {
+                              deleteAppt?.(a.id ?? a);
+                            } catch {
+                              if (a?.id) deleteAppt?.(a.id);
+                            }
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
+
+                      {hoverApptId === a.id &&
+                        !isBreak &&
+                        !isBlock &&
+                        !isVacation && (
+                          <div style={hoverHint}>
+                            <FiEdit3 /> Klikni za detalje
+                          </div>
+                        )}
                     </button>
                   );
                 })}
-{isDragging && dragEmpId === empId && (
-  <div
-    style={{
-      position: "absolute",
-      left: 6,
-      width: BLOCK_WIDTH,
-      top: previewTop,
-      height: previewHeight,
-      background:
-        "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
-      opacity: 0.8,
-      borderRadius: 6,
-      pointerEvents: "none",
-    }}
-  />
-)}
 
-                 
+                {/* PREVIEW selekcije + živa etiketa sa vremenom (NEW) */}
+                {isDragging && dragEmpId === empId && (() => {
+                  const m1 = Math.min(dragStartMin, dragCurrentMin ?? dragStartMin);
+                  const m2 = Math.max(dragStartMin, dragCurrentMin ?? dragStartMin);
+                  const labelTop = Math.max(0, previewTop - 24);
+                  const labelText = `${minToTime(m1)}–${minToTime(m2)}`;
+                  return (
+                    <>
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          top: previewTop,
+                          height: previewHeight,
+                          background:
+                            "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
+                          opacity: 0.7,
+                          borderRadius: 10,
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 8,
+                          top: labelTop,
+                          padding: "2px 8px",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          background: "rgba(0,0,0,.55)",
+                          color: "#fff",
+                          pointerEvents: "none",
+                          zIndex: 6,
+                        }}
+                      >
+                        {labelText}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           );
@@ -2135,16 +2286,12 @@ function ScheduleGrid({
         Raspored za {dateKey(dateObj)} • {hours.open}–{hours.close}
       </div>
 
-     <div
-  style={{ ...gridWrap, gridTemplateColumns: isMobile ? "36px 1fr" : "80px 1fr" }}
-  className="grid-schedule"
->
+      <div style={gridWrap} className="grid-schedule">
         {!isMobile && (
           <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
             {timeMarks(openMin, closeMin).map((t) => (
               <div key={t} style={markRow}>
-              <span style={markLbl(isMobile)}>{minToTime(t)}</span>
-
+                <span style={markLbl}>{minToTime(t)}</span>
               </div>
             ))}
           </div>
@@ -2155,11 +2302,10 @@ function ScheduleGrid({
             ...colBody,
             height: gridHeight(closeMin - openMin),
             position: "relative",
-              touchAction: "none",    // bitno za mobilni – omogući preventDefault
-    userSelect: "none",
             background: "rgba(255,255,255,.12)",
             borderRadius: 16,
             border: "0.5px solid rgba(255,255,255,.25)",
+            
           }}
         >
           {laid.map((a) => {
@@ -2548,29 +2694,10 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
 /* -------------------- UI helpers & styles -------------------- */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
-// negde ispod stilova, zajedno sa ostalim helper stilovima
-// koliko širok je "uzani blok" uz levu ivicu kolone
-const BLOCK_WIDTH = 10;
-
-const apptBlockStripe = (top, height) => ({
+const apptCard = (top, height, bg, disabled = false) => ({
   position: "absolute",
   left: 6,
-  right: "auto",        // <<< bitno: da NE razvlači na desno
-  width: BLOCK_WIDTH,   // <<< fiksna širina trake
-  top,
-  height,
-  background:
-    "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
-  borderRadius: 10,
-  boxShadow: "inset 0 0 0 2px rgba(255,255,255,.35)",
-});
-
-
-// pre: const apptCard = (top, height, bg, disabled = false) => ({
-const apptCard = (top, height, bg, disabled = false, leftOffset = 6, rightOffset = 6) => ({
-  position: "absolute",
-  left: leftOffset,
-  right: rightOffset,
+  right: 6,
   top,
   height,
   background: bg,
@@ -2582,6 +2709,7 @@ const apptCard = (top, height, bg, disabled = false, leftOffset = 6, rightOffset
   flexDirection: "column",
   gap: 4,
   cursor: disabled ? "default" : "pointer",
+  /* ključne promene: */
   overflowX: "hidden",
   overflowY: "auto",
   WebkitOverflowScrolling: "touch",
@@ -2590,7 +2718,6 @@ const apptCard = (top, height, bg, disabled = false, leftOffset = 6, rightOffset
   overflowWrap: "anywhere",
   lineHeight: 1.3,
 });
-
 
 
 /* naslov na kartici – funkcija da možemo proslediti isMobile */
@@ -2779,12 +2906,12 @@ const markRow = {
   display: "flex",
   alignItems: "flex-start",
 };
-const markLbl = (isMobile) => ({
-  fontSize: isMobile ? 10 : 12,
+const markLbl = {
+  fontSize: 12,
   color: "#fff",
   opacity: 0.85,
-  padding: isMobile ? "0 4px" : "2px 8px",
-});
+  padding: "2px 8px",
+};
 
 const colsWrap = {
   display: "grid",
@@ -2819,9 +2946,7 @@ const colBody = {
   borderRadius: 14,
   margin: 8,
   overflow: "hidden",
-touchAction: "none",
 };
-
 
 const badgeNoShow = {
   alignSelf: "flex-start",
@@ -3041,14 +3166,12 @@ const actionBtn = {
   fontWeight: 900,
 };
 
-/* --- Responsive fine-tuning --- */
+//* --- Responsive fine-tuning --- *//
 const responsiveCSS = `
-/* Mobilni i tableti – uvek 2 kolone sa tankom vremenskom osom */
 @media (max-width: 768px) {
-  .grid-day, .grid-schedule { grid-template-columns: 36px 1fr !important; }
-  .time-axis { display:block !important; min-width:36px; }
+  .grid-day { grid-template-columns: "40px 1fr" !important; }
+  .markLbl { font-size: 10px; padding: 0 4px; }
 }
-
 
 @media (max-width: 768px) {
   .emp-strip-mobile{
@@ -3112,7 +3235,7 @@ const responsiveCSS = `
   .ctl .ctl-row-b { gap: 6px !important; }
   .month-wrap .month-row { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
 
-  .daystrip button { min-width: 58px !important; padding: 6px 6px !important; border-radius: 10px !important; }
+  .daystrip button { min-width: 64px !important; padding: 6px 6px !important; border-radius: 10px !important; }
 
   .admincal input, .admincal select { width: 100% !important; }
   .admincal button { min-height: 42px !important; }
