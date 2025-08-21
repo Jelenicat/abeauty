@@ -1107,17 +1107,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                     style={inp}
                   />
                 </div>
-                    {/* TRAKA DATUMA (Schedule) */}
-    <div style={{ marginTop: 6 }}>
-      <DayStrip
-        monthStr={`${schedDate.getFullYear()}-${pad2(schedDate.getMonth() + 1)}`}
-        selectedKey={dateKey(schedDate)}
-        onPickDay={(k) => setSchedDate(new Date(k + "T00:00:00"))}
-        compact={isMobile}
-        chunkSize={isMobile ? 5 : 7}
-      />
-    </div>
-
+                
 
                 <div style={ctlItem}>
                   <label style={lbl}>
@@ -1603,6 +1593,7 @@ background: isSelected
               </div>
             </div>
 
+
             {/* SCHEDULE GRID */}
             <ScheduleGrid
               dateObj={schedDate}
@@ -1852,6 +1843,7 @@ function DayGrid({
   };
 
   const handleTouchStart = (e, empId) => {
+      e.preventDefault();     
     const startMin = getMinFromEvent(e);
     setIsDragging(true);
     setDragEmpId(empId);
@@ -1944,6 +1936,8 @@ function DayGrid({
               <div
                 style={{
                   ...colBody,
+                      touchAction: isDragging && isMobile ? "none" : "manipulation",
+    overscrollBehavior: "contain",
                   height: gridHeight(closeMin - openMin),
                   paddingLeft: gutterW,
                   paddingTop: 8,
