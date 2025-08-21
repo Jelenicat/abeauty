@@ -557,10 +557,30 @@ const q = query(
   }, [selEmpId, employeesById, services]);
 
   // Ko radi danas (za highlight dugmića)
-  const workingTodayIds = useMemo(() => {
-    const ids = new Set(dayShifts.map((s) => s.employeeId));
-    return employees.filter((e) => ids.has(e.id)).map((e) => e.id);
-  }, [employees, dayShifts]);
+// Ko radi danas (ima smenu i nije blokiran ceo dan)
+const workingTodayIds = useMemo(() => {
+  const ids = new Set();
+
+  for (const e of employees) {
+    const hasShift = dayShifts.some(s => s.employeeId === e.id);
+
+    if (!hasShift) continue;
+
+    // Ima li blokadu celog dana?
+    const fullDayBlocked = appointments.some(
+      a =>
+        a.employeeId === e.id &&
+        a.type === "block" &&
+        a.startMin <= openMin &&
+        a.endMin >= closeMin
+    );
+
+    if (!fullDayBlocked) ids.add(e.id);
+  }
+
+  return Array.from(ids);
+}, [employees, dayShifts, appointments, openMin, closeMin]);
+
 
   // Koje kolone da prikažemo u gridu
 const idsToRender = useMemo(() => {
@@ -1924,34 +1944,32 @@ function DayGrid({
   };
 
   // Mobile header red i dugme – kompaktnije da se ne preklapa
-// Red iznad imena (samo mobilni) – uredno poravnan i kompaktan
-const mobileHeaderRow = {
-  display: "flex",
-  justifyContent: "flex-start", // ili "flex-end" ako želiš desno poravnanje
-  alignItems: "center",
-  gap: 1,
-  padding: "0 8px 6px 8px",      // ispod malo prostora pre imena
-  marginTop: 10,
-};
+  const mobileHeaderRow = {
+    display: "flex",
+    justifyContent: "flex-start",
+    alignItems: "center",
+    gap: 1,
+    padding: "0 8px 6px 8px",
+    marginTop: 10,
+  };
 
-// Kompaktno dugme (bez preklapanja)
-const blockDayBtn = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "6px 10px",
-  fontSize: 12,
-  fontWeight: 700,
-  borderRadius: 12,
-  border: "1px solid rgba(255,255,255,.35)",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
-  color: "#fff",
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-  lineHeight: 1,
-  boxShadow: "0 2px 6px rgba(0,0,0,.15)",
-};
-
+  // Kompaktno dugme (bez preklapanja)
+  const blockDayBtn = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "6px 10px",
+    fontSize: 12,
+    fontWeight: 700,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.35)",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+    color: "#fff",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    lineHeight: 1,
+    boxShadow: "0 2px 6px rgba(0,0,0,.15)",
+  };
 
   const getClientY = (e) => {
     const t = e.touches?.[0] || e.changedTouches?.[0];
@@ -2168,8 +2186,6 @@ const blockDayBtn = {
             <div
               key={empId}
               style={colStyle}
-              onDragOver={onColDragOver}
-              onDrop={onColDrop(empId)}
             >
               {/* MOBILE: dugme iznad imena (kompaktno, bez preklapanja) */}
               {isMobile && (
@@ -2195,7 +2211,6 @@ const blockDayBtn = {
                 }}
                 style={{
                   ...colBody,
-                  // Dozvoli prirodan skrol kad NE vučemo, a tokom draga ga zaključaj
                   touchAction: isDragging ? "none" : "pan-y",
                   overscrollBehavior: "contain",
                   WebkitUserSelect: "none",
@@ -2212,6 +2227,8 @@ const blockDayBtn = {
                 onTouchStart={(e) => handleTouchStart(e, empId)}
                 onTouchMove={(e) => handleTouchMove(e, empId)}
                 onTouchEnd={(e) => handleTouchEnd(e, empId)}
+                onDragOver={onColDragOver}
+                onDrop={onColDrop(empId)}
               >
                 {/* LOKALNA vremenska osa u koloni */}
                 <div
@@ -2332,6 +2349,7 @@ const blockDayBtn = {
                               a.clientName ? "· " + a.clientName : ""
                             }`
                       }
+                      onDragOver={(e) => e.preventDefault()}
                     >
                       <div style={cardTitle(isMobile)}>
                         {isVacation
@@ -2371,7 +2389,7 @@ const blockDayBtn = {
                       {isBreak && (
                         <div style={metaRow}>
                           <span style={pill}>
-                            <FiClock style={{ marginRight: 6 }} />{" "}
+                            <FiClock style={{ marginRight: 6 }} />
                             {minToTime(a.startMin)}–{minToTime(a.endMin)}
                           </span>
                         </div>
@@ -2476,8 +2494,6 @@ const blockDayBtn = {
     </div>
   );
 }
-
-
 
 /* -------------------- Schedule grid (bookings of the day) -------------------- */
 
