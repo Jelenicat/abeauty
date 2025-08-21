@@ -1941,11 +1941,12 @@ function DayGrid({
                   const isVacation = a.type === "vacation";
                   const top = pxFromMin(a.startMin - openMin);
                   const height = pxFromMin(a.endMin - a.startMin);
+                  const styleForCard = a.type === "block"
+  ? apptBlockStripe(top, height)                      // uzana traka
+  : apptCard(top, height, bg, isBreak || isVacation); // ostali puni
+
                const bg = apptBgFor(a, colorForServiceId);
-const styleForCard =
-  isBlock
-    ? apptBlockStripe(top, height)
-    : apptCard(top, height, bg, isBreak || isVacation);
+
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -2548,20 +2549,22 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
 // negde ispod stilova, zajedno sa ostalim helper stilovima
-const BLOCK_WIDTH = 12; // promeni po želji (px)
+// koliko širok je "uzani blok" uz levu ivicu kolone
+const BLOCK_WIDTH = 10;
 
 const apptBlockStripe = (top, height) => ({
   position: "absolute",
   left: 6,
-  width: BLOCK_WIDTH,
+  right: "auto",        // <<< bitno: da NE razvlači na desno
+  width: BLOCK_WIDTH,   // <<< fiksna širina trake
   top,
   height,
   background:
     "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
-  borderRadius: 6,
-  boxShadow: "inset 0 0 0 1px rgba(255,255,255,.35)",
-  pointerEvents: "none",
+  borderRadius: 10,
+  boxShadow: "inset 0 0 0 2px rgba(255,255,255,.35)",
 });
+
 
 const apptCard = (top, height, bg, disabled = false) => ({
   position: "absolute",
@@ -2815,7 +2818,9 @@ const colBody = {
   borderRadius: 14,
   margin: 8,
   overflow: "hidden",
+touchAction: "none",
 };
+
 
 const badgeNoShow = {
   alignSelf: "flex-start",
