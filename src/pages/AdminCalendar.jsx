@@ -1838,7 +1838,7 @@ const penaltyApplied = a?.penaltyApplied?.amount > 0;
 
 const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
 const showPendingPenaltyHere = !!(hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id);
-
+const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
 
                   return (
                     <button
@@ -1897,7 +1897,7 @@ const showPendingPenaltyHere = !!(hasPendingPenalty && !penaltyApplied && earlie
                         </div>
                       )}
 
-                      {!isBreak && !isBlock && !isVacation && hasNoShowHistory && (
+                     {!isBreak && !isBlock && !isVacation && showNoShowHere && (
                         <div style={badgeNoShow}>
                           <FiAlertTriangle style={{ marginRight: 6 }} />
                           No-show istorija
