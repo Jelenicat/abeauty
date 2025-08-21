@@ -1967,7 +1967,7 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                       onClick={() =>
                         !isBreak && !isBlock && !isVacation && onApptClick(a)
                       }
-                      style={apptCard(top, height, bg, isBreak || isBlock || isVacation)}
+                      tyle={styleForCard}
                       title={
                         isVacation
                           ? "Odmor"
