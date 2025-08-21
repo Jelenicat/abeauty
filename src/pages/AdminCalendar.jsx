@@ -1345,6 +1345,7 @@ background: isSelected
               onColDrop={onColDrop}
               noShowByPhone={noShowByPhone}
                 pendingPenaltyByPhone={pendingPenaltyByPhone}
+                
               earliestApptIdByPhone={firstUpcomingApptIdByPhone}
               isMobile={isMobile}
             />
@@ -1635,6 +1636,7 @@ background: isSelected
               salonHours={salonHours}
               shiftsByEmp={shiftsByEmp}
                 pendingPenaltyByPhone={pendingPenaltyByPhone}
+                 earliestApptIdByPhone={firstUpcomingApptIdByPhone}
               colorForServiceId={colorForServiceId}
               onSave={async (patch) => {
                 // validacija pre snimanja
@@ -2040,6 +2042,8 @@ const penaltyApplied = a?.penaltyApplied?.amount > 0;
 
 const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
 const showPendingPenaltyHere = hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id;
+const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
+
 
 
             return (
@@ -2071,7 +2075,7 @@ const showPendingPenaltyHere = hasPendingPenalty && !penaltyApplied && earliestI
                   )}
                 </div>
 
-                {hasNoShowHistory && (
+                {showNoShowHere && (
       <div style={badgeNoShow}>
         <FiAlertTriangle style={{ marginRight: 6 }} />
         No-show istorija
@@ -2268,18 +2272,19 @@ function ApptModal({
   onCancel,
   onDelete,
   noShowByPhone,
-   pendingPenaltyByPhone, 
+ pendingPenaltyByPhone,
+earliestApptIdByPhone,
 }) {
   const [empId, setEmpId] = useState(appt.employeeId);
-  const [start, setStart] = useState(appt.startHHMM);
-  const phone = normPhone(appt.clientPhone);
-  const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
+   const [start, setStart] = useState(appt.startHHMM);
+ const phoneN = normPhone(appt.clientPhone);
+ const hasNoShowHistory = !!(phoneN && noShowByPhone.get(phoneN));
   const srv = servicesById.get(appt.serviceId);
   const duration = appt.durationMin || srv?.durationMin || 0;
-
+const earliestId = phoneN ? earliestApptIdByPhone.get(phoneN) : null;
+const showNoShowHere = !!(hasNoShowHistory && earliestId === appt.id);
   const dow = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
   const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
-  const phoneN = normPhone(appt.clientPhone);
 const pendingPen = phoneN ? pendingPenaltyByPhone.get(phoneN) : null;
 const penaltyApplied = appt?.penaltyApplied?.amount > 0;
 
@@ -2335,7 +2340,7 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
             <div style={{ ...badge, background: "#fff3e0", color: "#7a3d0b" }}>
               <FiClock /> {start} → {minToTime(timeToMin(start) + duration)}
             </div>
-            {hasNoShowHistory && (
+           {showNoShowHere && (
               <div style={{ ...badge, background: "#ffe8ea", color: "#7a1b1b" }}>
                 <FiAlertTriangle /> No-show istorija
               </div>
