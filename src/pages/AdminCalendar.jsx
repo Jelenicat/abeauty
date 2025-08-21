@@ -1942,7 +1942,10 @@ function DayGrid({
                   const top = pxFromMin(a.startMin - openMin);
                   const height = pxFromMin(a.endMin - a.startMin);
                const bg = apptBgFor(a, colorForServiceId);
-
+const styleForCard =
+  isBlock
+    ? apptBlockStripe(top, height)
+    : apptCard(top, height, bg, isBreak || isVacation);
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -2039,21 +2042,24 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                     </button>
                   );
                 })}
+{isDragging && dragEmpId === empId && (
+  <div
+    style={{
+      position: "absolute",
+      left: 6,
+      width: BLOCK_WIDTH,
+      top: previewTop,
+      height: previewHeight,
+      background:
+        "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
+      opacity: 0.8,
+      borderRadius: 6,
+      pointerEvents: "none",
+    }}
+  />
+)}
 
-                {isDragging && dragEmpId === empId && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      top: previewTop,
-                      height: previewHeight,
-                      background: "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
-                      opacity: 0.7,
-                      borderRadius: 10,
-                    }}
-                  />
-                )}
+                 
               </div>
             </div>
           );
@@ -2148,6 +2154,8 @@ function ScheduleGrid({
             ...colBody,
             height: gridHeight(closeMin - openMin),
             position: "relative",
+              touchAction: "none",    // bitno za mobilni – omogući preventDefault
+    userSelect: "none",
             background: "rgba(255,255,255,.12)",
             borderRadius: 16,
             border: "0.5px solid rgba(255,255,255,.25)",
@@ -2539,6 +2547,22 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
 /* -------------------- UI helpers & styles -------------------- */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
+// negde ispod stilova, zajedno sa ostalim helper stilovima
+const BLOCK_WIDTH = 12; // promeni po želji (px)
+
+const apptBlockStripe = (top, height) => ({
+  position: "absolute",
+  left: 6,
+  width: BLOCK_WIDTH,
+  top,
+  height,
+  background:
+    "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
+  borderRadius: 6,
+  boxShadow: "inset 0 0 0 1px rgba(255,255,255,.35)",
+  pointerEvents: "none",
+});
+
 const apptCard = (top, height, bg, disabled = false) => ({
   position: "absolute",
   left: 6,
