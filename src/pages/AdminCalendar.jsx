@@ -1771,17 +1771,8 @@ function DayGrid({
   const [previewHeight, setPreviewHeight] = useState(0);
   const [dragCurrentMin, setDragCurrentMin] = useState(null);
 
-  /* TAP–TAP state i osetljivost */
-  const TAP_SNAP_MIN = isMobile ? 15 : 5; // zaokruživanje pri tapu
-  const TAP_TOLERANCE_MIN = 7;            // preblizu = quick block
-  const QUICK_BLOCK_MIN = 30;             // brza blokada trajanje
-  const TAP_TIMEOUT_MS = 7000;            // vreme za drugi tap
-
-  const [pendingTapStartMin, setPendingTapStartMin] = useState(null);
-  const [pendingTapEmpId, setPendingTapEmpId] = useState(null);
-  const [pendingTapAt, setPendingTapAt] = useState(0);
-
-  const startPixelYRef = useRef(0);
+  // SNAP: grublje na mobilnom da bude lakše pogoditi
+  const SNAP_MIN = isMobile ? 15 : 5;
 
   // Malo “×” dugme za brisanje BLOKA
   const blockDeleteBtn = {
@@ -1800,6 +1791,29 @@ function DayGrid({
     zIndex: 5,
   };
 
+  // Dugme i header red (samo mobilni)
+  const blockDayBtn = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    fontSize: 12,
+    fontWeight: 700,
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,.35)",
+    background: "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+    backdropFilter: "blur(6px)",
+    color: "#fff",
+    cursor: "pointer",
+  };
+  const mobileHeaderRow = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 8px 0 8px",
+  };
+
   const getClientY = (e) => {
     const t = e.touches?.[0] || e.changedTouches?.[0];
     return t ? t.clientY : e.clientY;
@@ -1813,10 +1827,23 @@ function DayGrid({
     // 1px ≈ 1min * 3.5 (tvoj scale)
     let min = openMin + Math.floor(y / 3.5);
 
-    // SNAP: 15 min mobilni / 5 min desktop
-    min = Math.round(min / TAP_SNAP_MIN) * TAP_SNAP_MIN;
+    // SNAP
+    min = Math.round(min / SNAP_MIN) * SNAP_MIN;
 
     return clamp(min, openMin, closeMin);
+  };
+
+  // Blokiraj ceo dan: koristi smene ako postoje, inače radno vreme salona
+  const blockWholeDay = (empId, segs) => {
+    if (segs && segs.length) {
+      segs.forEach((s) => {
+        const sMin = timeToMin(s.start);
+        const eMin = timeToMin(s.end);
+        if (eMin > sMin) onCreateBlock(empId, sMin, eMin);
+      });
+    } else {
+      onCreateBlock(empId, openMin, closeMin);
+    }
   };
 
   /* -------------------- Mouse drag -------------------- */
@@ -1843,16 +1870,9 @@ function DayGrid({
   const handleMouseUp = (e, empId) => {
     if (!isDragging || dragEmpId !== empId) return;
     const endMin = getMinFromEvent(e);
-    const s = Math.min(dragStartMin, endMin);
-    const d = Math.max(dragStartMin, endMin) - s;
-    if (d < 5) {
-      setIsDragging(false);
-      setDragEmpId(null);
-      setDragCurrentMin(null);
-      // tretiraj kao tap i na desktopu
-      return handleTapLogic(empId, endMin);
-    }
-    onCreateBlock(empId, s, s + d);
+    const start = Math.min(dragStartMin, endMin);
+    const end = Math.max(dragStartMin, endMin);
+    if (end - start >= 5) onCreateBlock(empId, start, end);
     setIsDragging(false);
     setDragEmpId(null);
     setDragCurrentMin(null);
@@ -1865,12 +1885,10 @@ function DayGrid({
     }
   };
 
-  /* -------------------- Touch drag / tap-tap -------------------- */
+  /* -------------------- Touch drag (telefon) -------------------- */
   const handleTouchStart = (e, empId) => {
-    e.preventDefault(); // spreči skrol
+    e.preventDefault(); // 🔒 sprečava skrol start
     const startMin = getMinFromEvent(e);
-    startPixelYRef.current = getClientY(e);
-
     setIsDragging(true);
     setDragEmpId(empId);
     setDragStartMin(startMin);
@@ -1890,55 +1908,14 @@ function DayGrid({
     setPreviewHeight(pxFromMin(min2 - min1));
   };
   const handleTouchEnd = (e, empId) => {
+    if (!isDragging || dragEmpId !== empId) return;
     const endMin = getMinFromEvent(e);
-
-    // Ako nije realan drag, tretiraj kao tap
-    if (!isDragging || dragEmpId !== empId || Math.abs(endMin - dragStartMin) < 5) {
-      setIsDragging(false);
-      setDragEmpId(null);
-      setDragCurrentMin(null);
-      return handleTapLogic(empId, endMin);
-    }
-
-    const s = Math.min(dragStartMin, endMin);
-    const d = Math.max(dragStartMin, endMin) - s;
-    onCreateBlock(empId, s, s + d);
-
+    const start = Math.min(dragStartMin, endMin);
+    const end = Math.max(dragStartMin, endMin);
+    if (end - start >= 5) onCreateBlock(empId, start, end);
     setIsDragging(false);
     setDragEmpId(null);
     setDragCurrentMin(null);
-  };
-
-  /* -------------------- Tap–tap logika -------------------- */
-  const handleTapLogic = (empId, min) => {
-    const now = Date.now();
-    const expired = now - pendingTapAt > TAP_TIMEOUT_MS;
-
-    // Prvi tap ili druga kolona ili isteklo vreme
-    if (pendingTapStartMin == null || pendingTapEmpId !== empId || expired) {
-      setPendingTapEmpId(empId);
-      setPendingTapStartMin(min);
-      setPendingTapAt(now);
-      return;
-    }
-
-    // Drugi tap u istoj koloni i na vreme
-    const s = Math.min(pendingTapStartMin, min);
-    const e = Math.max(pendingTapStartMin, min);
-    const diff = e - s;
-
-    if (diff < TAP_TOLERANCE_MIN) {
-      // Preblizu -> napravi brzu blokadu fiksne dužine
-      const end = clamp(s + QUICK_BLOCK_MIN, openMin, closeMin);
-      if (end - s >= 5) onCreateBlock(empId, s, end);
-    } else {
-      onCreateBlock(empId, s, e);
-    }
-
-    // reset
-    setPendingTapStartMin(null);
-    setPendingTapEmpId(null);
-    setPendingTapAt(0);
   };
 
   return (
@@ -1965,7 +1942,7 @@ function DayGrid({
         {employeeIdsForDay.map((empId) => {
           const emp = employeesById.get(empId);
 
-          // Fallback: ako nema smene → salon hours
+          // Fallback: ako nema smene → važi radno vreme salona
           let segs = shiftsByEmp.get(empId) || [];
           if (segs.length === 0) {
             segs = [{ start: minToTime(openMin), end: minToTime(closeMin) }];
@@ -1986,6 +1963,21 @@ function DayGrid({
               onDragOver={onColDragOver}
               onDrop={onColDrop(empId)}
             >
+              {/* MOBILE: dugme iznad imena radnice */}
+              {isMobile && (
+                <div style={mobileHeaderRow}>
+                  <button
+                    type="button"
+                    style={blockDayBtn}
+                    onClick={() => blockWholeDay(empId, segs)}
+                    title="Blokiraj ceo dan"
+                  >
+                    Blokiraj ceo dan
+                  </button>
+                </div>
+              )}
+
+              {/* Ime radnice */}
               <div style={colHeader}>{emp?.name || "—"}</div>
 
               <div
@@ -2222,45 +2214,6 @@ function DayGrid({
                   );
                 })}
 
-                {/* TAP–TAP “pin” i hint */}
-                {pendingTapEmpId === empId && pendingTapStartMin != null && (
-                  <>
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 8,
-                        top: pxFromMin(pendingTapStartMin - openMin) - 6,
-                        width: 12,
-                        height: 12,
-                        borderRadius: 999,
-                        background: "rgba(255,255,255,.95)",
-                        border: "2px solid #ff5fa2",
-                        boxShadow: "0 2px 6px rgba(0,0,0,.35)",
-                        zIndex: 7,
-                        pointerEvents: "none",
-                      }}
-                      title={`Start: ${minToTime(pendingTapStartMin)}`}
-                    />
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 28,
-                        top: pxFromMin(pendingTapStartMin - openMin) - 14,
-                        padding: "2px 8px",
-                        borderRadius: 8,
-                        fontSize: 12,
-                        background: "rgba(0,0,0,.55)",
-                        color: "#fff",
-                        zIndex: 7,
-                        pointerEvents: "none",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Tapni drugi put za kraj (≤{TAP_TIMEOUT_MS / 1000}s)
-                    </div>
-                  </>
-                )}
-
                 {/* PREVIEW selekcije + živa etiketa sa vremenom */}
                 {isDragging && dragEmpId === empId && (() => {
                   const m1 = Math.min(dragStartMin, dragCurrentMin ?? dragStartMin);
@@ -2310,6 +2263,7 @@ function DayGrid({
     </div>
   );
 }
+
 
 
 /* -------------------- Schedule grid (bookings of the day) -------------------- */
