@@ -1012,6 +1012,32 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
   const openApptModal = (a) => setActiveAppt(a);
   const closeApptModal = () => setActiveAppt(null);
 
+  /* ------------ create block from drag ------------ */
+
+  const handleCreateBlock = async (empId, startMin, endMin) => {
+    const dk = dateKey(dayDate);
+    const start = startMin;
+    const end = endMin;
+
+    if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+    if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+    if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+
+    await addDoc(collection(db, "appointments"), {
+      type: "block",
+      status: "blocked",
+      employeeId: empId,
+      employeeName: employeesById.get(empId)?.name || "",
+      dateKey: dk,
+      startHHMM: minToTime(start),
+      endHHMM: minToTime(end),
+      startMin: start,
+      endMin: end,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  };
+
   /* ------------ render ------------ */
 
   return (
@@ -1348,6 +1374,7 @@ background: isSelected
                 
               earliestApptIdByPhone={firstUpcomingApptIdByPhone}
               isMobile={isMobile}
+              onCreateBlock={handleCreateBlock}
             />
           </>
         ) : tab === "month" ? (
@@ -1399,8 +1426,11 @@ background: isSelected
                     style={inp}
                   />
                 </div>
+
                 <div style={ctlItem}>
-                  <label style={lbl}>Kraj</label>
+                  <label style={lbl}>
+                    <FiClock /> Kraj
+                  </label>
                   <input
                     type="time"
                     step={300}
@@ -1412,72 +1442,44 @@ background: isSelected
                 </div>
               </div>
 
-              {/* RED 2 */}
-              <div style={{ ...row, alignItems: "end" }} className="month-row">
-                <div
-                  style={{
-                    gridColumn: "1 / -1",
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {DOW_SR.map((label, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => toggleTplDay(idx)}
-                      style={dayChip(templateDays.has(idx))}
-                      title={label}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <div style={btnRow}>
+              {/* DANI U NEDELJI */}
+              <div style={btnRow} className="tpl-days">
+                {DOW_SR.map((d, i) => (
                   <button
-                    type="button"
-                    style={primaryBtn}
-                    onClick={applyMonthTemplate}
-                    disabled={busy}
-                    title="Upiši smene za sve izabrane dane u ovom mesecu"
+                    key={i}
+                    onClick={() => toggleTplDay(i)}
+                    style={dayChip(templateDays.has(i))}
                   >
-                    {busy ? "Upisujem…" : "Postavi smene za mesec"}
+                    {d}
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={pickWorkdays}
-                    style={{ ...tabBtn, background: "#fff", color: "#000" }}
-                    title="Pon–Pet"
-                  >
-                    Pon–Pet
-                  </button>
-                  <button
-                    type="button"
-                    onClick={pickAllDays}
-                    style={{ ...tabBtn, background: "#fff", color: "#000" }}
-                    title="Sve dane"
-                  >
-                    Sve
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearTplDays}
-                    style={{ ...tabBtn, background: "#fff", color: "#000" }}
-                    title="Poništi izbor"
-                  >
-                    Poništi
-                  </button>
-                </div>
+                ))}
+                <button onClick={pickWorkdays} style={dayChip(false)}>
+                  Radni dani
+                </button>
+                <button onClick={pickAllDays} style={dayChip(false)}>
+                  Svi dani
+                </button>
+                <button onClick={clearTplDays} style={dayChip(false)}>
+                  Očisti
+                </button>
               </div>
 
-              {/* RED 3: smena za JEDAN DAN */}
-              <div style={{ ...row, alignItems: "end" }} className="month-row">
+              {/* DUGMAD ZA PRIMENU */}
+              <div style={{ ...btnRow, marginTop: 8 }}>
+                <button
+                  style={primaryBtn}
+                  onClick={applyMonthTemplate}
+                  disabled={busy}
+                >
+                  {busy ? "Upisujem..." : "Primeni šablon na mesec"}
+                </button>
+              </div>
+
+              {/* JEDAN DAN */}
+              <div style={{ ...row, marginTop: 16 }} className="month-row">
                 <div style={ctlItem}>
                   <label style={lbl}>
-                    <FiCalendar /> Dan
+                    <FiCalendar /> Jedan dan
                   </label>
                   <input
                     type="date"
@@ -1486,10 +1488,9 @@ background: isSelected
                     style={inp}
                   />
                 </div>
-
                 <div style={ctlItem}>
                   <label style={lbl}>
-                    <FiClock /> Početak (dan)
+                    <FiClock /> Početak
                   </label>
                   <input
                     type="time"
@@ -1500,9 +1501,10 @@ background: isSelected
                     style={inp}
                   />
                 </div>
-
                 <div style={ctlItem}>
-                  <label style={lbl}>Kraj (dan)</label>
+                  <label style={lbl}>
+                    <FiClock /> Kraj
+                  </label>
                   <input
                     type="time"
                     step={300}
@@ -1512,21 +1514,19 @@ background: isSelected
                     style={inp}
                   />
                 </div>
-
                 <div style={ctlItem}>
                   <button
                     style={primaryBtn}
                     onClick={applySingleDayShift}
                     disabled={busy}
                   >
-                    Postavi smenu za dan
+                    {busy ? "Upisujem..." : "Postavi za taj dan"}
                   </button>
                 </div>
               </div>
 
               {/* ODMOR */}
-              <div
-                style={{ ...row, alignItems: "end", marginTop: 8 }}
+              <div style={{ ...row, alignItems: "end", marginTop: 8 }}
                 className="month-row"
               >
                 <div style={ctlItem}>
@@ -1773,18 +1773,115 @@ function DayGrid({
     pendingPenaltyByPhone, 
     earliestApptIdByPhone,
     isMobile,
+    onCreateBlock,
 }) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragEmpId, setDragEmpId] = useState(null);
+  const [dragStartMin, setDragStartMin] = useState(0);
+  const [previewTop, setPreviewTop] = useState(0);
+  const [previewHeight, setPreviewHeight] = useState(0);
+
+  const getMinFromEvent = (e) => {
+    const touch = e.touches?.[0] || e.changedTouches?.[0];
+    const clientY = touch ? touch.clientY : e.clientY;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = clientY - rect.top;
+    let min = openMin + Math.floor(y / 3.5);
+    min = Math.round(min / 5) * 5;
+    return clamp(min, openMin, closeMin);
+  };
+
+  const handleMouseDown = (e, empId) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startMin = getMinFromEvent(e);
+    setIsDragging(true);
+    setDragEmpId(empId);
+    setDragStartMin(startMin);
+    setPreviewTop(pxFromMin(startMin - openMin));
+    setPreviewHeight(0);
+  };
+
+  const handleMouseMove = (e, empId) => {
+    if (!isDragging || dragEmpId !== empId) return;
+    const currentMin = getMinFromEvent(e);
+    const min1 = Math.min(dragStartMin, currentMin);
+    const min2 = Math.max(dragStartMin, currentMin);
+    setPreviewTop(pxFromMin(min1 - openMin));
+    setPreviewHeight(pxFromMin(min2 - min1));
+  };
+
+  const handleMouseUp = (e, empId) => {
+    if (!isDragging || dragEmpId !== empId) return;
+    const endMin = getMinFromEvent(e);
+    const startMinFinal = Math.min(dragStartMin, endMin);
+    const endMinFinal = Math.max(dragStartMin, endMin);
+    if (endMinFinal - startMinFinal < 5) {
+      setIsDragging(false);
+      setDragEmpId(null);
+      return;
+    }
+    onCreateBlock(empId, startMinFinal, endMinFinal);
+    setIsDragging(false);
+    setDragEmpId(null);
+  };
+
+  const handleMouseLeave = () => {
+    if (isDragging) {
+      setIsDragging(false);
+      setDragEmpId(null);
+    }
+  };
+
+  const handleTouchStart = (e, empId) => {
+    const startMin = getMinFromEvent(e);
+    setIsDragging(true);
+    setDragEmpId(empId);
+    setDragStartMin(startMin);
+    setPreviewTop(pxFromMin(startMin - openMin));
+    setPreviewHeight(0);
+  };
+
+  const handleTouchMove = (e, empId) => {
+    if (!isDragging || dragEmpId !== empId) return;
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    const currentMin = getMinFromEvent(e);
+    const min1 = Math.min(dragStartMin, currentMin);
+    const min2 = Math.max(dragStartMin, currentMin);
+    setPreviewTop(pxFromMin(min1 - openMin));
+    setPreviewHeight(pxFromMin(min2 - min1));
+  };
+
+  const handleTouchEnd = (e, empId) => {
+    if (!isDragging || dragEmpId !== empId) return;
+    if (e.changedTouches.length !== 1) {
+      setIsDragging(false);
+      setDragEmpId(null);
+      return;
+    }
+    const endMin = getMinFromEvent(e);
+    const startMinFinal = Math.min(dragStartMin, endMin);
+    const endMinFinal = Math.max(dragStartMin, endMin);
+    if (endMinFinal - startMinFinal < 5) {
+      setIsDragging(false);
+      setDragEmpId(null);
+      return;
+    }
+    onCreateBlock(empId, startMinFinal, endMinFinal);
+    setIsDragging(false);
+    setDragEmpId(null);
+  };
+
   return (
     <div style={gridWrap} className="grid-day">
-      {!isMobile && (
-        <div className="time-axis" style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
-          {timeMarks(openMin, closeMin).map((t) => (
-            <div key={t} style={markRow}>
-              <span style={markLbl}>{minToTime(t)}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="time-axis" style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
+        {timeMarks(openMin, closeMin).map((t) => (
+          <div key={t} style={markRow}>
+            <span style={markLbl}>{minToTime(t)}</span>
+          </div>
+        ))}
+      </div>
 
       <div style={colsWrap}>
         {employeeIdsForDay.map((empId) => {
@@ -1804,6 +1901,13 @@ function DayGrid({
               <div style={colHeader}>{emp?.name || "—"}</div>
               <div
                 style={{ ...colBody, height: gridHeight(closeMin - openMin) }}
+                onMouseDown={(e) => handleMouseDown(e, empId)}
+                onMouseMove={(e) => handleMouseMove(e, empId)}
+                onMouseUp={(e) => handleMouseUp(e, empId)}
+                onMouseLeave={handleMouseLeave}
+                onTouchStart={(e) => handleTouchStart(e, empId)}
+                onTouchMove={(e) => handleTouchMove(e, empId)}
+                onTouchEnd={(e) => handleTouchEnd(e, empId)}
               >
                 {segs.map((s, i) => (
                   <div
@@ -1927,6 +2031,21 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                     </button>
                   );
                 })}
+
+                {isDragging && dragEmpId === empId && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: previewTop,
+                      height: previewHeight,
+                      background: "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
+                      opacity: 0.7,
+                      borderRadius: 10,
+                    }}
+                  />
+                )}
               </div>
             </div>
           );
@@ -2266,14 +2385,14 @@ function ApptModal({
   servicesById,
   salonHours,
   shiftsByEmp,
+  pendingPenaltyByPhone,
+  earliestApptIdByPhone,
   colorForServiceId,
   onSave,
   onNoShow,
   onCancel,
   onDelete,
   noShowByPhone,
- pendingPenaltyByPhone,
-earliestApptIdByPhone,
 }) {
   const [empId, setEmpId] = useState(appt.employeeId);
    const [start, setStart] = useState(appt.startHHMM);
@@ -2883,10 +3002,9 @@ const actionBtn = {
 /* --- Responsive fine-tuning --- */
 const responsiveCSS = `
 @media (max-width: 768px) {
-  .grid-day .time-axis,
-  .grid-schedule .time-axis { display: none; }
-  .grid-day,
-  .grid-schedule { grid-template-columns: 1fr !important; }
+  .grid-day { grid-template-columns: "40px 1fr" !important; }
+  .time-axis { min-width: 40px; }
+  .markLbl { font-size: 10px; padding: 0 4px; }
 }
 
 @media (max-width: 768px) {
@@ -2964,9 +3082,6 @@ const responsiveCSS = `
 
 /* TELEFONI ≤768px – sakrij levu vremensku osu i prikaži traku radnica */
 @media (max-width: 768px) {
-  .grid-day > div:first-child { display: none; }
-  .grid-day { grid-template-columns: 1fr !important; }
-
   .emp-strip-mobile {
     display: flex;
     overflow-x: auto;
