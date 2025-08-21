@@ -1874,11 +1874,16 @@ function DayGrid({
   };
 
   return (
-    <div style={gridWrap} className="grid-day">
+ <div
+  style={{ ...gridWrap, gridTemplateColumns: isMobile ? "36px 1fr" : "80px 1fr" }}
+  className="grid-day"
+>
+
       <div className="time-axis" style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
         {timeMarks(openMin, closeMin).map((t) => (
           <div key={t} style={markRow}>
-            <span style={markLbl}>{minToTime(t)}</span>
+           <span style={markLbl(isMobile)}>{minToTime(t)}</span>
+
           </div>
         ))}
       </div>
@@ -1900,7 +1905,10 @@ function DayGrid({
             >
               <div style={colHeader}>{emp?.name || "—"}</div>
               <div
-                style={{ ...colBody, height: gridHeight(closeMin - openMin) }}
+              
+  style={{ ...colBody, height: gridHeight(closeMin - openMin), touchAction: "none" }}
+ 
+  
                 onMouseDown={(e) => handleMouseDown(e, empId)}
                 onMouseMove={(e) => handleMouseMove(e, empId)}
                 onMouseUp={(e) => handleMouseUp(e, empId)}
@@ -2120,12 +2128,16 @@ function ScheduleGrid({
         Raspored za {dateKey(dateObj)} • {hours.open}–{hours.close}
       </div>
 
-      <div style={gridWrap} className="grid-schedule">
+     <div
+  style={{ ...gridWrap, gridTemplateColumns: isMobile ? "36px 1fr" : "80px 1fr" }}
+  className="grid-schedule"
+>
         {!isMobile && (
           <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
             {timeMarks(openMin, closeMin).map((t) => (
               <div key={t} style={markRow}>
-                <span style={markLbl}>{minToTime(t)}</span>
+              <span style={markLbl(isMobile)}>{minToTime(t)}</span>
+
               </div>
             ))}
           </div>
@@ -2739,12 +2751,12 @@ const markRow = {
   display: "flex",
   alignItems: "flex-start",
 };
-const markLbl = {
-  fontSize: 12,
+const markLbl = (isMobile) => ({
+  fontSize: isMobile ? 10 : 12,
   color: "#fff",
   opacity: 0.85,
-  padding: "2px 8px",
-};
+  padding: isMobile ? "0 4px" : "2px 8px",
+});
 
 const colsWrap = {
   display: "grid",
@@ -3001,11 +3013,12 @@ const actionBtn = {
 
 /* --- Responsive fine-tuning --- */
 const responsiveCSS = `
+/* Mobilni i tableti – uvek 2 kolone sa tankom vremenskom osom */
 @media (max-width: 768px) {
-  .grid-day { grid-template-columns: "40px 1fr" !important; }
-  .time-axis { min-width: 40px; }
-  .markLbl { font-size: 10px; padding: 0 4px; }
+  .grid-day, .grid-schedule { grid-template-columns: 36px 1fr !important; }
+  .time-axis { display:block !important; min-width:36px; }
 }
+
 
 @media (max-width: 768px) {
   .emp-strip-mobile{
