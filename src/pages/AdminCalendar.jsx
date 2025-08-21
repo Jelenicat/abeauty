@@ -103,7 +103,7 @@ async function applyPendingToEarliestAppt(db, phone, amount) {
 
   const snap = await getDocs(qAppt);
   const first = snap.docs[0];
-  if (!first) return; // nema budućih termina – pending ostaje kod klijenta, primeniće se pri sledećem zakazivanju
+  if (!first) return; // nema buducih termina - pending ostaje kod klijenta, primenice se pri sledecem zakazivanju
 
   const apptRef = first.ref;
   const clientRef = doc(db, "clients", phone);
@@ -116,7 +116,7 @@ async function applyPendingToEarliestAppt(db, phone, amount) {
 
     const aSnap = await tx.get(apptRef);
     if (!aSnap.exists()) return;
-    if (aSnap.data()?.penaltyApplied?.amount > 0) return; // već primenjeno
+    if (aSnap.data()?.penaltyApplied?.amount > 0) return; // vec primenjeno
 
     tx.update(apptRef, {
       penaltyApplied: {
@@ -166,7 +166,7 @@ const toggleEmp = (id) =>
     prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
   );
 
-// ako lista radnica stigne/menja se, očisti nevažeće ID-jeve iz selekcije
+// ako lista radnica stigne/menja se, ocisti nevazuce ID-jeve iz selekcije
 useEffect(() => {
   const valid = new Set(employees.map(e => e.id));
   setSelectedEmpIds(prev => prev.filter(id => valid.has(id)));
@@ -233,7 +233,7 @@ const autoPickedRef = useRef(false);
   // clients with pending penalty (by phone)
 const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
 
-  // Map telefona -> ID najranijeg budućeg termina (status 'booked')
+  // Map telefona -> ID najranijeg buduceg termina (status 'booked')
   const [firstUpcomingApptIdByPhone, setFirstUpcomingApptIdByPhone] = useState(new Map());
 
 
@@ -253,7 +253,7 @@ const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
     }
   }, []);
 
-  /* ------------ dodatni HELPERI za mesečni šablon (izbor dana) ------------ */
+  /* ------------ dodatni HELPERI za mesecni sablon (izbor dana) ------------ */
   const toggleTplDay = (idx) => {
     setTemplateDays((prev) => {
       const s = new Set(prev);
@@ -262,8 +262,8 @@ const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
       return s;
     });
   };
-  const pickWorkdays = () => setTemplateDays(new Set([1, 2, 3, 4, 5])); // Pon–Pet
-  const pickAllDays = () => setTemplateDays(new Set([0, 1, 2, 3, 4, 5, 6])); // Ned–Sub
+  const pickWorkdays = () => setTemplateDays(new Set([1, 2, 3, 4, 5])); // Pon-Pet
+  const pickAllDays = () => setTemplateDays(new Set([0, 1, 2, 3, 4, 5, 6])); // Ned-Sub
   const clearTplDays = () => setTemplateDays(new Set());
 
   /* ------------ effects ------------ */
@@ -345,7 +345,7 @@ const offClientsPenalty = onSnapshot(
     );
 const offA = onSnapshot(qAppts, (s) => {
   const all = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-  // Prikaži sve koji NISU booking ili su booking ali aktivni (status === "booked")
+  // Prikazi sve koji NISU booking ili su booking ali aktivni (status === "booked")
   const visible = all.filter(a => a.type !== "booking" || a.status === "booked");
   setAppointments(visible);
 });
@@ -420,7 +420,7 @@ const q = query(
     return () => off();
   }, [schedDate]);
 
-  // Najraniji budući termini po klijentu (globalno preko svih dana)
+  // Najraniji buduci termini po klijentu (globalno preko svih dana)
   useEffect(() => {
     const today = new Date();
     const todayKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
@@ -492,21 +492,21 @@ const q = query(
     return services.filter((s) => catSet.has(s.categoryId) || srvSet.has(s.id));
   }, [selEmpId, employeesById, services]);
 
-  // Ko radi danas (za highlight dugmića)
+  // Ko radi danas (za highlight dugmica)
   const workingTodayIds = useMemo(() => {
     const ids = new Set(dayShifts.map((s) => s.employeeId));
     return employees.filter((e) => ids.has(e.id)).map((e) => e.id);
   }, [employees, dayShifts]);
 
-  // Koje kolone da prikažemo u gridu
+  // Koje kolone da prikazemo u gridu
 const idsToRender = useMemo(() => {
-  // MOBILNI: jedna izabrana ili ništa dok ne izabereš
+  // MOBILNI: jedna izabrana ili nista dok ne izaberes
   if (isMobile) return selEmpId ? [selEmpId] : [];
 
-  // DESKTOP: ako je nešto ručno izabrano — prikaži baš to
+  // DESKTOP: ako je nesto rucno izabrano - prikazi bas to
   if (selectedEmpIds.length) return selectedEmpIds;
 
-  // Fallback ponašanje kao ranije
+  // Fallback ponasanje kao ranije
   if (onlyWorking) return workingTodayIds;
   return employees.map(e => e.id);
 }, [isMobile, selEmpId, selectedEmpIds, onlyWorking, workingTodayIds, employees]);
@@ -529,8 +529,14 @@ const idsToRender = useMemo(() => {
         .sort((a, b) => a.start - b.start);
       m.set(k, mergeSegments(norm));
     }
+    // Default shift if no segments
+    for (const empId of employees.map(e => e.id)) {
+      if (!m.has(empId) || m.get(empId).length === 0) {
+        m.set(empId, [{ start: openMin, end: closeMin }]);
+      }
+    }
     return m;
-  }, [dayShifts, openMin, closeMin]);
+  }, [dayShifts, openMin, closeMin, employees]);
 
   function mergeSegments(arr) {
     if (!arr.length) return [];
@@ -609,7 +615,7 @@ function apptStartDate(appt) {
         const pen = cSnap.exists() ? cSnap.data()?.pendingPenalty : null;
 
         if (pen?.amount > 0) {
-          // Ako želiš UI potvrdu, uradi je PRE transakcije.
+          // Ako zelis UI potvrdu, uradi je PRE transakcije.
           penaltyApplied = {
             amount: Number(pen.amount || 0),
             sourceApptId: pen.sourceApptId || "",
@@ -621,7 +627,7 @@ function apptStartDate(appt) {
             { merge: true }
           );
         } else if (!cSnap.exists()) {
-          // Kreiraj “kostur” klijenta
+          // Kreiraj "kostur" klijenta
           tx.set(
             cRef,
             {
@@ -737,7 +743,7 @@ function apptStartDate(appt) {
           { merge: true }
         );
 
-        // < 6h => pending kazna ako je još nema
+        // < 6h => pending kazna ako je jos nema
         if (appt.type === "booking" && diffHours < 6) {
           const hasActivePenalty =
             data.pendingPenalty && Number(data.pendingPenalty.amount || 0) > 0;
@@ -778,7 +784,7 @@ function apptStartDate(appt) {
   const apptDate = new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}`);
   const diffHours = (apptDate.getTime() - Date.now()) / 36e5;
 
-  // < 6h => pending kazna ako je još nema, pa pokušaj odmah da je “zalepiš” na najraniji budući
+  // < 6h => pending kazna ako je jos nema, pa pokusaj odmah da je "zalepis" na najraniji buduci
   if (appt.type === "booking" && diffHours < 6) {
     const phone = normPhone(appt.clientPhone);
     if (phone) {
@@ -844,7 +850,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     if (!templateDays.size) return alert("Odaberi dane u nedelji.");
     const startM = timeToMin(tplStart);
     const endM = timeToMin(tplEnd);
-    if (!(endM > startM)) return alert("Vreme šablona nije validno.");
+    if (!(endM > startM)) return alert("Vreme sablona nije validno.");
 
     setBusy(true);
     try {
@@ -899,7 +905,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
       (s) => s.employeeId === empId && s.dateKey === key
     );
     if (existing) {
-      const ok = confirm("Za taj dan već postoji smena. Zameniti je novom?");
+      const ok = confirm("Za taj dan vec postoji smena. Zameniti je novom?");
       if (!ok) return;
     }
 
@@ -919,7 +925,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
   async function applyVacationRange() {
     const empId = monthEmpId;
     if (!empId) return alert("Odaberi radnicu.");
-    if (!vacStart) return alert("Odaberi datum početka odmora.");
+    if (!vacStart) return alert("Odaberi datum pocetka odmora.");
     const daysCount = Math.max(1, Number(vacDays || 0));
 
     const base = new Date(vacStart + "T00:00:00");
@@ -968,7 +974,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     }
   }
 
-  /* ------------ drag & drop (kolona→kolona) ------------ */
+  /* ------------ drag & drop (kolona-kolona) ------------ */
 
   const onApptDragStart = (a) => (e) => {
     e.dataTransfer.setData("text/plain", JSON.stringify({ id: a.id }));
@@ -1121,7 +1127,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
 
                 <div style={ctlItem}>
                   <label style={lbl}>
-                    <FiClock /> Početak
+                    <FiClock /> Pocetak
                   </label>
                   <input
                     type="time"
@@ -1137,7 +1143,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
 
                 {/* Termin / Blokada */}
                 <div style={ctlItem}>
-                  <label style={lbl}>Režim</label>
+                  <label style={lbl}>Rezim</label>
                   <div style={segWrap}>
                     {["booking", "block"].map((m) => (
                       <button
@@ -1265,16 +1271,16 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
    className="emp-strip-desktop"
   style={{
      display: "flex",
-     flexWrap: "wrap",        // ⇐ dozvoli prelamanje u više redova
-    overflowX: "visible",    // ⇐ bez horizontalnog skrola
+     flexWrap: "wrap",        // <= dozvoli prelamanje u vise redova
+    overflowX: "visible",    // <= bez horizontalnog skrola
     gap: 8,
-     rowGap: 6,               // ⇐ malo vertikalnog razmaka između redova
+     rowGap: 6,               // <= malo vertikalnog razmaka izmedu redova
      padding: "6px 0",
      marginTop: 6,
      alignItems: "center",
    }}
   >
-    {/* Pomoćna dugmad levo */}
+    {/* Pomocna dugmad levo */}
     <button
       onClick={() => { setSelEmpId(null); setOnlyWorking(true); setSelectedEmpIds(workingTodayIds); }}
 
@@ -1291,7 +1297,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
         cursor: "pointer",
         whiteSpace: "nowrap",
       }}
-      title="Prikaži samo radnice koje danas imaju smenu"
+      title="Prikazi samo radnice koje danas imaju smenu"
     >
       Ko radi danas
     </button>
@@ -1310,7 +1316,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
         cursor: "pointer",
         whiteSpace: "nowrap",
       }}
-      title="Prikaži sve radnice"
+      title="Prikazi sve radnice"
     >
       Sve radnice
     </button>
@@ -1323,25 +1329,25 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
         <button
           key={e.id}
         onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
-          style={{
-            flex: "0 0 auto",
-             padding: manyEmployees ? "6px 10px" : "8px 14px",
-           marginBottom: 6,
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,.35)",
+        style={{
+          flex: "0 0 auto",
+           padding: manyEmployees ? "6px 10px" : "8px 14px",
+         marginBottom: 6,
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,.35)",
 background: isSelected
   ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
   : isWorking
   ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
   : "rgba(255,255,255,.12)",
 
-            color: isSelected ? "#fff" : "#000",
-            fontWeight: 800,
-               fontSize: manyEmployees ? 13 : 16,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-          title={isWorking ? "Radi danas" : "Nije u smeni danas"}
+          color: isSelected ? "#fff" : "#000",
+          fontWeight: 800,
+             fontSize: manyEmployees ? 13 : 16,
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+        title={isWorking ? "Radi danas" : "Nije u smeni danas"}
         >
           {e.name}
         </button>
@@ -1375,6 +1381,7 @@ background: isSelected
               earliestApptIdByPhone={firstUpcomingApptIdByPhone}
               isMobile={isMobile}
               onCreateBlock={handleCreateBlock}
+              dayDate={dayDate}
             />
           </>
         ) : tab === "month" ? (
@@ -1384,9 +1391,17 @@ background: isSelected
               {/* RED 1 */}
               <div style={row} className="month-row">
                 <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiUser /> Radnica
-                  </label>
+                  <label style={lbl}>Mesec</label>
+                  <input
+                    type="month"
+                    value={monthAnchor}
+                    onChange={(e) => setMonthAnchor(e.target.value)}
+                    style={inp}
+                  />
+                </div>
+
+                <div style={ctlItem}>
+                  <label style={lbl}>Radnica</label>
                   <select
                     value={monthEmpId}
                     onChange={(e) => setMonthEmpId(e.target.value)}
@@ -1402,303 +1417,199 @@ background: isSelected
                 </div>
 
                 <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiCalendar /> Mesec
-                  </label>
-                  <input
-                    type="month"
-                    value={monthAnchor}
-                    onChange={(e) => setMonthAnchor(e.target.value)}
-                    style={inp}
-                  />
+                  <label style={lbl}>Smena (sablon)</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      type="time"
+                      step="300"
+                      value={tplStart}
+                      onChange={(e) => setTplStart(e.target.value)}
+                      style={inp}
+                    />
+                    <input
+                      type="time"
+                      step="300"
+                      value={tplEnd}
+                      onChange={(e) => setTplEnd(e.target.value)}
+                      style={inp}
+                    />
+                  </div>
                 </div>
 
                 <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiClock /> Početak
-                  </label>
-                  <input
-                    type="time"
-                    step={300}
-                    lang="sr-RS"
-                    value={tplStart}
-                    onChange={(e) => setTplStart(e.target.value)}
-                    style={inp}
-                  />
+                  <label style={lbl}>Dani (sablon)</label>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {DOW_SR.map((d, i) => (
+                      <span
+                        key={i}
+                        style={dayChip(templateDays.has(i))}
+                        onClick={() => toggleTplDay(i)}
+                      >
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={btnRow}>
+                    <button style={smallBtn} onClick={pickWorkdays}>
+                      Radni dani
+                    </button>
+                    <button style={smallBtn} onClick={pickAllDays}>
+                      Svi dani
+                    </button>
+                    <button style={smallBtn} onClick={clearTplDays}>
+                      Ocisti
+                    </button>
+                    <button style={primaryBtnSmall} onClick={applyMonthTemplate} disabled={busy}>
+                      Primeni sablon
+                    </button>
+                  </div>
                 </div>
 
                 <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiClock /> Kraj
-                  </label>
-                  <input
-                    type="time"
-                    step={300}
-                    lang="sr-RS"
-                    value={tplEnd}
-                    onChange={(e) => setTplEnd(e.target.value)}
-                    style={inp}
-                  />
-                </div>
-              </div>
-
-              {/* DANI U NEDELJI */}
-              <div style={btnRow} className="tpl-days">
-                {DOW_SR.map((d, i) => (
-                  <button
-                    key={i}
-                    onClick={() => toggleTplDay(i)}
-                    style={dayChip(templateDays.has(i))}
-                  >
-                    {d}
-                  </button>
-                ))}
-                <button onClick={pickWorkdays} style={dayChip(false)}>
-                  Radni dani
-                </button>
-                <button onClick={pickAllDays} style={dayChip(false)}>
-                  Svi dani
-                </button>
-                <button onClick={clearTplDays} style={dayChip(false)}>
-                  Očisti
-                </button>
-              </div>
-
-              {/* DUGMAD ZA PRIMENU */}
-              <div style={{ ...btnRow, marginTop: 8 }}>
-                <button
-                  style={primaryBtn}
-                  onClick={applyMonthTemplate}
-                  disabled={busy}
-                >
-                  {busy ? "Upisujem..." : "Primeni šablon na mesec"}
-                </button>
-              </div>
-
-              {/* JEDAN DAN */}
-              <div style={{ ...row, marginTop: 16 }} className="month-row">
-                <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiCalendar /> Jedan dan
-                  </label>
+                  <label style={lbl}>Jedan dan</label>
                   <input
                     type="date"
                     value={oneDay}
                     onChange={(e) => setOneDay(e.target.value)}
                     style={inp}
                   />
-                </div>
-                <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiClock /> Početak
-                  </label>
-                  <input
-                    type="time"
-                    step={300}
-                    lang="sr-RS"
-                    value={oneStart}
-                    onChange={(e) => setOneStart(e.target.value)}
-                    style={inp}
-                  />
-                </div>
-                <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiClock /> Kraj
-                  </label>
-                  <input
-                    type="time"
-                    step={300}
-                    lang="sr-RS"
-                    value={oneEnd}
-                    onChange={(e) => setOneEnd(e.target.value)}
-                    style={inp}
-                  />
-                </div>
-                <div style={ctlItem}>
-                  <button
-                    style={primaryBtn}
-                    onClick={applySingleDayShift}
-                    disabled={busy}
-                  >
-                    {busy ? "Upisujem..." : "Postavi za taj dan"}
+                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                    <input
+                      type="time"
+                      step="300"
+                      value={oneStart}
+                      onChange={(e) => setOneStart(e.target.value)}
+                      style={inp}
+                    />
+                    <input
+                      type="time"
+                      step="300"
+                      value={oneEnd}
+                      onChange={(e) => setOneEnd(e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                  <button style={primaryBtn} onClick={applySingleDayShift}>
+                    Upisi smenu
                   </button>
                 </div>
-              </div>
 
-              {/* ODMOR */}
-              <div style={{ ...row, alignItems: "end", marginTop: 8 }}
-                className="month-row"
-              >
                 <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiCalendar /> Početak odmora (datum)
-                  </label>
+                  <label style={lbl}>Odmor</label>
                   <input
                     type="date"
                     value={vacStart}
                     onChange={(e) => setVacStart(e.target.value)}
                     style={inp}
                   />
-                </div>
-                <div style={ctlItem}>
-                  <label style={lbl}>Trajanje (dana)</label>
                   <input
                     type="number"
-                    min={1}
-                    step={1}
+                    min="1"
                     value={vacDays}
                     onChange={(e) => setVacDays(e.target.value)}
                     style={inp}
+                    placeholder="Broj dana"
                   />
-                </div>
-                <div style={{ ...ctlItem }}>
-                  <button
-                    style={primaryBtn}
-                    onClick={applyVacationRange}
-                    disabled={busyVac}
-                  >
-                    {busyVac ? "Upisujem…" : "Postavi odmor"}
+                  <button style={primaryBtn} onClick={applyVacationRange} disabled={busyVac}>
+                    Upisi odmor
                   </button>
                 </div>
               </div>
 
-              {/* Roster prozor */}
+              {/* DAY STRIP */}
+              <DayStrip monthStr={monthAnchor} selectedKey={oneDay} onPickDay={setOneDay} />
+
+              {/* ROSTER WINDOW */}
               <MonthRosterWindow
                 monthStr={monthAnchor}
                 shifts={monthShifts}
-                breaks={[...timeOffs]}
+                breaks={timeOffs}
                 employeesById={employeesById}
                 isMobile={isMobile}
               />
             </div>
           </>
-        ) : (
+        ) : tab === "schedule" ? (
           <>
-            {/* RASPORED */}
-            <div style={monthWrap} className="month-wrap">
-              <div style={row} className="month-row">
-                <div style={ctlItem}>
-                  <label style={lbl}>
-                    <FiCalendar /> Mesec
-                  </label>
-                  <input
-                    type="month"
-                    value={monthAnchor}
-                    onChange={(e) => setMonthAnchor(e.target.value)}
-                    style={inp}
-                  />
-                </div>
-                <div style={ctlItem}>
-                  <label style={lbl}>Dan</label>
-                  <input
-                    type="date"
-                    value={dateKey(schedDate)}
-                    onChange={(e) =>
-                      setSchedDate(new Date(e.target.value + "T00:00:00"))
-                    }
-                    style={inp}
-                  />
-                </div>
+            <div style={ctlWrap}>
+              <div style={ctlItem} className="ctl-row-a">
+                <label style={lbl}>
+                  <FiCalendar /> Datum
+                </label>
+                <input
+                  type="date"
+                  value={dateKey(schedDate)}
+                  onChange={(e) =>
+                    setSchedDate(new Date(e.target.value + "T00:00:00"))
+                  }
+                  style={inp}
+                />
               </div>
-
-              <DayStrip
-                monthStr={monthAnchor}
-                selectedKey={dateKey(schedDate)}
-                onPickDay={(key) => setSchedDate(new Date(key + "T00:00:00"))}
-              />
-
-              <ScheduleGrid
-                dateObj={schedDate}
-                appts={schedAppts}
-                salonHours={salonHours}
-                employeesById={employeesById}
-                servicesById={servicesById}
-                colorForServiceId={colorForServiceId}
-                onApptClick={openApptModal}
-                noShowByPhone={noShowByPhone}
-                  pendingPenaltyByPhone={pendingPenaltyByPhone}
-                earliestApptIdByPhone={firstUpcomingApptIdByPhone}
-                isMobile={isMobile}
-              />
             </div>
-          </>
-        )}
 
-        {/* Modal za termin */}
-        {activeAppt &&
-          createPortal(
-            <ApptModal
-              appt={activeAppt}
-              onClose={closeApptModal}
-              employees={employees}
-              servicesById={servicesById}
-              employeesById={employeesById}
+            <ScheduleGrid
+              dateObj={schedDate}
+              appts={schedAppts}
               salonHours={salonHours}
-              shiftsByEmp={shiftsByEmp}
-                pendingPenaltyByPhone={pendingPenaltyByPhone}
-                 earliestApptIdByPhone={firstUpcomingApptIdByPhone}
+              employeesById={employeesById}
+              servicesById={servicesById}
               colorForServiceId={colorForServiceId}
-              onSave={async (patch) => {
-                // validacija pre snimanja
-                const { startHHMM, employeeId } = patch;
-                const a = activeAppt;
-                const srv = servicesById.get(a.serviceId);
-                const duration = a.durationMin || srv?.durationMin || 0;
-                const newStart = timeToMin(startHHMM || a.startHHMM);
-                const newEnd = newStart + duration;
+              onApptClick={openApptModal}
+              noShowByPhone={noShowByPhone}
+              pendingPenaltyByPhone={pendingPenaltyByPhone}
+              earliestApptIdByPhone={firstUpcomingApptIdByPhone}
+              isMobile={isMobile}
+            />
+          </>
+        ) : null}
 
-                const dow = DOW[new Date(a.dateKey + "T00:00:00").getDay()];
-                const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
-                const open = timeToMin(hours.open);
-                const close = timeToMin(hours.close);
-
-                if (!(newEnd > newStart && newStart >= open && newEnd <= close)) {
-                  alert("Vreme je van radnog vremena salona.");
-                  return;
-                }
-                const emp = employeeId || a.employeeId;
-                const segs = shiftsByEmp.get(emp) || [];
-                const okShift = segs.some(
-                  (seg) => newStart >= seg.start && newEnd <= seg.end
-                );
-                if (!okShift) {
-                  alert("Vreme je van smene radnice.");
-                  return;
-                }
-                if (!noOverlap(emp, newStart, newEnd, a.id)) {
-                  alert("Preklapanje sa postojećim terminom.");
-                  return;
-                }
-
-                await updateDoc(doc(db, "appointments", a.id), {
-                  ...patch,
-                  employeeId: emp,
-                  employeeName: employeesById.get(emp)?.name || "",
-                  startHHMM: minToTime(newStart),
-                  endHHMM: minToTime(newEnd),
-                  startMin: newStart,
-                  endMin: newEnd,
-                  updatedAt: serverTimestamp(),
-                });
-                setActiveAppt(null);
-              }}
-              onNoShow={async () => {
-                await markNoShowWithClient(activeAppt);
-                setActiveAppt(null);
-              }}
-             onCancel={async () => {
-  await cancelApptWithRule(activeAppt);
-  setActiveAppt(null);
+        {activeAppt && createPortal(
+          <ApptModal
+            appt={activeAppt}
+            onClose={closeApptModal}
+            employees={employees}
+            employeesById={employeesById}
+            servicesById={servicesById}
+            salonHours={salonHours}
+            shiftsByEmp={shiftsByEmp}
+            pendingPenaltyByPhone={pendingPenaltyByPhone}
+            earliestApptIdByPhone={firstUpcomingApptIdByPhone}
+            colorForServiceId={colorForServiceId}
+            onSave={async (patch) => {
+              const newStart = timeToMin(patch.startHHMM);
+              const newEnd = newStart + (activeAppt.durationMin || 0);
+              const emp = patch.employeeId;
+              if (!withinShift(emp, newStart, newEnd)) return alert("Van smene radnice.");
+              if (!noOverlap(emp, newStart, newEnd, activeAppt.id)) return alert("Preklapanje sa postojećim.");
+              await updateDoc(doc(db, "appointments", activeAppt.id), {
+                ...patch,
+                employeeId: emp,
+                employeeName: employeesById.get(emp)?.name || "",
+                startHHMM: minToTime(newStart),
+                endHHMM: minToTime(newEnd),
+                startMin: newStart,
+                endMin: newEnd,
+                updatedAt: serverTimestamp(),
+              });
+              setActiveAppt(null);
+            }}
+            onNoShow={async () => {
+              await markNoShowWithClient(activeAppt);
+              setActiveAppt(null);
+            }}
+           onCancel={async () => {
+await cancelApptWithRule(activeAppt);
+setActiveAppt(null);
 }}
 
-              onDelete={async () => {
-                await deleteAppt(activeAppt.id);
-                setActiveAppt(null);
-              }}
-              noShowByPhone={noShowByPhone}
-            />,
-            document.body
-          )}
+            onDelete={async () => {
+              await deleteAppt(activeAppt.id);
+              setActiveAppt(null);
+            }}
+            noShowByPhone={noShowByPhone}
+          />,
+          document.body
+        )}
       </div>
     </div>
   );
@@ -1774,12 +1685,30 @@ function DayGrid({
     earliestApptIdByPhone,
     isMobile,
     onCreateBlock,
+    dayDate
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragEmpId, setDragEmpId] = useState(null);
   const [dragStartMin, setDragStartMin] = useState(0);
   const [previewTop, setPreviewTop] = useState(0);
   const [previewHeight, setPreviewHeight] = useState(0);
+  const [currentMin, setCurrentMin] = useState(0);
+
+  useEffect(() => {
+    const updateCurrentTime = () => {
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+      setCurrentMin(hours * 60 + minutes);
+    };
+
+    updateCurrentTime();
+    const interval = setInterval(updateCurrentTime, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const isToday = dateKey(dayDate) === dateKey(new Date());
 
   const getMinFromEvent = (e) => {
     const touch = e.touches?.[0] || e.changedTouches?.[0];
@@ -1931,7 +1860,7 @@ function DayGrid({
                       border: "0.5px dashed rgba(255,255,255,.25)",
                       borderRadius: 10,
                     }}
-                    title={`Smena ${s.start}–${s.end}`}
+                    title={`Smena ${s.start}-${s.end}`}
                   />
                 ))}
 
@@ -1941,11 +1870,8 @@ function DayGrid({
                   const isVacation = a.type === "vacation";
                   const top = pxFromMin(a.startMin - openMin);
                   const height = pxFromMin(a.endMin - a.startMin);
-                  const styleForCard = a.type === "block"
-  ? apptBlockStripe(top, height)                      // uzana traka
-  : apptCard(top, height, bg, isBreak || isVacation); // ostali puni
-
-               const bg = apptBgFor(a, colorForServiceId);
+                  const bg = apptBgFor(a, colorForServiceId);
+                  const styleForCard = isBlock ? apptCard(top, height, bg, true) : apptCard(top, height, bg, isBreak || isVacation);
 
 
                   const phone = normPhone(a.clientPhone);
@@ -1965,10 +1891,11 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                       onDragStart={onApptDragStart(a)}
                       onMouseEnter={() => setHoverApptId(a.id)}
                       onMouseLeave={() => setHoverApptId(null)}
-                      onClick={() =>
-                        !isBreak && !isBlock && !isVacation && onApptClick(a)
-                      }
-                      tyle={styleForCard}
+                      onClick={(e) => {
+                        if (isBlock) e.stopPropagation();
+                        !isBreak && !isBlock && !isVacation && onApptClick(a);
+                      }}
+                      style={styleForCard}
                       title={
                         isVacation
                           ? "Odmor"
@@ -1995,7 +1922,7 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                         <div style={metaRow}>
                           <span style={pill}>
                             <FiClock style={{ marginRight: 6 }} />
-                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                            {minToTime(a.startMin)}-{minToTime(a.endMin)}
                           </span>
                           {a.clientName && (
                             <span style={pillLight(isMobile)}>
@@ -2010,7 +1937,7 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                         <div style={metaRow}>
                           <span style={pill}>
                             <FiClock style={{ marginRight: 6 }} />{" "}
-                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                            {minToTime(a.startMin)}-{minToTime(a.endMin)}
                           </span>
                         </div>
                       )}
@@ -2040,6 +1967,17 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                           <FiEdit3 /> Klikni za detalje
                         </div>
                       )}
+                      {isBlock && (
+                        <button
+                          style={deleteButton}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteAppt(a.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
                     </button>
                   );
                 })}
@@ -2060,7 +1998,19 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
   />
 )}
 
-                 
+                {isToday && currentMin >= openMin && currentMin <= closeMin && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: pxFromMin(currentMin - openMin),
+                      height: "1px",
+                      background: "red",
+                      zIndex: 100,
+                    }}
+                  />
+                )} 
               </div>
             </div>
           );
@@ -2132,7 +2082,7 @@ function ScheduleGrid({
   return (
     <div style={{ marginTop: 12 }}>
       <div style={{ color: "#fff", fontWeight: 900, marginBottom: 8 }}>
-        Raspored za {dateKey(dateObj)} • {hours.open}–{hours.close}
+        Raspored za {dateKey(dateObj)} • {hours.open}-{hours.close}
       </div>
 
      <div
@@ -2155,7 +2105,7 @@ function ScheduleGrid({
             ...colBody,
             height: gridHeight(closeMin - openMin),
             position: "relative",
-              touchAction: "none",    // bitno za mobilni – omogući preventDefault
+              touchAction: "none",    // bitno za mobilni - omoguci preventDefault
     userSelect: "none",
             background: "rgba(255,255,255,.12)",
             borderRadius: 16,
@@ -2195,7 +2145,7 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                   left: `calc(${leftPct}% + 6px)`,
                   width: `calc(${widthPct}% - 12px)`,
                 }}
-                title={`${srv} • ${minToTime(a.startMin)}–${minToTime(
+                title={`${srv} • ${minToTime(a.startMin)}-${minToTime(
                   a.endMin
                 )} • ${empName}`}
               >
@@ -2204,7 +2154,7 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                 <div style={metaRow}>
                   <span style={pill}>
                     <FiClock style={{ marginRight: 6 }} />
-                    {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                    {minToTime(a.startMin)}-{minToTime(a.endMin)}
                   </span>
                   <span style={pillLight(isMobile)}>
                     <FiUser style={{ marginRight: 6 }} />
@@ -2257,7 +2207,7 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
   );
 }
 
-/* -------------------- Month Roster (WINDOW: 7 dana desktop / 1 dan mobilni) -------------------- */
+/* -------------------- Month roster (WINDOW: 7 dana desktop / 1 dan mobilni) -------------------- */
 
 function MonthRosterWindow({ monthStr, shifts, breaks, employeesById, isMobile }) {
   async function removeShiftFor(dayKey, empId) {
@@ -2313,7 +2263,7 @@ function MonthRosterWindow({ monthStr, shifts, breaks, employeesById, isMobile }
         <div style={{ color: "#fff", fontWeight: 900 }}>
           {isMobile
             ? `${DOW_SR[new Date(`${base.getFullYear()}-${pad2(base.getMonth()+1)}-${pad2(start)}`+"T00:00:00").getDay()]} ${pad2(start)}.${pad2(base.getMonth()+1)}.${base.getFullYear()}.`
-            : `Dani ${start}–${end} • ${pad2(base.getMonth()+1)}.${base.getFullYear()}.`}
+            : `Dani ${start}-${end} • ${pad2(base.getMonth()+1)}.${base.getFullYear()}.`}
         </div>
         <button onClick={() => !nextDisabled && setPage(page + 1)} disabled={nextDisabled} style={navBtn(nextDisabled)}>▶</button>
       </div>
@@ -2356,7 +2306,7 @@ function MonthRosterWindow({ monthStr, shifts, breaks, employeesById, isMobile }
                   <span
                     key={n.id}
                     style={empPillStyle(n.hasVacation)}
-                    title={n.hasVacation ? "Odmor – klik za uklanjanje smene" : "Klikni da ukloniš smenu"}
+                    title={n.hasVacation ? "Odmor - klik za uklanjanje smene" : "Klikni da uklonis smenu"}
                     onClick={() => removeShiftFor(dayKey, n.id)}
                   >
                     {n.name}
@@ -2365,7 +2315,7 @@ function MonthRosterWindow({ monthStr, shifts, breaks, employeesById, isMobile }
                 ))}
 
                 {entries.length > 12 && (
-                  <span style={{ fontSize: 12, opacity: 0.8 }}>+ još</span>
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>+ jos</span>
                 )}
               </div>
             </div>
@@ -2376,7 +2326,7 @@ function MonthRosterWindow({ monthStr, shifts, breaks, employeesById, isMobile }
   );
 }
 
-/* sitni stilovi za navigaciju i ćelije prozora */
+/* sitni stilovi za navigaciju i celije prozora */
 const navBtn = (disabled) => ({
   height: 36,
   minWidth: 36,
@@ -2457,7 +2407,7 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
           </div>
 
           <div style={field}>
-            <label style={fieldLbl}>Početak</label>
+            <label style={fieldLbl}>Pocetak</label>
             <input
               type="time"
               step="300"
@@ -2513,17 +2463,17 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
           <button
             style={{ ...actionBtn, background: "#ffe1e1", color: "#7a1b1b" }}
             onClick={onDelete}
-            title="Obriši termin"
+            title="Obrisi termin"
           >
-            <FiTrash2 /> Obriši
+            <FiTrash2 /> Obrisi
           </button>
           <div style={{ flex: 1 }} />
           <button
             style={{ ...actionBtn, background: "#fff", color: "#222" }}
             onClick={onCancel}
-            title="Otkaži"
+            title="Otkazi"
           >
-            <FiSlash /> Otkaži
+            <FiSlash /> Otkazi
           </button>
           <button
             style={{ ...actionBtn, background: "#fff7e6", color: "#7a3d0b" }}
@@ -2535,9 +2485,9 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
           <button
             style={{ ...actionBtn, background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff" }}
             onClick={() => onSave({ employeeId: empId, startHHMM: start })}
-            title="Sačuvaj izmene"
+            title="Sacuvaj izmene"
           >
-            <FiSave /> Sačuvaj
+            <FiSave /> Sacuvaj
           </button>
         </div>
       </div>
@@ -2546,17 +2496,17 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
 }
 
 /* -------------------- UI helpers & styles -------------------- */
-/* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
-/* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
+/* kartica termina – zajednicki stil za DayGrid i ScheduleGrid */
+/* kartica termina – zajednicki stil za DayGrid i ScheduleGrid */
 // negde ispod stilova, zajedno sa ostalim helper stilovima
-// koliko širok je "uzani blok" uz levu ivicu kolone
+// koliko sirok je "uzani blok" uz levu ivicu kolone
 const BLOCK_WIDTH = 10;
 
 const apptBlockStripe = (top, height) => ({
   position: "absolute",
   left: 6,
-  right: "auto",        // <<< bitno: da NE razvlači na desno
-  width: BLOCK_WIDTH,   // <<< fiksna širina trake
+  right: "auto",        // <<< bitno: da NE razvlaci na desno
+  width: BLOCK_WIDTH,   // <<< fiksna sirina trake
   top,
   height,
   background:
@@ -2566,10 +2516,11 @@ const apptBlockStripe = (top, height) => ({
 });
 
 
-const apptCard = (top, height, bg, disabled = false) => ({
+// pre: const apptCard = (top, height, bg, disabled = false) => ({
+const apptCard = (top, height, bg, disabled = false, leftOffset = 6, rightOffset = 6) => ({
   position: "absolute",
-  left: 6,
-  right: 6,
+  left: leftOffset,
+  right: rightOffset,
   top,
   height,
   background: bg,
@@ -2581,7 +2532,6 @@ const apptCard = (top, height, bg, disabled = false) => ({
   flexDirection: "column",
   gap: 4,
   cursor: disabled ? "default" : "pointer",
-  /* ključne promene: */
   overflowX: "hidden",
   overflowY: "auto",
   WebkitOverflowScrolling: "touch",
@@ -2589,11 +2539,13 @@ const apptCard = (top, height, bg, disabled = false) => ({
   wordBreak: "break-word",
   overflowWrap: "anywhere",
   lineHeight: 1.3,
+  position: "relative", // for delete button
 });
 
 
-/* naslov na kartici – funkcija da možemo proslediti isMobile */
-/* naslov na kartici – bez sečenja, uvek ceo tekst */
+
+/* naslov na kartici – funkcija da mozemo proslediti isMobile */
+/* naslov na kartici – bez secenja, uvek ceo tekst */
 const cardTitle = (isMobile) => ({
   fontWeight: 800,
   fontSize: isMobile ? 16 : 14,
@@ -2616,7 +2568,7 @@ const normPhone = (p) =>
   String(p || "")
     .replace(/[^\d+]/g, "")
     .replace(/^00/, "+")
-    .replace(/^0(6\d+)/, "+381$1") // ← ključno
+    .replace(/^0(6\d+)/, "+381$1") // ← kljucno
     .trim();
 
 
@@ -2841,7 +2793,7 @@ const badgePenalty = {
   gap: 6,
   padding: "2px 8px",
   borderRadius: 999,
-  background: "#fff7e6",   // blago narandžasto
+  background: "#fff7e6",   // blago narandzasto
   color: "#7a3d0b",
   fontSize: 12,
   fontWeight: 800,
@@ -3040,6 +2992,18 @@ const actionBtn = {
   fontWeight: 900,
 };
 
+const deleteButton = {
+  position: "absolute",
+  top: 4,
+  right: 4,
+  background: "transparent",
+  border: "none",
+  color: "#000",
+  fontSize: 16,
+  cursor: "pointer",
+  padding: 0,
+};
+
 /* --- Responsive fine-tuning --- */
 const responsiveCSS = `
 /* Mobilni i tableti – uvek 2 kolone sa tankom vremenskom osom */
@@ -3122,7 +3086,7 @@ const responsiveCSS = `
   .admincal { --head-fz: 14px; }
 }
 
-/* TELEFONI ≤768px – sakrij levu vremensku osu i prikaži traku radnica */
+/* TELEFONI ≤768px – sakrij levu vremensku osu i prikazi traku radnica */
 @media (max-width: 768px) {
   .emp-strip-mobile {
     display: flex;

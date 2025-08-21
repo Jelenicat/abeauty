@@ -1,13 +1,13 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useEffect, useState } from "react";
 import { db } from "../firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 
 const AuthContext = createContext(null);
 const ADMIN_PHONE = "0665511005"; // normalizovan oblik
 
 function normalizePhone(p) {
-  const digits = String(p || "").replace(/\D/g, ""); // skini sve nedigit karaktere
+  const digits = String(p || "").replace(/\D/g, "");
   return digits.replace(/^381/, "0"); // +381xx -> 0xx
 }
 
@@ -26,16 +26,23 @@ export function AuthProvider({ children }) {
     else localStorage.removeItem("abeauty:user");
   }, [user]);
 
-  // upis u Firestore + role = admin|client
+  // upis u Firestore + role = admin|client, uz override iz doc-a (isAdmin/isFinance)
   const login = async ({ firstName, lastName, phone }) => {
     const fn = String(firstName || "").trim();
     const ln = String(lastName || "").trim();
     const phoneNorm = normalizePhone(phone);
 
-    const isAdmin = phoneNorm === ADMIN_PHONE;   // ⬅️ samo po broju
+    // Pročitaj postojeći doc (ako postoji) da uzmeš override-e
+    const ref = doc(db, "users", phoneNorm);
+    const oldSnap = await getDoc(ref);
+    const old = oldSnap.exists() ? oldSnap.data() : {};
+
+    const computedIsAdmin = phoneNorm === ADMIN_PHONE;
+    const isAdmin = old?.isAdmin ?? computedIsAdmin;
+    const isFinance = old?.isFinance ?? true; // po defaultu svi admini vide finansije
+
     const role = isAdmin ? "admin" : "client";
 
-    const ref = doc(db, "users", phoneNorm);
     await setDoc(
       ref,
       {
@@ -43,9 +50,10 @@ export function AuthProvider({ children }) {
         lastName: ln || null,
         phone: phoneNorm,
         role,
+        isAdmin,
+        isFinance,
         updatedAt: serverTimestamp(),
-        // createdAt će se postaviti prvi put; ako dokument postoji, merge neće obrisati postojeći createdAt
-        createdAt: serverTimestamp(),
+        createdAt: old?.createdAt ?? serverTimestamp(),
       },
       { merge: true }
     );
@@ -57,6 +65,7 @@ export function AuthProvider({ children }) {
       phone: phoneNorm,
       role,
       isAdmin,
+      isFinance,
     };
     setUser(sessionUser);
     return sessionUser;

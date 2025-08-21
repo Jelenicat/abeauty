@@ -1,4 +1,4 @@
-// AdminHome.jsx
+// src/pages/AdminHome.jsx
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -30,15 +30,22 @@ export default function AdminHome() {
           <button className="admin-card" onClick={() => navigate("/admin/katalog")}>
             Katalog usluga
           </button>
+
           <button className="admin-card" onClick={() => navigate("/admin/kalendar")}>
             Kalendar
           </button>
-          <button className="admin-card" onClick={() => navigate("/admin/finansije")}>
-            Troškovi i zarada
-          </button>
+
+          {/* Troškovi i zarada — prikaži samo ako korisnik ima pravo na finansije */}
+          {user?.isFinance !== false && (
+            <button className="admin-card" onClick={() => navigate("/admin/finansije")}>
+              Troškovi i zarada
+            </button>
+          )}
+
           <button className="admin-card" onClick={() => navigate("/admin/zaposleni")}>
             Zaposleni
           </button>
+
           <button className="admin-card" onClick={() => navigate("/admin/klijenti")}>
             Klijenti
           </button>
