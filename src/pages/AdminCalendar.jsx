@@ -57,6 +57,27 @@ const timeToMin = (hhmm) => {
   const [h, m] = String(hhmm).split(":").map((x) => parseInt(x || 0, 10));
   return (h || 0) * 60 + (m || 0);
 };
+// Normalize telefona u E.164 (fokus na SRB), robustno za razne unose
+const normPhone = (v) => {
+  if (v == null) return "";
+  let s = String(v).trim();
+
+  // zadrži samo cifre i plus
+  s = s.replace(/[^\d+]/g, "");
+
+  // 00xx -> +xx
+  if (s.startsWith("00")) s = "+" + s.slice(2);
+
+  // Ako je lokalni oblik koji krene sa 0 (npr. 060..., 061..., 065...)
+  // pretvori u +381 bez vodeće nule
+  if (/^0\d{6,}$/.test(s)) s = "+381" + s.slice(1);
+
+  // Ako nema plus, dodaj (fallback)
+  if (!s.startsWith("+")) s = "+" + s;
+
+  return s;
+};
+
 const minToTime = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const overlaps = (aStart, aEnd, bStart, bEnd) =>
