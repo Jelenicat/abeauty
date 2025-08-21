@@ -189,22 +189,39 @@ function BlockDaysBar({ visible, anchorDate, onConfirm, onCancel }) {
           <div style={{fontSize:12}}>{d.toLocaleDateString("sr-RS")}</div>
         </button>
       ))}
-      <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-        <button onClick={onCancel}
-          style={{padding:"8px 12px",borderRadius:10,fontWeight:700,
-          border:"1px solid rgba(255,255,255,.35)",background:"rgba(0,0,0,.1)",color:"#000"}}>
-          Otkaži
-        </button>
-        <button
-          onClick={()=> start && onConfirm(start, end || start)}
-          disabled={!start}
-          style={{padding:"8px 12px",borderRadius:10,fontWeight:700,
-          border:"1px solid rgba(255,255,255,.35)",
-          background:"linear-gradient(180deg,#ff5fa2,#ff77b3)",
-          color:"#fff", opacity: start?1:.6}}>
-          Blokiraj izabrane dane
-        </button>
-      </div>
+<div style={{ display: "flex", gap: 8, marginTop: 12, width: "100%" }}>
+  <button
+    onClick={onCancel}
+    style={{
+      flex: 1,
+      padding: "10px",
+      borderRadius: 10,
+      fontWeight: 700,
+      border: "1px solid rgba(255,255,255,.35)",
+      background: "rgba(0,0,0,.1)",
+      color: "#000",
+    }}
+  >
+    Otkaži
+  </button>
+  <button
+    onClick={() => start && onConfirm(start, end || start)}
+    disabled={!start}
+    style={{
+      flex: 1,
+      padding: "10px",
+      borderRadius: 10,
+      fontWeight: 700,
+      border: "1px solid rgba(255,255,255,.35)",
+      background: "linear-gradient(180deg,#ff5fa2,#ff77b3)",
+      color: "#fff",
+      opacity: start ? 1 : 0.6,
+    }}
+  >
+    Blokiraj izabrane dane
+  </button>
+</div>
+
     </div>
   );
 }
@@ -1911,6 +1928,10 @@ function DayGrid({
   const [previewHeight, setPreviewHeight] = useState(0);
   const [dragCurrentMin, setDragCurrentMin] = useState(null);
 
+  // Tap-tap selekcija (telefon)
+  const [tapStartMin, setTapStartMin] = useState(null);
+  const [tapEmpId, setTapEmpId] = useState(null);
+
   // Armiranje draga na mobilnom (dozvoli prirodan scroll dok ne pređe prag)
   const [isArming, setIsArming] = useState(false);
   const armStartYRef = useRef(0);
@@ -2037,7 +2058,7 @@ function DayGrid({
     }
   };
 
-  /* -------------------- Mouse drag -------------------- */
+  /* -------------------- Mouse drag (desktop) -------------------- */
   const handleMouseDown = (e, empId) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -2080,6 +2101,22 @@ function DayGrid({
     }
   };
 
+  /* -------------------- Tap-tap na telefonu -------------------- */
+  const commitTapAt = (empId, minute) => {
+    // 1. prvi tap -> zapamti liniju
+    if (tapStartMin == null || tapEmpId !== empId) {
+      setTapEmpId(empId);
+      setTapStartMin(minute);
+      return;
+    }
+    // 2. drugi tap u istoj koloni -> napravi blokadu
+    const s = Math.min(tapStartMin, minute);
+    const e = Math.max(tapStartMin, minute);
+    if (e - s >= 5) onCreateBlock(empId, s, e);
+    setTapEmpId(null);
+    setTapStartMin(null);
+  };
+
   /* -------------------- Touch drag (telefon) -------------------- */
   const handleTouchStart = (e, empId) => {
     // Ne blokiramo scroll odmah — prvo "armiramo" drag
@@ -2102,7 +2139,7 @@ function DayGrid({
       return;
     }
 
-    // Kreće drag
+    // Kreće drag (klasično povlačenje da i dalje bude moguće)
     if (isArming) {
       setIsArming(false);
       setIsDragging(true);
@@ -2129,6 +2166,16 @@ function DayGrid({
   };
 
   const handleTouchEnd = (e, empId) => {
+    // Ako nismo prešli prag i ne “vučemo” – tretiraj kao TAP
+    if (!isDragging && isArming && dragEmpId === empId) {
+      const minute = getMinFromEvent(e);
+      commitTapAt(empId, minute);
+      setIsArming(false);
+      setDragEmpId(null);
+      return;
+    }
+
+    // U suprotnom — završetak draga
     if (!isDragging || dragEmpId !== empId) {
       setIsArming(false);
       setDragEmpId(null);
@@ -2183,17 +2230,14 @@ function DayGrid({
             : colBox;
 
           return (
-            <div
-              key={empId}
-              style={colStyle}
-            >
+            <div key={empId} style={colStyle}>
               {/* MOBILE: dugme iznad imena (kompaktno, bez preklapanja) */}
               {isMobile && (
                 <div style={mobileHeaderRow}>
                   <button
                     type="button"
-                    style={blockDayBtn}
                     onClick={() => blockWholeDay(empId, segs)}
+                    style={blockDayBtn}
                     title="Blokiraj ceo dan"
                   >
                     Blokiraj ceo dan
@@ -2445,7 +2489,7 @@ function DayGrid({
                   );
                 })}
 
-                {/* PREVIEW selekcije + živa etiketa sa vremenom */}
+                {/* PREVIEW selekcije (drag) + etiketa sa vremenom */}
                 {isDragging && dragEmpId === empId && (() => {
                   const m1 = Math.min(dragStartMin, dragCurrentMin ?? dragStartMin);
                   const m2 = Math.max(dragStartMin, dragCurrentMin ?? dragStartMin);
@@ -2486,6 +2530,43 @@ function DayGrid({
                     </>
                   );
                 })()}
+
+                {/* TAP START linija — tanka preko cele kolone (mob) */}
+                {isMobile && tapEmpId === empId && tapStartMin != null && (
+                  <>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,           // preko cele kolone, uključujući gutter
+                        right: 0,
+                        top: pxFromMin(tapStartMin - openMin),
+                        height: 2,
+                        background: "rgba(255,95,162,.9)",
+                        boxShadow: "0 0 0 1px rgba(255,95,162,.6)",
+                        transform: "translateY(-1px)",
+                        zIndex: 7,
+                        pointerEvents: "none",
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 8,
+                        top: Math.max(0, pxFromMin(tapStartMin - openMin) - 22),
+                        padding: "2px 6px",
+                        borderRadius: 8,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        background: "rgba(0,0,0,.55)",
+                        color: "#fff",
+                        pointerEvents: "none",
+                        zIndex: 7,
+                      }}
+                    >
+                      {minToTime(tapStartMin)}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           );
