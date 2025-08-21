@@ -1768,8 +1768,15 @@ function DayGrid({
   const [dragStartMin, setDragStartMin] = useState(0);
   const [previewTop, setPreviewTop] = useState(0);
   const [previewHeight, setPreviewHeight] = useState(0);
-  /* NEW: trenutna pozicija selekcije za prikaz vremena */
+  /* trenutna pozicija selekcije za prikaz vremena */
   const [dragCurrentMin, setDragCurrentMin] = useState(null);
+
+  /* TAP–TAP selekcija (pogodno za mobilni) */
+  const [pendingTapStartMin, setPendingTapStartMin] = useState(null);
+  const [pendingTapEmpId, setPendingTapEmpId] = useState(null);
+
+  /* za detekciju malog pomeraja (tap vs. drag) */
+  const startPixelYRef = useRef(0);
 
   // Malo “×” dugme za brisanje BLOKA
   const blockDeleteBtn = {
@@ -1788,13 +1795,24 @@ function DayGrid({
     zIndex: 5,
   };
 
+  const getClientY = (e) => {
+    const t = e.touches?.[0] || e.changedTouches?.[0];
+    return t ? t.clientY : e.clientY;
+  };
+
   const getMinFromEvent = (e) => {
-    const touch = e.touches?.[0] || e.changedTouches?.[0];
-    const clientY = touch ? touch.clientY : e.clientY;
+    const clientY = getClientY(e);
     const rect = e.currentTarget.getBoundingClientRect();
     const y = clientY - rect.top;
+
+    // 1px ≈ 1min * 3.5 => zadržavamo tvoj “scale”
     let min = openMin + Math.floor(y / 3.5);
-    min = Math.round(min / 5) * 5;
+
+    // SNAP: 15min na mobilnom, 5min na desktopu (isto kao do sada),
+    // ali bez gubitka: desktop ostaje precizniji.
+    const SNAP = isMobile ? 15 : 5;
+    min = Math.round(min / SNAP) * SNAP;
+
     return clamp(min, openMin, closeMin);
   };
 
@@ -1805,14 +1823,14 @@ function DayGrid({
     setIsDragging(true);
     setDragEmpId(empId);
     setDragStartMin(startMin);
-    setDragCurrentMin(startMin);               // NEW
+    setDragCurrentMin(startMin);
     setPreviewTop(pxFromMin(startMin - openMin));
     setPreviewHeight(0);
   };
   const handleMouseMove = (e, empId) => {
     if (!isDragging || dragEmpId !== empId) return;
     const currentMin = getMinFromEvent(e);
-    setDragCurrentMin(currentMin);             // NEW
+    setDragCurrentMin(currentMin);
     const min1 = Math.min(dragStartMin, currentMin);
     const min2 = Math.max(dragStartMin, currentMin);
     setPreviewTop(pxFromMin(min1 - openMin));
@@ -1826,29 +1844,31 @@ function DayGrid({
     if (endMinFinal - startMinFinal < 5) {
       setIsDragging(false);
       setDragEmpId(null);
-      setDragCurrentMin(null);                 // NEW
+      setDragCurrentMin(null);
       return;
     }
     onCreateBlock(empId, startMinFinal, endMinFinal);
     setIsDragging(false);
     setDragEmpId(null);
-    setDragCurrentMin(null);                   // NEW
+    setDragCurrentMin(null);
   };
   const handleMouseLeave = () => {
     if (isDragging) {
       setIsDragging(false);
       setDragEmpId(null);
-      setDragCurrentMin(null);                 // NEW
+      setDragCurrentMin(null);
     }
   };
 
   const handleTouchStart = (e, empId) => {
-      e.preventDefault();     
+    e.preventDefault();
     const startMin = getMinFromEvent(e);
+    startPixelYRef.current = getClientY(e);
+
     setIsDragging(true);
     setDragEmpId(empId);
     setDragStartMin(startMin);
-    setDragCurrentMin(startMin);               // NEW
+    setDragCurrentMin(startMin);
     setPreviewTop(pxFromMin(startMin - openMin));
     setPreviewHeight(0);
   };
@@ -1857,38 +1877,61 @@ function DayGrid({
     if (e.touches.length !== 1) return;
     e.preventDefault();
     const currentMin = getMinFromEvent(e);
-    setDragCurrentMin(currentMin);             // NEW
+    setDragCurrentMin(currentMin);
     const min1 = Math.min(dragStartMin, currentMin);
     const min2 = Math.max(dragStartMin, currentMin);
     setPreviewTop(pxFromMin(min1 - openMin));
     setPreviewHeight(pxFromMin(min2 - min1));
   };
   const handleTouchEnd = (e, empId) => {
-    if (!isDragging || dragEmpId !== empId) return;
-    if (e.changedTouches.length !== 1) {
-      setIsDragging(false);
-      setDragEmpId(null);
-      setDragCurrentMin(null);                 // NEW
-      return;
+    if (!isDragging || dragEmpId !== empId) {
+      // fallback za čisti tap bez “drag” state-a:
+      const endMin = getMinFromEvent(e);
+      return handleTapLogic(empId, endMin);
     }
+
     const endMin = getMinFromEvent(e);
     const startMinFinal = Math.min(dragStartMin, endMin);
     const endMinFinal = Math.max(dragStartMin, endMin);
-    if (endMinFinal - startMinFinal < 5) {
+
+    // Ako je pomeraj vrlo mali, tretiraj kao TAP umesto blok-drag-a
+    if (Math.abs(endMin - dragStartMin) < 5) {
       setIsDragging(false);
       setDragEmpId(null);
-      setDragCurrentMin(null);                 // NEW
-      return;
+      setDragCurrentMin(null);
+      return handleTapLogic(empId, endMin);
     }
+
     onCreateBlock(empId, startMinFinal, endMinFinal);
     setIsDragging(false);
     setDragEmpId(null);
-    setDragCurrentMin(null);                   // NEW
+    setDragCurrentMin(null);
+  };
+
+  // TAP–TAP: prvi tap postavlja start, drugi tap (na istoj koloni) postavlja kraj
+  const handleTapLogic = (empId, min) => {
+    // SNAP i za tap radi konzistentnosti:
+    const SNAP = isMobile ? 15 : 5;
+    const snapped = Math.round(min / SNAP) * SNAP;
+
+    if (pendingTapStartMin == null || pendingTapEmpId !== empId) {
+      setPendingTapEmpId(empId);
+      setPendingTapStartMin(snapped);
+      return;
+    }
+    // već postoji start u istoj koloni -> kreiraj blok
+    const s = Math.min(pendingTapStartMin, snapped);
+    const e = Math.max(pendingTapStartMin, snapped);
+    if (e - s >= 5) {
+      onCreateBlock(empId, s, e);
+    }
+    setPendingTapStartMin(null);
+    setPendingTapEmpId(null);
   };
 
   return (
     <div style={{ ...gridWrap, paddingLeft: 0 }} className="grid-day">
-      {/* GLOBALNA vremenska traka: trenutno sakrivena istim stilom koji već koristiš */}
+      {/* GLOBALNA vremenska traka: sakrivena na desktopu, kao što već koristiš */}
       {!isMobile ? (
         <div
           className="time-axis"
@@ -1936,8 +1979,10 @@ function DayGrid({
               <div
                 style={{
                   ...colBody,
-                      touchAction: isDragging && isMobile ? "none" : "manipulation",
-    overscrollBehavior: "contain",
+                  touchAction: isDragging && isMobile ? "none" : "manipulation",
+                  overscrollBehavior: "contain",
+                  WebkitUserSelect: "none",
+                  userSelect: "none",
                   height: gridHeight(closeMin - openMin),
                   paddingLeft: gutterW,
                   paddingTop: 8,
@@ -2165,7 +2210,27 @@ function DayGrid({
                   );
                 })}
 
-                {/* PREVIEW selekcije + živa etiketa sa vremenom (NEW) */}
+                {/* TAP–TAP “pin” (vizuelni indikator starta na toj koloni) */}
+                {pendingTapEmpId === empId && pendingTapStartMin != null && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 8,
+                      top: pxFromMin(pendingTapStartMin - openMin) - 6,
+                      width: 12,
+                      height: 12,
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,.95)",
+                      border: "2px solid #ff5fa2",
+                      boxShadow: "0 2px 6px rgba(0,0,0,.35)",
+                      zIndex: 7,
+                      pointerEvents: "none",
+                    }}
+                    title={`Start: ${minToTime(pendingTapStartMin)}`}
+                  />
+                )}
+
+                {/* PREVIEW selekcije + živa etiketa sa vremenom */}
                 {isDragging && dragEmpId === empId && (() => {
                   const m1 = Math.min(dragStartMin, dragCurrentMin ?? dragStartMin);
                   const m2 = Math.max(dragStartMin, dragCurrentMin ?? dragStartMin);
