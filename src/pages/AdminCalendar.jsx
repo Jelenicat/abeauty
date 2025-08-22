@@ -2823,8 +2823,15 @@ function ScheduleGrid({
   const openMin = timeToMin(hours.open);
   const closeMin = timeToMin(hours.close);
 
-  // NEW: Define gutter width for time labels (match your gridTemplateColumns if different)
-  const gutterW = 80;
+  // --- NOVO: uža osa na mobilnom ---
+  const axisWidth = isMobile ? 36 : 72;
+  const timeAxisStyle = {
+    ...timeAxis,          // koristi postojeći stil iz fajla
+    width: axisWidth,
+    paddingLeft: isMobile ? 4 : 8,
+    paddingRight: 4,
+    fontSize: isMobile ? 10 : 12,
+  };
 
   const laid = useMemo(() => {
     const items = (appts || []).map((a) => ({ ...a }));
@@ -2872,16 +2879,16 @@ function ScheduleGrid({
       </div>
 
       <div style={gridWrap} className="grid-schedule">
-        {!isMobile && (
-          <div style={{ ...timeAxis, height: gridHeight(closeMin - openMin) }}>
-            {timeMarks(openMin, closeMin).map((t) => (
-              <div key={t} style={markRow}>
-                <span style={markLbl}>{minToTime(t)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        
+        {/* UVEK prikaži vremensku osu (na mobilnom uža) */}
+        <div style={{ ...timeAxisStyle, height: gridHeight(closeMin - openMin) }}>
+          {timeMarks(openMin, closeMin).map((t) => (
+            <div key={t} style={markRow}>
+              <span style={markLbl}>{minToTime(t)}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Kolona sa terminima */}
         <div
           style={{
             ...colBody,
@@ -2890,65 +2897,8 @@ function ScheduleGrid({
             background: "rgba(255,255,255,.12)",
             borderRadius: 16,
             border: "0.5px solid rgba(255,255,255,.25)",
-            // NEW: Add paddingLeft on mobile to make space for internal time line
-            ...(isMobile ? { paddingLeft: gutterW, paddingTop: 8 } : {}),
           }}
         >
-          {/* NEW: Internal time line (dashed lines + labels) - only on mobile */}
-          {isMobile && (
-            <div
-              aria-hidden
-              style={{
-                position: "absolute",
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: gutterW,
-                pointerEvents: "none",
-                zIndex: 3,
-              }}
-            >
-              {timeMarks(openMin, closeMin).map((t) => {
-                const y = pxFromMin(t - openMin);
-                const safeTop = Math.max(10, y);
-                return (
-                  <div key={t}>
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        top: y,
-                        height: 1,
-                        transform: "translateY(-0.5px)",
-                        borderTop: "1px dashed rgba(255,255,255,.25)",
-                      }}
-                    />
-                    <span
-                      style={{
-                        position: "absolute",
-                        left: 6,
-                        top: safeTop,
-                        transform: "translateY(-50%)",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        lineHeight: 1,
-                        padding: "2px 6px",
-                        borderRadius: 6,
-                        background: "rgba(0,0,0,.35)",
-                        color: "rgba(255,255,255,1)",
-                        textShadow: "0 1px 2px rgba(0,0,0,.35)",
-                        zIndex: 4,
-                      }}
-                    >
-                      {minToTime(t)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
           {laid.map((a) => {
             const top = pxFromMin(a.startMin - openMin);
             const height = pxFromMin(a.endMin - a.startMin);
@@ -2980,9 +2930,7 @@ function ScheduleGrid({
                   left: `calc(${leftPct}% + 6px)`,
                   width: `calc(${widthPct}% - 12px)`,
                 }}
-                title={`${srv} • ${minToTime(a.startMin)}–${minToTime(
-                  a.endMin
-                )} • ${empName}`}
+                title={`${srv} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}`}
               >
                 <div style={cardTitle(isMobile)}>{srv}</div>
 
@@ -3021,6 +2969,7 @@ function ScheduleGrid({
               </button>
             );
           })}
+
           {!laid.length && (
             <div
               style={{
@@ -3040,6 +2989,8 @@ function ScheduleGrid({
     </div>
   );
 }
+
+
 /* -------------------- Month Roster (WINDOW: 7 dana desktop / 1 dan mobilni) -------------------- */
 
 function MonthRosterWindow({ monthStr, shifts, breaks, employeesById, isMobile }) {
