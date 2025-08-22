@@ -3326,8 +3326,8 @@ const apptCard = (top, height, bg, disabled = false) => ({
 /* naslov na kartici – bez sečenja, uvek ceo tekst */
 const cardTitle = (isMobile) => ({
   fontWeight: 800,
-  fontSize: isMobile ? 16 : 14,
-  lineHeight: 1.18,
+  fontSize: isMobile ? 14 : 12,
+  lineHeight: 1,
   marginBottom: 4,
   textAlign: "left",
   // bez WebkitLineClamp – prikazuj ceo naslov
@@ -3559,8 +3559,8 @@ const badgeNoShow = {
   borderRadius: 999,
   background: "#ffe8ea",
   color: "#7a1b1b",
-  fontSize: 12,
-  fontWeight: 800,
+  fontSize: 11,
+  fontWeight: 700,
 };
 const badgePenalty = {
   alignSelf: "flex-start",
@@ -3571,8 +3571,8 @@ const badgePenalty = {
   borderRadius: 999,
   background: "#fff7e6",   // blago narandžasto
   color: "#7a3d0b",
-  fontSize: 12,
-  fontWeight: 800,
+  fontSize: 11,
+  fontWeight: 700,
 };
 
 
@@ -3737,8 +3737,8 @@ const badge = {
   gap: 6,
   padding: "4px 8px",
   borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 800,
+  fontSize: 11,
+  fontWeight: 700,
 };
 const infoBox = {
   display: "flex",
