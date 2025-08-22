@@ -2967,7 +2967,7 @@ function ScheduleGrid({
               servicesById.get(a.serviceId)?.name ||
               a.serviceName ||
               "Usluga";
-
+const price = Number(a.price ?? srvDef?.price ?? 0); // NOVO
             const phone = normPhone(a.clientPhone);
             const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
             const pendingPen = a.clientPhone ? pendingPenaltyByPhone.get(normPhone(a.clientPhone)) : null;
@@ -2987,23 +2987,36 @@ function ScheduleGrid({
                   left: `calc(${leftPct}% + 6px)`,
                   width: `calc(${widthPct}% - 12px)`,
                 }}
-                title={`${srv} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}`}
+               title={`${srv} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}${
+  price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""
+}`}
+
               >
                 <div style={cardTitle(isMobile)}>{srv}</div>
 
-                <div style={metaRow}>
-                  <span style={pill}>
-                    <FiClock style={{ marginRight: 6 }} />
-                    {minToTime(a.startMin)}–{minToTime(a.endMin)}
-                  </span>
-                  <span style={pillLight(isMobile)}>
-                    <FiUser style={{ marginRight: 6 }} />
-                    {empName}
-                  </span>
-                  {a.clientName && (
-                    <span style={pillLight(isMobile)}>{a.clientName}</span>
-                  )}
-                </div>
+            <div style={metaRow}>
+  <span style={pill}>
+    <FiClock style={{ marginRight: 6 }} />
+    {minToTime(a.startMin)}–{minToTime(a.endMin)}
+  </span>
+
+  {/* NOVO: cena usluge na kartici */}
+  {price > 0 && (
+    <span style={pillLight(isMobile)}>
+      {price.toLocaleString("sr-RS")} RSD
+    </span>
+  )}
+
+  <span style={pillLight(isMobile)}>
+    <FiUser style={{ marginRight: 6 }} />
+    {empName}
+  </span>
+
+  {a.clientName && (
+    <span style={pillLight(isMobile)}>{a.clientName}</span>
+  )}
+</div>
+
 
                 {showNoShowHere && (
                   <div style={badgeNoShow}>
