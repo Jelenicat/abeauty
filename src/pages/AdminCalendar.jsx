@@ -149,7 +149,7 @@ const apptBgFor = (a, colorForServiceId) => {
 // --- UI za izbor opsega dana (Pon..Ned) ---
 const DOW_SR_SHORT = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
 
-function BlockDaysBar({ visible, anchorDate, onCancel, onConfirm }) {
+function BlockDaysBar({ visible, anchorDate, onCancel, onConfirm, isMobile }) {
   // ako nije vidljivo — ne renderuj NIŠTA
   if (!visible) return null;
 
@@ -207,16 +207,20 @@ function BlockDaysBar({ visible, anchorDate, onCancel, onConfirm }) {
   };
 
   // stilovi
-  const stripWrap = {
+    const stripWrap = {
     display: "flex",
-    flexWrap: "wrap",
-    gap: 12,
-    alignItems: "center",
-    padding: "12px",
+    flexDirection: isMobile ? "column" : "row",
+    alignItems: isMobile ? "stretch" : "center",
+    gap: isMobile ? 8 : 12,
+    padding: isMobile ? "8px" : "12px",
   };
+
   const dayBtn = (active) => ({
-    padding: "14px 16px",
-    minWidth: 120,
+    display: "block",
+    width: isMobile ? "100%" : undefined,   // ⬅ FULL WIDTH na telefonu
+    boxSizing: "border-box",
+    padding: isMobile ? "12px 14px" : "14px 16px",
+    minWidth: isMobile ? "auto" : 120,
     borderRadius: 16,
     fontWeight: 800,
     lineHeight: 1.1,
@@ -230,12 +234,17 @@ function BlockDaysBar({ visible, anchorDate, onCancel, onConfirm }) {
     boxShadow: active
       ? "0 0 0 2px rgba(255,105,180,.15) inset"
       : "0 2px 6px rgba(0,0,0,.15)",
+    textAlign: "left",
   });
+
   const actionsWrap = {
     display: "flex",
     gap: 12,
-    marginLeft: "auto",
+    marginLeft: isMobile ? 0 : "auto",
     flexWrap: "wrap",
+    width: isMobile ? "100%" : "auto",
+    justifyContent: isMobile ? "space-between" : "flex-start",
+    marginTop: isMobile ? 8 : 0,
   };
   const ghostBtn = {
     padding: "10px 14px",
@@ -1582,6 +1591,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
 <BlockDaysBar
   visible={mode === "block" && showBlockDaysUI}
   anchorDate={dayDate}
+  isMobile={isMobile}               // ⬅ DODAJ OVO
   onCancel={() => setShowBlockDaysUI(false)}
   onConfirm={async (dStart, dEnd) => {
     await blockWholeDaysRange({
@@ -1592,6 +1602,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     setShowBlockDaysUI(false);
   }}
 />
+
 
 
               {/* MOBILNA TRAKA RADNICA */}
