@@ -2823,6 +2823,9 @@ function ScheduleGrid({
   const openMin = timeToMin(hours.open);
   const closeMin = timeToMin(hours.close);
 
+  // NEW: Define gutter width for time labels (match your gridTemplateColumns if different)
+  const gutterW = 80;
+
   const laid = useMemo(() => {
     const items = (appts || []).map((a) => ({ ...a }));
     items.sort((a, b) => (a.startMin || 0) - (b.startMin || 0));
@@ -2879,7 +2882,6 @@ function ScheduleGrid({
           </div>
         )}
         
-
         <div
           style={{
             ...colBody,
@@ -2888,9 +2890,65 @@ function ScheduleGrid({
             background: "rgba(255,255,255,.12)",
             borderRadius: 16,
             border: "0.5px solid rgba(255,255,255,.25)",
-            
+            // NEW: Add paddingLeft on mobile to make space for internal time line
+            ...(isMobile ? { paddingLeft: gutterW, paddingTop: 8 } : {}),
           }}
         >
+          {/* NEW: Internal time line (dashed lines + labels) - only on mobile */}
+          {isMobile && (
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: gutterW,
+                pointerEvents: "none",
+                zIndex: 3,
+              }}
+            >
+              {timeMarks(openMin, closeMin).map((t) => {
+                const y = pxFromMin(t - openMin);
+                const safeTop = Math.max(10, y);
+                return (
+                  <div key={t}>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        top: y,
+                        height: 1,
+                        transform: "translateY(-0.5px)",
+                        borderTop: "1px dashed rgba(255,255,255,.25)",
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: 6,
+                        top: safeTop,
+                        transform: "translateY(-50%)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        padding: "2px 6px",
+                        borderRadius: 6,
+                        background: "rgba(0,0,0,.35)",
+                        color: "rgba(255,255,255,1)",
+                        textShadow: "0 1px 2px rgba(0,0,0,.35)",
+                        zIndex: 4,
+                      }}
+                    >
+                      {minToTime(t)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {laid.map((a) => {
             const top = pxFromMin(a.startMin - openMin);
             const height = pxFromMin(a.endMin - a.startMin);
@@ -2906,14 +2964,12 @@ function ScheduleGrid({
             const phone = normPhone(a.clientPhone);
             const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
             const pendingPen = a.clientPhone ? pendingPenaltyByPhone.get(normPhone(a.clientPhone)) : null;
-const hasPendingPenalty = !!pendingPen;
-const penaltyApplied = a?.penaltyApplied?.amount > 0;
+            const hasPendingPenalty = !!pendingPen;
+            const penaltyApplied = a?.penaltyApplied?.amount > 0;
 
-const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
-const showPendingPenaltyHere = hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id;
-const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
-
-
+            const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
+            const showPendingPenaltyHere = hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id;
+            const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
 
             return (
               <button
@@ -2945,26 +3001,25 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
                 </div>
 
                 {showNoShowHere && (
-      <div style={badgeNoShow}>
-        <FiAlertTriangle style={{ marginRight: 6 }} />
-        No-show istorija
-      </div>
-    )}
-    {showPendingPenaltyHere && (
-      <div style={badgePenalty}>
-        <FiInfo style={{ marginRight: 6 }} />
-        Kazna za naplatu
-      </div>
-    )}
-    {penaltyApplied && (
-      <div style={badgePenalty}>
-        <FiInfo style={{ marginRight: 6 }} />
-        Kazna primenjena
-      </div>
-    )}
-  </button>
-);
-
+                  <div style={badgeNoShow}>
+                    <FiAlertTriangle style={{ marginRight: 6 }} />
+                    No-show istorija
+                  </div>
+                )}
+                {showPendingPenaltyHere && (
+                  <div style={badgePenalty}>
+                    <FiInfo style={{ marginRight: 6 }} />
+                    Kazna za naplatu
+                  </div>
+                )}
+                {penaltyApplied && (
+                  <div style={badgePenalty}>
+                    <FiInfo style={{ marginRight: 6 }} />
+                    Kazna primenjena
+                  </div>
+                )}
+              </button>
+            );
           })}
           {!laid.length && (
             <div
@@ -2985,7 +3040,6 @@ const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
     </div>
   );
 }
-
 /* -------------------- Month Roster (WINDOW: 7 dana desktop / 1 dan mobilni) -------------------- */
 
 function MonthRosterWindow({ monthStr, shifts, breaks, employeesById, isMobile }) {
