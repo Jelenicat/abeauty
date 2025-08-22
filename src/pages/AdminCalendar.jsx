@@ -409,27 +409,44 @@ export default function AdminCalendar() {
   const nav = useNavigate();
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 // --- mobile detect (≤640px) — MORA biti pre prve upotrebe `isMobile`
-const [isMobile, setIsMobile] = useState(false);
-useEffect(() => {
-  const mq = window.matchMedia("(max-width: 640px)");
-  const handler = (e) => setIsMobile(e.matches);
-  setIsMobile(mq.matches);
+// --- mobile detect (≤640px) — inicijalno tačno stanje
+const [isMobile, setIsMobile] = useState(() => {
   try {
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    return window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
   } catch {
-    // Safari fallback
-    mq.addListener(handler);
-    return () => mq.removeListener(handler);
+    return false;
   }
+});
+
+// listen za promene širine
+useEffect(() => {
+  let mq;
+  try {
+    mq = window.matchMedia("(max-width: 640px)");
+  } catch {
+    return;
+  }
+  const handler = (e) => setIsMobile(e.matches);
+  // modern + Safari fallback
+  if (mq.addEventListener) mq.addEventListener("change", handler);
+  else mq.addListener(handler);
+  return () => {
+    if (mq.removeEventListener) mq.removeEventListener("change", handler);
+    else mq.removeListener(handler);
+  };
 }, []);
+
 // create (day): 'booking' | 'block'
 const [mode, setMode] = useState(null);
 
-// Desktop: ako nema režima, automatski postavi na "booking"
+// (OPCIJA A – preporučeno) ne forsiraj desktop default uopšte
+//   → obriši ceo efekat ispod
+// (OPCIJA B) ostavi ga ali tek kad je isMobile pouzdano poznat:
 useEffect(() => {
-  if (!isMobile && mode === null) setMode("booking");
-}, [isMobile, mode]);
+  if (mode === null && isMobile === false) setMode("booking");
+  // napomena: izvršiće se samo na desktopu
+}, [isMobile]); // nema potrebe da zavisi od mode
+
 
 // Pomoćni flagovi za čitljiv JSX
 const isBooking = mode === "booking";
