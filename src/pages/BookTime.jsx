@@ -151,8 +151,13 @@ if (!segments.length) {
         const aSnap = await getDocs(qA);
         const busy = aSnap.docs
   .map((d) => d.data())
-  // prikaži sve što NIJE booking ili je booking ali aktivan (booked)
- .filter(a => a.type !== "booking" || a.status === "booked");
+  .filter(a =>
+    (a.type === "booking" && a.status === "booked") || // aktivne rezervacije
+    a.type === "block"      ||                         // ručne blokade
+    a.type === "vacation"   ||                         // odmori
+    a.type === "break"                                // pauze
+  );
+
         const slots = computeSlots({ segments, busy, totalMin: Number(activeService.durationMin || 0), step: 15 });
         map.set(e.id, slots);
       }
@@ -203,10 +208,20 @@ if (!segments.length) {
       const dk = dateKey(selectedDay);
       const qA = query(collection(db, "appointments"), where("dateKey", "==", dk), where("employeeId", "==", emp.id));
       const aSnap = await getDocs(qA);
-      const busy = aSnap.docs.map((d) => d.data());
-      if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))) {
-        alert("Termin je upravo zauzet. Izaberi drugi."); return;
-      }
+    const busy = aSnap.docs
+  .map((d) => d.data())
+  .filter(a =>
+    (a.type === "booking" && a.status === "booked") ||
+    a.type === "block" ||
+    a.type === "vacation" ||
+    a.type === "break"
+  );
+
+if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))) {
+  alert("Termin je upravo zauzet. Izaberi drugi.");
+  return;
+}
+
       await addDoc(collection(db, "appointments"), {
         type: "booking",
         status: "booked",
