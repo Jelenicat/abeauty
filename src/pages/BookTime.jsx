@@ -54,7 +54,16 @@ function computeSlots({ segments, busy, totalMin, step = 15 }) {
   }
   return res;
 }
-
+const DEFAULT_SALON_HOURS = {
+  mon: { open: "08:00", close: "22:00" },
+  tue: { open: "08:00", close: "22:00" },
+  wed: { open: "08:00", close: "22:00" },
+  thu: { open: "08:00", close: "22:00" },
+  fri: { open: "08:00", close: "22:00" },
+  sat: { open: "08:00", close: "20:00" },
+  sun: { open: "09:00", close: "17:00" },
+};
+const DOW = ["sun","mon","tue","wed","thu","fri","sat"];
 /* ---------- responsive ---------- */
 function useIsMobile(bp = 820) {
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.innerWidth <= bp : true);
@@ -72,7 +81,17 @@ export default function BookTime() {
   const { user } = useAuth();
   const nav = useNavigate();
   const isMobile = useIsMobile();
-
+const [salonHours, setSalonHours] = useState(DEFAULT_SALON_HOURS);
+useEffect(() => {
+  (async () => {
+    try {
+      const snap = await getDoc(doc(db, "settings", "salonHours"));
+      if (snap.exists()) {
+        setSalonHours({ ...DEFAULT_SALON_HOURS, ...(snap.data() || {}) });
+      }
+    } catch {}
+  })();
+}, []);
   const backBtn = {
     height: 40, borderRadius: 12, border: "1px solid rgba(0,0,0,.12)", padding: "0 16px",
     fontWeight: 900, cursor: "pointer", background: "#fff", color: "#000", boxShadow: "0 6px 16px rgba(0,0,0,.08)"
@@ -121,8 +140,13 @@ export default function BookTime() {
       for (const e of eligible) {
         const qS = query(collection(db, "shifts"), where("dateKey", "==", dk), where("employeeId", "==", e.id));
         const sSnap = await getDocs(qS);
-        const segments = sSnap.docs.flatMap((d) => d.data().segments || []);
-        if (!segments.length) { map.set(e.id, []); continue; }
+        let segments = sSnap.docs.flatMap((d) => d.data().segments || []);
+if (!segments.length) {
+  const dowKey = DOW[selectedDay.getDay()];
+ const h = salonHours[dowKey] || DEFAULT_SALON_HOURS[dowKey];
+  // ako nema smene, radi od otvaranja do zatvaranja
+  segments = [{ start: h.open, end: h.close }];
+}
         const qA = query(collection(db, "appointments"), where("dateKey", "==", dk), where("employeeId", "==", e.id));
         const aSnap = await getDocs(qA);
         const busy = aSnap.docs.map((d) => d.data());
@@ -133,7 +157,7 @@ export default function BookTime() {
     }
     load();
     return () => { cancel = true; };
-  }, [selectedDay, eligible, activeService]);
+ }, [selectedDay, eligible, activeService, salonHours]);
 
   const combined = useMemo(() => {
     const arr = [];
