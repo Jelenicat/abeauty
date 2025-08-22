@@ -2833,15 +2833,21 @@ function ScheduleGrid({
   const openMin = timeToMin(hours.open);
   const closeMin = timeToMin(hours.close);
 
-  // --- NOVO: uža osa na mobilnom ---
-  const axisWidth = isMobile ? 36 : 72;
+  // Levu osu prikazujemo SAMO na desktopu
+  const showAxisLeft = !isMobile;
+  const axisWidth = 72;
   const timeAxisStyle = {
-    ...timeAxis,          // koristi postojeći stil iz fajla
+    ...timeAxis,
     width: axisWidth,
-    paddingLeft: isMobile ? 4 : 8,
+    paddingLeft: 8,
     paddingRight: 4,
-    fontSize: isMobile ? 10 : 12,
+    fontSize: 12,
+    borderRight: "0.5px solid rgba(255,255,255,.25)",
   };
+
+  // "Sada" linija (samo ako je danas)
+  const isToday = dateKey(dateObj) === dateKey(new Date());
+  const nowMin = isToday ? (new Date().getHours() * 60 + new Date().getMinutes()) : null;
 
   const laid = useMemo(() => {
     const items = (appts || []).map((a) => ({ ...a }));
@@ -2889,16 +2895,18 @@ function ScheduleGrid({
       </div>
 
       <div style={gridWrap} className="grid-schedule">
-        {/* UVEK prikaži vremensku osu (na mobilnom uža) */}
-        <div style={{ ...timeAxisStyle, height: gridHeight(closeMin - openMin) }}>
-          {timeMarks(openMin, closeMin).map((t) => (
-            <div key={t} style={markRow}>
-              <span style={markLbl}>{minToTime(t)}</span>
-            </div>
-          ))}
-        </div>
+        {/* Leva vremenska osa samo na DESKTOPU */}
+        {showAxisLeft && (
+          <div style={{ ...timeAxisStyle, height: gridHeight(closeMin - openMin) }}>
+            {timeMarks(openMin, closeMin).map((t) => (
+              <div key={t} style={markRow}>
+                <span style={markLbl}>{minToTime(t)}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Kolona sa terminima */}
+        {/* Kolona sa terminima (na MOBILNOM sadrži sve linije/sate unutra) */}
         <div
           style={{
             ...colBody,
@@ -2909,6 +2917,45 @@ function ScheduleGrid({
             border: "0.5px solid rgba(255,255,255,.25)",
           }}
         >
+          {/* Unutrašnje “hour lines” — uvek crtamo unutar kolone (na tel. ovo je jedina osa) */}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+            }}
+          >
+            {timeMarks(openMin, closeMin).map((t) => (
+              <div
+                key={t}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: pxFromMin(t - openMin),
+                  height: 1,
+                  background: "rgba(255,255,255,.12)",
+                }}
+              />
+            ))}
+
+            {/* “Sada” linija samo unutar kolone */}
+            {isToday && nowMin >= openMin && nowMin <= closeMin && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: pxFromMin(nowMin - openMin),
+                  height: 2,
+                  background: "rgba(255,105,180,.95)",
+                  boxShadow: "0 0 0 1px rgba(255,105,180,.35)",
+                }}
+              />
+            )}
+          </div>
+
           {laid.map((a) => {
             const top = pxFromMin(a.startMin - openMin);
             const height = pxFromMin(a.endMin - a.startMin);
@@ -2999,6 +3046,7 @@ function ScheduleGrid({
     </div>
   );
 }
+
 
 
 /* -------------------- Month Roster (WINDOW: 7 dana desktop / 1 dan mobilni) -------------------- */
