@@ -6,7 +6,7 @@ import { db } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import {
   collection, onSnapshot, orderBy, query, where,
-  getDocs, addDoc, serverTimestamp
+  getDocs, addDoc, serverTimestamp, getDoc, doc
 } from "firebase/firestore";
 
 /* ---------- helpers ---------- */
@@ -149,7 +149,10 @@ if (!segments.length) {
 }
         const qA = query(collection(db, "appointments"), where("dateKey", "==", dk), where("employeeId", "==", e.id));
         const aSnap = await getDocs(qA);
-        const busy = aSnap.docs.map((d) => d.data());
+        const busy = aSnap.docs
+  .map((d) => d.data())
+  // prikaži sve što NIJE booking ili je booking ali aktivan (booked)
+ .filter(a => a.type !== "booking" || a.status === "booked");
         const slots = computeSlots({ segments, busy, totalMin: Number(activeService.durationMin || 0), step: 15 });
         map.set(e.id, slots);
       }
