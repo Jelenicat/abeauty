@@ -1940,12 +1940,18 @@ function DayGrid({
   // Ref-ovi na tela kolona da bismo skrolovali najbliži scroll container
   const colRefs = useRef(new Map());
 
-  const DRAG_THRESHOLD_PX = 8;   // prag za početak draga na mobilnom
+  const DRAG_THRESHOLD_PX = 20;
   const EDGE_PX = 60;            // edge zona za autoscroll
   const AUTOSCROLL_STEP = 16;    // brzina autoscroll-a (px po koraku)
 
   // SNAP: grublje na mobilnom (lakše pogoditi), finije na desktopu
-  const SNAP_MIN = isMobile ? 15 : 5;
+  const SNAP_MIN = isMobile ? 30 : 5;
+
+  // touch sa unutrašnjih elemenata ne sme da “procure” do kolone
+  const stopTouchPropagation = (e) => {
+    e.stopPropagation();
+    // ne radimo preventDefault ovde da bismo zadržali sintetisani click (otvaranje detalja)
+  };
 
   // “×” dugme za brisanje BLOKA
   const blockDeleteBtn = {
@@ -2107,6 +2113,13 @@ function DayGrid({
     if (tapStartMin == null || tapEmpId !== empId) {
       setTapEmpId(empId);
       setTapStartMin(minute);
+
+      // posle 5 sekundi poništi prvi tap ako nema drugog
+      setTimeout(() => {
+        setTapEmpId((cur) => (cur === empId ? null : cur));
+        setTapStartMin((cur) => (cur === minute ? null : cur));
+      }, 5000);
+
       return;
     }
     // 2. drugi tap u istoj koloni -> napravi blokadu
@@ -2394,6 +2407,8 @@ function DayGrid({
                             }`
                       }
                       onDragOver={(e) => e.preventDefault()}
+                      onTouchStart={stopTouchPropagation}
+                      onTouchEnd={stopTouchPropagation}
                     >
                       <div style={cardTitle(isMobile)}>
                         {isVacation
@@ -2464,6 +2479,15 @@ function DayGrid({
                           type="button"
                           title="Obriši blokadu"
                           style={blockDeleteBtn}
+                          onTouchStart={stopTouchPropagation}
+                          onTouchEnd={(e) => {
+                            stopTouchPropagation(e);
+                            try {
+                              deleteAppt?.(a.id ?? a);
+                            } catch {
+                              if (a?.id) deleteAppt?.(a.id);
+                            }
+                          }}
                           onClick={(e) => {
                             e.stopPropagation();
                             try {
