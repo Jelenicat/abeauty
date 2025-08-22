@@ -149,79 +149,170 @@ const apptBgFor = (a, colorForServiceId) => {
 // --- UI za izbor opsega dana (Pon..Ned) ---
 const DOW_SR_SHORT = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
 
-function BlockDaysBar({ visible, anchorDate, onConfirm, onCancel }) {
-  const [start, setStart] = React.useState(null);
-  const [end, setEnd] = React.useState(null);
+function BlockDaysBar({
+  days = [],
+  pick,
+  inRange,
+  start,
+  end,
+  onCancel,
+  onConfirm,
+  isMobile,
+}) {
+  const isDisabled = !start; // nema početka selekcije
 
-  React.useEffect(() => { if (!visible) { setStart(null); setEnd(null); } }, [visible]);
-  if (!visible) return null;
+  // kontejner: na telefonu sticky pri dnu, na desktopu kao ranije
+  const wrap = isMobile
+    ? {
+        position: "sticky",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        padding: 12,
+        background:
+          "linear-gradient(180deg, rgba(20,20,20,.85), rgba(20,20,20,.96))",
+        backdropFilter: "blur(6px)",
+        borderTop: "1px solid rgba(255,255,255,.15)",
+      }
+    : {
+        padding: "8px 12px",
+        background:
+          "linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04))",
+        borderTop: "1px solid rgba(255,255,255,.15)",
+        borderRadius: 12,
+        marginTop: 8,
+      };
 
-  const at0 = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
-  const add = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
-  const startOfWeek = (d) => { const x = at0(d); const w=(x.getDay()||7); return add(x, 1-w); };
+  const daysGrid = isMobile
+    ? {
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gap: 8,
+        width: "100%",
+      }
+    : {
+        display: "grid",
+        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+        gap: 8,
+      };
 
-  const sow = startOfWeek(anchorDate);
-  const days = Array.from({length:7}, (_,i)=>add(sow,i));
+  const dayBtn = (selected) => ({
+    padding: "10px 6px",
+    borderRadius: 10,
+    fontWeight: 700,
+    border: selected
+      ? "2px solid #ff5fa2"
+      : "1px solid rgba(255,255,255,.35)",
+    background: selected
+      ? "rgba(255,95,162,.18)"
+      : "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+    color: "#fff",
+    textAlign: "center",
+  });
 
-  const pick = (d) => {
-    if (!start || (start && end)) { setStart(d); setEnd(null); return; }
-    if (d < start) { setEnd(start); setStart(d); } else { setEnd(d); }
-  };
-  const inRange = (d) => {
-    if (!start) return false;
-    const t=+at0(d), s=+at0(start), e=+(end?at0(end):at0(start));
-    return t>=s && t<=e;
-  };
+  const actionsRow = isMobile
+    ? {
+        display: "flex",
+        gap: 8,
+        marginTop: 12,
+        width: "100%",
+      }
+    : {
+        display: "flex",
+        gap: 8,
+        marginTop: 10,
+        justifyContent: "flex-end",
+      };
+
+  const btnSecondary = isMobile
+    ? {
+        flex: 1,
+        padding: "12px",
+        borderRadius: 10,
+        fontWeight: 800,
+        border: "1px solid rgba(255,255,255,.35)",
+        background: "rgba(0,0,0,.1)",
+        color: "#fff",
+      }
+    : {
+        padding: "8px 12px",
+        borderRadius: 10,
+        fontWeight: 700,
+        border: "1px solid rgba(255,255,255,.35)",
+        background: "rgba(0,0,0,.1)",
+        color: "#fff",
+      };
+
+  const btnPrimary = isMobile
+    ? {
+        flex: 1,
+        padding: "12px",
+        borderRadius: 10,
+        fontWeight: 800,
+        border: "1px solid rgba(255,255,255,.35)",
+        background: "linear-gradient(180deg,#ff5fa2,#ff77b3)",
+        color: "#fff",
+        opacity: isDisabled ? 0.6 : 1,
+      }
+    : {
+        padding: "8px 12px",
+        borderRadius: 10,
+        fontWeight: 700,
+        border: "1px solid rgba(255,255,255,.35)",
+        background: "linear-gradient(180deg,#ff5fa2,#ff77b3)",
+        color: "#fff",
+        opacity: isDisabled ? 0.6 : 1,
+      };
+
+  // kratka putokaz etiketa (opciono)
+  const hint = isMobile
+    ? {
+        marginTop: 8,
+        fontSize: 12,
+        color: "rgba(255,255,255,.75)",
+        textAlign: "center",
+      }
+    : { display: "none" };
 
   return (
-    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:8}}>
-      {days.map((d,i)=>(
-        <button key={i} onClick={()=>pick(d)} title={d.toLocaleDateString("sr-RS")}
-          style={{
-            padding:"8px 10px", borderRadius:10, fontWeight:800, minWidth:64,
-            border: inRange(d) ? "2px solid #ff5fa2" : "1px solid rgba(255,255,255,.35)",
-            background: inRange(d)
-              ? "rgba(255,95,162,.18)"
-              : "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
-            color:"#fff"
-          }}>
-          <div style={{fontSize:12,opacity:.85}}>{DOW_SR_SHORT[i]}</div>
-          <div style={{fontSize:12}}>{d.toLocaleDateString("sr-RS")}</div>
-        </button>
-      ))}
-<div style={{ display: "flex", gap: 8, marginTop: 12, width: "100%" }}>
-  <button
-    onClick={onCancel}
-    style={{
-      flex: 1,
-      padding: "10px",
-      borderRadius: 10,
-      fontWeight: 700,
-      border: "1px solid rgba(255,255,255,.35)",
-      background: "rgba(0,0,0,.1)",
-      color: "#000",
-    }}
-  >
-    Otkaži
-  </button>
-  <button
-    onClick={() => start && onConfirm(start, end || start)}
-    disabled={!start}
-    style={{
-      flex: 1,
-      padding: "10px",
-      borderRadius: 10,
-      fontWeight: 700,
-      border: "1px solid rgba(255,255,255,.35)",
-      background: "linear-gradient(180deg,#ff5fa2,#ff77b3)",
-      color: "#fff",
-      opacity: start ? 1 : 0.6,
-    }}
-  >
-    Blokiraj izabrane dane
-  </button>
-</div>
+    <div style={wrap}>
+      {/* grid sa danima */}
+      <div style={daysGrid}>
+        {days.map((d, i) => {
+          const sel = inRange?.(d);
+          return (
+            <button
+              key={d?.toISOString?.() ?? i}
+              onClick={() => pick?.(d)}
+              title={d?.toLocaleDateString?.("sr-RS")}
+              style={dayBtn(!!sel)}
+            >
+              <div style={{ fontSize: 12, opacity: 0.85 }}>
+                {(typeof DOW_SR_SHORT !== "undefined" && DOW_SR_SHORT[i]) ||
+                  ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"][i]}
+              </div>
+              <div style={{ fontSize: 12 }}>
+                {d?.toLocaleDateString?.("sr-RS")}
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
+      {/* akcije */}
+      <div style={actionsRow}>
+        <button onClick={onCancel} style={btnSecondary}>Otkaži</button>
+        <button
+          onClick={() => start && onConfirm?.(start, end || start)}
+          disabled={isDisabled}
+          style={btnPrimary}
+        >
+          Blokiraj izabrane dane
+        </button>
+      </div>
+
+      <div style={hint}>Na telefonu: tap-tap u koloni za opseg, ili dugme iznad imena za „ceo dan“.</div>
     </div>
   );
 }
@@ -1941,8 +2032,8 @@ function DayGrid({
   const colRefs = useRef(new Map());
 
   const DRAG_THRESHOLD_PX = 20;
-  const EDGE_PX = 60;            // edge zona za autoscroll
-  const AUTOSCROLL_STEP = 16;    // brzina autoscroll-a (px po koraku)
+  const EDGE_PX = 60;
+  const AUTOSCROLL_STEP = 16;
 
   // SNAP: grublje na mobilnom (lakše pogoditi), finije na desktopu
   const SNAP_MIN = isMobile ? 30 : 5;
@@ -1950,7 +2041,6 @@ function DayGrid({
   // touch sa unutrašnjih elemenata ne sme da “procure” do kolone
   const stopTouchPropagation = (e) => {
     e.stopPropagation();
-    // ne radimo preventDefault ovde da bismo zadržali sintetisani click (otvaranje detalja)
   };
 
   // “×” dugme za brisanje BLOKA
@@ -2018,7 +2108,6 @@ function DayGrid({
   };
 
   const getScrollContainer = (el) => {
-    // nađi najbližeg scrollable roditelja; ako nema, vrati window
     let node = el;
     while (node && node !== document.body) {
       const style = window.getComputedStyle(node);
@@ -2034,14 +2123,12 @@ function DayGrid({
   const autoScrollOnEdge = (clientY, anchorEl) => {
     const scroller = getScrollContainer(anchorEl);
     if (scroller === window) {
-      // skroluj prozor
       if (clientY > window.innerHeight - EDGE_PX) {
         window.scrollBy(0, AUTOSCROLL_STEP);
       } else if (clientY < EDGE_PX) {
         window.scrollBy(0, -AUTOSCROLL_STEP);
       }
     } else {
-      // skroluj najbliži scroll container
       const rect = scroller.getBoundingClientRect();
       if (clientY > rect.bottom - EDGE_PX) {
         scroller.scrollTop += AUTOSCROLL_STEP;
@@ -2114,11 +2201,11 @@ function DayGrid({
       setTapEmpId(empId);
       setTapStartMin(minute);
 
-      // posle 5 sekundi poništi prvi tap ako nema drugog
+      // posle 30 sekundi poništi prvi tap ako nema drugog
       setTimeout(() => {
         setTapEmpId((cur) => (cur === empId ? null : cur));
         setTapStartMin((cur) => (cur === minute ? null : cur));
-      }, 5000);
+      }, 30000);
 
       return;
     }
@@ -2130,14 +2217,13 @@ function DayGrid({
     setTapStartMin(null);
   };
 
-  /* -------------------- Touch drag (telefon) -------------------- */
+  /* -------------------- Touch (telefon): bez drop-in preview-a -------------------- */
   const handleTouchStart = (e, empId) => {
-    // Ne blokiramo scroll odmah — prvo "armiramo" drag
     const startMin = getMinFromEvent(e);
     armStartYRef.current = getClientY(e);
     armStartMinRef.current = startMin;
     setIsArming(true);
-    setIsDragging(false);
+    // ne koristimo isDragging na telefonu
     setDragEmpId(empId);
   };
 
@@ -2147,40 +2233,27 @@ function DayGrid({
     const clientY = getClientY(e);
     const dy = clientY - armStartYRef.current;
 
-    // Ako još "armiramo" i nije pređen prag — dozvoli prirodan skrol
+    // dok je ispod praga — prirodan scroll, ne diramo ništa
     if (isArming && Math.abs(dy) < DRAG_THRESHOLD_PX) {
       return;
     }
 
-    // Kreće drag (klasično povlačenje da i dalje bude moguće)
-    if (isArming) {
+    // prešli smo prag → tretiraj kao scroll/pan; izađi iz arming moda
+    if (isArming && Math.abs(dy) >= DRAG_THRESHOLD_PX) {
       setIsArming(false);
-      setIsDragging(true);
-      const startMin = armStartMinRef.current;
-      setDragStartMin(startMin);
-      setDragCurrentMin(startMin);
-      setPreviewTop(pxFromMin(startMin - openMin));
-      setPreviewHeight(0);
+      setDragEmpId(null);
+      // nema preventDefault — dozvoli skrol
+      return;
     }
 
-    if (!isDragging || dragEmpId !== empId) return;
-
-    // Sada blokiraj scroll i radi selekciju
-    e.preventDefault();
-    const currentMin = getMinFromEvent(e);
+    // ako iz nekog razloga dođe ovde, i dalje ne radimo preview na mobilnom
     const anchorEl = colRefs.current.get(empId) || e.currentTarget;
     autoScrollOnEdge(clientY, anchorEl);
-
-    setDragCurrentMin(currentMin);
-    const min1 = Math.min(dragStartMin, currentMin);
-    const min2 = Math.max(dragStartMin, currentMin);
-    setPreviewTop(pxFromMin(min1 - openMin));
-    setPreviewHeight(pxFromMin(min2 - min1));
   };
 
   const handleTouchEnd = (e, empId) => {
-    // Ako nismo prešli prag i ne “vučemo” – tretiraj kao TAP
-    if (!isDragging && isArming && dragEmpId === empId) {
+    // Ako nismo „pobegli“ u scroll (i dalje arming), ovo je TAP
+    if (isArming && dragEmpId === empId) {
       const minute = getMinFromEvent(e);
       commitTapAt(empId, minute);
       setIsArming(false);
@@ -2188,20 +2261,9 @@ function DayGrid({
       return;
     }
 
-    // U suprotnom — završetak draga
-    if (!isDragging || dragEmpId !== empId) {
-      setIsArming(false);
-      setDragEmpId(null);
-      return;
-    }
-    const endMin = getMinFromEvent(e);
-    const start = Math.min(dragStartMin, endMin);
-    const end = Math.max(dragStartMin, endMin);
-    if (end - start >= 5) onCreateBlock(empId, start, end);
-    setIsDragging(false);
+    // u suprotnom ništa — završio se skrol, ne pravimo drag selekciju na telefonu
     setIsArming(false);
     setDragEmpId(null);
-    setDragCurrentMin(null);
   };
 
   return (
@@ -2268,7 +2330,8 @@ function DayGrid({
                 }}
                 style={{
                   ...colBody,
-                  touchAction: isDragging ? "none" : "pan-y",
+                  // na telefonu uvek dozvoli pan-y; isDragging koristimo samo za desktop
+                  touchAction: isMobile ? "pan-y" : isDragging ? "none" : "auto",
                   overscrollBehavior: "contain",
                   WebkitUserSelect: "none",
                   userSelect: "none",
@@ -2328,7 +2391,7 @@ function DayGrid({
                             padding: "2px 6px",
                             borderRadius: 6,
                             background: "rgba(0,0,0,.35)",
-                            color: "#fff",
+                            color: "rgba(255,255,255,1)",
                             textShadow: "0 1px 2px rgba(0,0,0,.35)",
                             zIndex: 4,
                           }}
@@ -2513,8 +2576,8 @@ function DayGrid({
                   );
                 })}
 
-                {/* PREVIEW selekcije (drag) + etiketa sa vremenom */}
-                {isDragging && dragEmpId === empId && (() => {
+                {/* PREVIEW selekcije (drag) + etiketa sa vremenom) — samo DESKTOP */}
+                {!isMobile && isDragging && dragEmpId === empId && (() => {
                   const m1 = Math.min(dragStartMin, dragCurrentMin ?? dragStartMin);
                   const m2 = Math.max(dragStartMin, dragCurrentMin ?? dragStartMin);
                   const labelTop = Math.max(0, previewTop - 24);
@@ -2561,7 +2624,7 @@ function DayGrid({
                     <div
                       style={{
                         position: "absolute",
-                        left: 0,           // preko cele kolone, uključujući gutter
+                        left: 0,
                         right: 0,
                         top: pxFromMin(tapStartMin - openMin),
                         height: 2,
@@ -2599,6 +2662,7 @@ function DayGrid({
     </div>
   );
 }
+
 
 /* -------------------- Schedule grid (bookings of the day) -------------------- */
 
