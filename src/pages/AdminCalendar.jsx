@@ -149,174 +149,260 @@ const apptBgFor = (a, colorForServiceId) => {
 // --- UI za izbor opsega dana (Pon..Ned) ---
 const DOW_SR_SHORT = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
 
-function BlockDaysBar({
-  days = [],
-  pick,
-  inRange,
-  start,
-  end,
-  onCancel,
-  onConfirm,
-  isMobile,
-}) {
-  const isDisabled = !start; // nema početka selekcije
+function BlockDaysBar({ visible, anchorDate, onCancel, onConfirm }) {
+  // ako nije vidljivo — ne renderuj NIŠTA
+  if (!visible) return null;
 
-  // kontejner: na telefonu sticky pri dnu, na desktopu kao ranije
-  const wrap = isMobile
-    ? {
-        position: "sticky",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 50,
-        padding: 12,
-        background:
-          "linear-gradient(180deg, rgba(20,20,20,.85), rgba(20,20,20,.96))",
-        backdropFilter: "blur(6px)",
-        borderTop: "1px solid rgba(255,255,255,.15)",
-      }
-    : {
-        padding: "8px 12px",
-        background:
-          "linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04))",
-        borderTop: "1px solid rgba(255,255,255,.15)",
-        borderRadius: 12,
-        marginTop: 8,
-      };
+  const [selected, setSelected] = React.useState(new Set());
 
-  const daysGrid = isMobile
-    ? {
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 8,
-        width: "100%",
-      }
-    : {
-        display: "grid",
-        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-        gap: 8,
-      };
+  // pomoćne
+  const dayNames = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
+  const startOfWeek = (d) => {
+    const dd = new Date(d);
+    const isoDow = (dd.getDay() + 6) % 7; // 0 = pon
+    dd.setDate(dd.getDate() - isoDow);
+    dd.setHours(0, 0, 0, 0);
+    return dd;
+  };
+  const addDays = (d, i) => {
+    const x = new Date(d);
+    x.setDate(x.getDate() + i);
+    return x;
+  };
+  const fmtDot = (d) =>
+    `${String(d.getDate()).padStart(2, "0")}. ${String(d.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}. ${d.getFullYear()}.`;
+  const fmtKey = (d) => d.toISOString().slice(0, 10); // YYYY-MM-DD
 
-  const dayBtn = (selected) => ({
-    padding: "10px 6px",
-    borderRadius: 10,
-    fontWeight: 700,
-    border: selected
-      ? "2px solid #ff5fa2"
-      : "1px solid rgba(255,255,255,.35)",
-    background: selected
-      ? "rgba(255,95,162,.18)"
-      : "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+  // koristimo *anchorDate* (tvoj dayDate), ne neki "currentDate"
+  const weekDays = React.useMemo(() => {
+    const base = anchorDate instanceof Date ? anchorDate : new Date(anchorDate);
+    const start = startOfWeek(base);
+    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  }, [anchorDate]);
+
+  const toggleDate = (d) => {
+    const key = fmtKey(d);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const handleCancel = () => {
+    setSelected(new Set());
+    onCancel?.();
+  };
+
+  const handleConfirm = async () => {
+    if (selected.size === 0) return;
+    // pozovi onConfirm za SVAKI izabrani dan (from=to=isti dan)
+    for (const key of selected) {
+      await onConfirm?.(key, key);
+    }
+    setSelected(new Set());
+  };
+
+  // stilovi
+  const stripWrap = {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 12,
+    alignItems: "center",
+    padding: "12px",
+  };
+  const dayBtn = (active) => ({
+    padding: "14px 16px",
+    minWidth: 120,
+    borderRadius: 16,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    border: active
+      ? "2px solid rgba(255,105,180,.9)"
+      : "1px solid rgba(255,255,255,.28)",
+    background: active
+      ? "linear-gradient(180deg,rgba(255,105,180,.28),rgba(255,105,180,.18))"
+      : "linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.08))",
     color: "#fff",
-    textAlign: "center",
+    boxShadow: active
+      ? "0 0 0 2px rgba(255,105,180,.15) inset"
+      : "0 2px 6px rgba(0,0,0,.15)",
+  });
+  const actionsWrap = {
+    display: "flex",
+    gap: 12,
+    marginLeft: "auto",
+    flexWrap: "wrap",
+  };
+  const ghostBtn = {
+    padding: "10px 14px",
+    borderRadius: 12,
+    fontWeight: 800,
+    border: "1px solid rgba(255,255,255,.35)",
+    background: "transparent",
+    color: "#fff",
+  };
+  const primaryBtn = (enabled) => ({
+    padding: "10px 14px",
+    borderRadius: 12,
+    fontWeight: 800,
+    border: "none",
+    background: "linear-gradient(180deg, #ff5fa2, #ff4a90)",
+    color: "#fff",
+    opacity: enabled ? 1 : 0.6,
   });
 
-  const actionsRow = isMobile
-    ? {
-        display: "flex",
-        gap: 8,
-        marginTop: 12,
-        width: "100%",
-      }
-    : {
-        display: "flex",
-        gap: 8,
-        marginTop: 10,
-        justifyContent: "flex-end",
-      };
-
-  const btnSecondary = isMobile
-    ? {
-        flex: 1,
-        padding: "12px",
-        borderRadius: 10,
-        fontWeight: 800,
-        border: "1px solid rgba(255,255,255,.35)",
-        background: "rgba(0,0,0,.1)",
-        color: "#fff",
-      }
-    : {
-        padding: "8px 12px",
-        borderRadius: 10,
-        fontWeight: 700,
-        border: "1px solid rgba(255,255,255,.35)",
-        background: "rgba(0,0,0,.1)",
-        color: "#fff",
-      };
-
-  const btnPrimary = isMobile
-    ? {
-        flex: 1,
-        padding: "12px",
-        borderRadius: 10,
-        fontWeight: 800,
-        border: "1px solid rgba(255,255,255,.35)",
-        background: "linear-gradient(180deg,#ff5fa2,#ff77b3)",
-        color: "#fff",
-        opacity: isDisabled ? 0.6 : 1,
-      }
-    : {
-        padding: "8px 12px",
-        borderRadius: 10,
-        fontWeight: 700,
-        border: "1px solid rgba(255,255,255,.35)",
-        background: "linear-gradient(180deg,#ff5fa2,#ff77b3)",
-        color: "#fff",
-        opacity: isDisabled ? 0.6 : 1,
-      };
-
-  // kratka putokaz etiketa (opciono)
-  const hint = isMobile
-    ? {
-        marginTop: 8,
-        fontSize: 12,
-        color: "rgba(255,255,255,.75)",
-        textAlign: "center",
-      }
-    : { display: "none" };
-
   return (
-    <div style={wrap}>
-      {/* grid sa danima */}
-      <div style={daysGrid}>
-        {days.map((d, i) => {
-          const sel = inRange?.(d);
+    <div style={{ borderTop: "1px solid rgba(255,255,255,.15)", marginTop: 10 }}>
+      <div style={stripWrap}>
+        {weekDays.map((d, i) => {
+          const key = fmtKey(d);
+          const active = selected.has(key);
           return (
             <button
-              key={d?.toISOString?.() ?? i}
-              onClick={() => pick?.(d)}
-              title={d?.toLocaleDateString?.("sr-RS")}
-              style={dayBtn(!!sel)}
+              key={key}
+              type="button"
+              onClick={() => toggleDate(d)}
+              style={dayBtn(active)}
             >
-              <div style={{ fontSize: 12, opacity: 0.85 }}>
-                {(typeof DOW_SR_SHORT !== "undefined" && DOW_SR_SHORT[i]) ||
-                  ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"][i]}
-              </div>
-              <div style={{ fontSize: 12 }}>
-                {d?.toLocaleDateString?.("sr-RS")}
-              </div>
+              <div style={{ opacity: 0.9, fontSize: 14 }}>{dayNames[i]}</div>
+              <div style={{ fontSize: 16 }}>{fmtDot(d)}</div>
+            </button>
+          );
+        })}
+        <div style={actionsWrap}>
+          <button type="button" onClick={handleCancel} style={ghostBtn}>
+            Otkaži
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            style={primaryBtn(selected.size > 0)}
+            disabled={selected.size === 0}
+          >
+            Blokiraj izabrane dane
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WeekStrip({ anchorDate, onPick, isMobile }) {
+  const dayNames = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
+
+  // helperi
+  const startOfWeek = (d) => {
+    const dd = new Date(d);
+    const iso = (dd.getDay() + 6) % 7; // 0 = Pon
+    dd.setDate(dd.getDate() - iso);
+    dd.setHours(0, 0, 0, 0);
+    return dd;
+  };
+  const addDays = (d, i) => {
+    const x = new Date(d);
+    x.setDate(x.getDate() + i);
+    x.setHours(0, 0, 0, 0);
+    return x;
+  };
+  const fmtDot = (d) =>
+    `${String(d.getDate()).padStart(2, "0")}. ${String(d.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}. ${d.getFullYear()}.`;
+  const key = (d) => d.toISOString().slice(0, 10);
+
+  // bazna nedelja i navigacija
+  const [weekBase, setWeekBase] = React.useState(startOfWeek(anchorDate));
+  React.useEffect(() => setWeekBase(startOfWeek(anchorDate)), [anchorDate]);
+
+  const days = React.useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekBase, i)),
+    [weekBase]
+  );
+
+  const goPrev = () => setWeekBase(addDays(weekBase, -7));
+  const goNext = () => setWeekBase(addDays(weekBase, +7));
+
+  // stilovi (kompaktno, lepo i na tel)
+  const barWrap = {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 8,
+  };
+  const stripWrap = {
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+    flexWrap: isMobile ? "nowrap" : "wrap",
+    overflowX: isMobile ? "auto" : "visible",
+    padding: "4px 6px",
+    WebkitOverflowScrolling: "touch",
+    scrollbarWidth: "none",
+  };
+  const arrowBtn = {
+    height: 36,
+    minWidth: 36,
+    borderRadius: 10,
+    border: "0.5px solid rgba(255,255,255,.35)",
+    background: "linear-gradient(135deg,#ffffff,#eaf5ff)",
+    color: "#000",
+    fontWeight: 900,
+    cursor: "pointer",
+  };
+  const dayBtn = (active) => ({
+    flex: "0 0 auto",
+    padding: "12px 14px",
+    minWidth: isMobile ? 120 : 140,
+    borderRadius: 14,
+    fontWeight: 800,
+    lineHeight: 1.1,
+    border: active
+      ? "2px solid rgba(255,105,180,.9)"
+      : "1px solid rgba(255,255,255,.28)",
+    background: active
+      ? "linear-gradient(180deg,rgba(255,105,180,.28),rgba(255,105,180,.18))"
+      : "linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.08))",
+    color: "#fff",
+    boxShadow: active
+      ? "0 0 0 2px rgba(255,105,180,.15) inset"
+      : "0 2px 6px rgba(0,0,0,.15)",
+  });
+
+  return (
+    <div style={barWrap}>
+      <button type="button" onClick={goPrev} style={arrowBtn} aria-label="Prethodna nedelja">
+        ◀
+      </button>
+
+      <div style={stripWrap}>
+        {days.map((d, i) => {
+          const active = key(d) === key(anchorDate);
+          return (
+            <button
+              key={key(d)}
+              type="button"
+              onClick={() => onPick(new Date(d))}
+              style={dayBtn(active)}
+              title={fmtDot(d)}
+            >
+              <div style={{ opacity: 0.9, fontSize: 12 }}>{dayNames[i]}</div>
+              <div style={{ fontSize: 16 }}>{fmtDot(d)}</div>
             </button>
           );
         })}
       </div>
 
-      {/* akcije */}
-      <div style={actionsRow}>
-        <button onClick={onCancel} style={btnSecondary}>Otkaži</button>
-        <button
-          onClick={() => start && onConfirm?.(start, end || start)}
-          disabled={isDisabled}
-          style={btnPrimary}
-        >
-          Blokiraj izabrane dane
-        </button>
-      </div>
-
-      <div style={hint}>Na telefonu: tap-tap u koloni za opseg, ili dugme iznad imena za „ceo dan“.</div>
+      <button type="button" onClick={goNext} style={arrowBtn} aria-label="Sledeća nedelja">
+        ▶
+      </button>
     </div>
   );
 }
-
 
 export default function AdminCalendar() {
   
@@ -351,8 +437,9 @@ useEffect(() => {
   const [dayShifts, setDayShifts] = useState([]);
 
   // create (day): 'booking' | 'block'
-  const [showBlockDaysUI, setShowBlockDaysUI] = useState(false);
-  const [mode, setMode] = useState("booking");
+  const [mode, setMode] = useState("booking");      // "booking" | "block"
+const [showBlockDaysUI, setShowBlockDaysUI] = useState(false);
+
 const [selEmpId, setSelEmpId] = useState(null);
 const autoPickedRef = useRef(false);
   const [selSrvId, setSelSrvId] = useState("");
@@ -1328,6 +1415,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
       style={inp}
     />
   </div>
+  
 
   <div style={ctlItem}>
     <label style={lbl}>
@@ -1839,9 +1927,16 @@ background: isSelected
                     style={inp}
                   />
                 </div>
-              </div>
-            </div>
+             
 
+              </div>
+                  <WeekStrip
+      anchorDate={schedDate}
+      onPick={(d) => setSchedDate(d)}
+      isMobile={isMobile}
+    />
+            </div>
+   
 
             {/* SCHEDULE GRID */}
             <ScheduleGrid
@@ -2061,32 +2156,37 @@ function DayGrid({
   };
 
   // Mobile header red i dugme – kompaktnije da se ne preklapa
-  const mobileHeaderRow = {
-    display: "flex",
-    justifyContent: "flex-start",
-    alignItems: "center",
-    gap: 1,
-    padding: "0 8px 6px 8px",
-    marginTop: 10,
-  };
+// red koji drži dugme — puni širinu kolone, sa razmacima gore/dole
+const mobileHeaderRow = {
+  width: "100%",
+  
+  boxSizing: "border-box",
+  padding: "16px 14px 10px", // L/R poravnanje sa kolonom, donji razmak ka imenu
+  marginTop: -20,             // razmak od vrha kolone
+  marginBottom: 10,
+  display: "block",
+};
 
-  // Kompaktno dugme (bez preklapanja)
-  const blockDayBtn = {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "6px 10px",
-    fontSize: 12,
-    fontWeight: 700,
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.35)",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
-    color: "#fff",
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-    lineHeight: 1,
-    boxShadow: "0 2px 6px rgba(0,0,0,.15)",
-  };
+// dugme preko cele širine reda
+const blockDayBtn = {
+  display: "block",
+  width: "100%",
+  
+  padding: "12px 16px",
+  fontSize: 13,
+  fontWeight: 500,
+  borderRadius: 10,
+  border: "1px solid rgba(255,255,255,.35)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+  color: "#fff",
+  cursor: "pointer",
+  lineHeight: 1,
+  textAlign: "center",
+  boxShadow: "0 2px 6px rgba(0,0,0,.15)",
+};
+
+
 
   const getClientY = (e) => {
     const t = e.touches?.[0] || e.changedTouches?.[0];
@@ -2304,24 +2404,26 @@ function DayGrid({
             ? { ...colBox, flex: "1 1 100%", width: "100%", maxWidth: "100%" }
             : colBox;
 
-          return (
-            <div key={empId} style={colStyle}>
-              {/* MOBILE: dugme iznad imena (kompaktno, bez preklapanja) */}
-              {isMobile && (
-                <div style={mobileHeaderRow}>
-                  <button
-                    type="button"
-                    onClick={() => blockWholeDay(empId, segs)}
-                    style={blockDayBtn}
-                    title="Blokiraj ceo dan"
-                  >
-                    Blokiraj ceo dan
-                  </button>
-                </div>
-              )}
+        return (
+<div key={empId} style={colStyle}>
+  {isMobile && (
+    <div style={mobileHeaderRow}>
+      <button
+        type="button"
+        onClick={() => {
+          const segs = shiftsByEmp.get(empId) || [];
+          blockWholeDay(empId, segs); // postojića funkcija – ne menjamo logiku
+        }}
+        style={blockDayBtn}
+        title="Blokiraj ceo dan"
+      >
+        Blokiraj ceo dan
+      </button>
+    </div>
+  )}
 
-              {/* Ime radnice */}
-              <div style={colHeader}>{emp?.name || "—"}</div>
+  {/* Ime radnice */}
+  <div style={colHeader}>{emp?.name || "—"}</div>
 
               <div
                 ref={(el) => {
@@ -2537,32 +2639,34 @@ function DayGrid({
                       )}
 
                       {/* × dugme za brisanje BLOKA */}
-                      {isBlock && (
-                        <button
-                          type="button"
-                          title="Obriši blokadu"
-                          style={blockDeleteBtn}
-                          onTouchStart={stopTouchPropagation}
-                          onTouchEnd={(e) => {
-                            stopTouchPropagation(e);
-                            try {
-                              deleteAppt?.(a.id ?? a);
-                            } catch {
-                              if (a?.id) deleteAppt?.(a.id);
-                            }
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            try {
-                              deleteAppt?.(a.id ?? a);
-                            } catch {
-                              if (a?.id) deleteAppt?.(a.id);
-                            }
-                          }}
-                        >
-                          ×
-                        </button>
-                      )}
+                    {/* × dugme za brisanje BLOKA — span umesto button da ne bude nesting */}
+{isBlock && (
+  <span
+    role="button"
+    aria-label="Obriši blokadu"
+    tabIndex={0}
+    style={blockDeleteBtn}
+    onTouchStart={stopTouchPropagation}
+    onTouchEnd={(e) => {
+      stopTouchPropagation(e);
+      try { deleteAppt?.(a.id ?? a); } catch { if (a?.id) deleteAppt?.(a.id); }
+    }}
+    onClick={(e) => {
+      e.stopPropagation();
+      try { deleteAppt?.(a.id ?? a); } catch { if (a?.id) deleteAppt?.(a.id); }
+    }}
+    onKeyDown={(e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        try { deleteAppt?.(a.id ?? a); } catch { if (a?.id) deleteAppt?.(a.id); }
+      }
+    }}
+  >
+    ×
+  </span>
+)}
+
 
                       {hoverApptId === a.id &&
                         !isBreak &&
@@ -2739,6 +2843,7 @@ function ScheduleGrid({
             ))}
           </div>
         )}
+        
 
         <div
           style={{

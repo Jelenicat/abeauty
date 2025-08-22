@@ -10,6 +10,10 @@ function normalizePhone(p) {
   const digits = String(p || "").replace(/\D/g, "");
   return digits.replace(/^381/, "0"); // +381xx -> 0xx
 }
+const SPECIAL_ROLES = {
+  // phone u normalizovanom obliku
+  "0000000000": { isAdmin: true, isFinance: false }, // aBeauty: admin bez finansija
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
@@ -37,9 +41,16 @@ export function AuthProvider({ children }) {
     const oldSnap = await getDoc(ref);
     const old = oldSnap.exists() ? oldSnap.data() : {};
 
-    const computedIsAdmin = phoneNorm === ADMIN_PHONE;
-    const isAdmin = old?.isAdmin ?? computedIsAdmin;
-    const isFinance = old?.isFinance ?? true; // po defaultu svi admini vide finansije
+   const special = SPECIAL_ROLES[phoneNorm] || {};
+
+const computedIsAdmin = phoneNorm === ADMIN_PHONE;
+
+// specijalno pravilo ima prioritet, zatim vrednosti iz baze, pa default
+const isAdmin = special.isAdmin ?? old?.isAdmin ?? computedIsAdmin;
+
+// default: finansije samo ako je admin (osim ako specijalno kaže drugačije)
+const isFinance = special.isFinance ?? old?.isFinance ?? (isAdmin ? true : false);
+
 
     const role = isAdmin ? "admin" : "client";
 
