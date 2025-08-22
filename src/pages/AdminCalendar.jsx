@@ -1453,7 +1453,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
   </div>
 
   {/* Početak — SAKRIJ kad je block + panel sa danima */}
-  {!(mode === "block" && showBlockDaysUI) && (
+ {showModeFields && !(mode === "block" && showBlockDaysUI) && (
     <div style={ctlItem}>
       <label style={lbl}>
         <FiClock /> Početak
@@ -1492,8 +1492,8 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     </div>
   </div>
 
-  {mode === "booking" ? (
-    <div style={ctlItem}>
+ {mode === "booking" ? (
+   showModeFields && <div style={ctlItem}>
       <label style={lbl}>Usluga</label>
       <select
         value={selSrvId}
@@ -1510,7 +1510,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     </div>
   ) : (
     // Kraj — SAKRIJ kad je block + panel sa danima
-    !(mode === "block" && showBlockDaysUI) && (
+    showModeFields && !(mode === "block" && showBlockDaysUI) && (
       <div style={ctlItem}>
         <label style={lbl}>Kraj</label>
         <input
@@ -1551,7 +1551,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
   )}
 
   {/* Glavno dugme — SAKRIJ kad je block + panel sa danima */}
-  {!(mode === "block" && showBlockDaysUI) && (
+  {showModeFields && !(mode === "block" && showBlockDaysUI) && (
     <div style={{ ...ctlItem, alignSelf: "flex-end" }}>
       <button style={primaryBtn} onClick={addItem}>
         <FiPlus style={{ marginRight: 6 }} />
