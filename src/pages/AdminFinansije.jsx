@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { db } from "../firebase";
 import {
-  addDoc, deleteDoc, doc,
+  addDoc, deleteDoc, doc, updateDoc,
   onSnapshot, query, orderBy, where, collection,
   serverTimestamp, Timestamp
 } from "firebase/firestore";
@@ -35,6 +35,9 @@ export default function AdminFinansije() {
       return n;
     });
   };
+
+  // procenat po radnici (0–100), kljuc = employeeId
+  const [commissionByEmp, setCommissionByEmp] = useState({});
 
   // === Forme ===
   const [tplName, setTplName] = useState("");
@@ -71,6 +74,13 @@ export default function AdminFinansije() {
     );
     return () => { offTpl(); offEmp(); };
   }, []);
+
+  // Učitaj početne procente iz employees
+  useEffect(() => {
+    const map = {};
+    for (const e of employees) map[e.id] = Number(e.commissionPct || 0);
+    setCommissionByEmp(map);
+  }, [employees]);
 
   // ===== Realtime: expenses + appointments (startAt || dateKey) =====
   useEffect(() => {
@@ -226,6 +236,28 @@ export default function AdminFinansije() {
     catch (err) { console.error(err); setErr("Greška pri brisanju."); }
   }
 
+  // ===== Procenat po radnici: helperi =====
+  const setCommissionPct = (empId, v) => {
+    const num = Math.max(0, Math.min(100, Number(v)));
+    setCommissionByEmp(prev => ({ ...prev, [empId]: num }));
+  };
+
+  async function saveCommissionPct(empId) {
+    try {
+      const pct = Number(commissionByEmp[empId] || 0);
+      // ako radnica ne postoji (npr. "unknown"), preskoči
+      const exists = employees.some(e => e.id === empId);
+      if (!exists) return;
+      await updateDoc(doc(db, "employees", empId), {
+        commissionPct: pct,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error(err);
+      setErr("Greška pri čuvanju procenta.");
+    }
+  }
+
   // ===== UI =====
   return (
     <div style={wrap} className="fin-wrap">
@@ -372,17 +404,67 @@ export default function AdminFinansije() {
               {earningsByEmployee.map(r => {
                 const isOpen = open.has(r.employeeId);
                 const appts = apptsByEmployee.get(r.employeeId) || [];
+                const isRealEmp = employees.some(e => e.id === r.employeeId);
+
+                const handleKeyToggle = (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleOpen(r.employeeId);
+                  }
+                };
+
+                const pct = Number(commissionByEmp[r.employeeId] ?? 0);
+                const payout = Math.round((r.total || 0) * (pct / 100));
+
                 return (
                   <div key={r.employeeId} className="fin-emp-wrap">
-                    <button
+                    {/* Klikabilna traka (div kao button, da bi input radio) */}
+                    <div
                       className={`fin-item emp ${isOpen ? "open" : ""}`}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => toggleOpen(r.employeeId)}
+                      onKeyDown={handleKeyToggle}
                       title="Prikaži termine"
                     >
                       <div className="fin-item-name">{r.name}</div>
-                      <div className="fin-item-amount">{r.total.toLocaleString()} RSD</div>
-                    </button>
 
+                      <div className="fin-item-right">
+                        {/* Ukupna zarada */}
+                        <div className="fin-item-amount">{r.total.toLocaleString()} RSD</div>
+
+                        {/* Kontrole za procenat + izračun */}
+                        {isRealEmp && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}
+                          >
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              placeholder="%"
+                              className="fin-input"
+                              style={{ width: 96, height: 36, padding: "0 8px" }}
+                              value={commissionByEmp[r.employeeId] ?? ""}
+                              onChange={(e) => setCommissionPct(r.employeeId, e.target.value)}
+                            />
+                            <button
+                              className="fin-btn ghost"
+                              onClick={() => saveCommissionPct(r.employeeId)}
+                              title="Sačuvaj procenat"
+                            >
+                              Sačuvaj %
+                            </button>
+                            <div className="fin-item-amount" title="Isplata radnici prema procentu">
+                              {payout.toLocaleString()} RSD
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Sublista termina */}
                     {isOpen && (
                       <div className="fin-sublist">
                         {appts.map(a => (
@@ -456,16 +538,15 @@ const css = `
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0;              /* nema unutrašnjeg okvira */
-  background: none;        /* nema kutije iza */
-  border: none;            /* nema linije */
-  box-shadow: none;        /* nema senke */
-  backdrop-filter: none;   /* nema staklenog efekta */
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
-
 .fin-fixed-spacer{
-  height: 64px; /* rezerva prostora ispod fixed trake */
+  height: 64px;
   margin-bottom: 10px;
 }
 
@@ -473,7 +554,7 @@ const css = `
 .fin-header { justify-content: space-between; }
 @media (max-width: 680px){
   .fin-header { flex-direction: column; align-items: stretch; }
-  .fin-fixed-spacer{ height: 96px; } /* veći razmak jer se header složi u 2 reda */
+  .fin-fixed-spacer{ height: 96px; }
 }
 
 /* Nazad dugme */
@@ -623,7 +704,7 @@ const css = `
   /* tabs kao full width i veća tap meta */
   .fin-tab { flex:1; height: 44px; border-radius: 14px; font-size:14px; }
   .fin-tab + .fin-tab { margin-left: 6px; }
-  .fin-panel > div:nth-of-type(3){ display:flex; gap:6px; } /* tabs blok */
+  .fin-panel > div:nth-of-type(3){ display:flex; gap:6px; }
 
   /* kartice sa sumama — 1 kolona */
   .fin-cards { grid-template-columns: 1fr; gap:8px; }
