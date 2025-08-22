@@ -11,6 +11,8 @@ import SelectServices from "./pages/SelectServices";
 import BookTime from "./pages/BookTime";
 import AdminFinansije from "./pages/AdminFinansije";
 import AdminKlijenti from "./pages/AdminKlijenti";
+import { useEffect } from "react";
+import { registerServiceWorker } from "./registerServiceWorker";
 
 function RezervacijePlaceholder() {
   return (
@@ -28,6 +30,9 @@ function RequireAdmin() {
 }
 
 export default function App() {
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
   return (
     <Routes>
       <Route path="/" element={<Home />} />
