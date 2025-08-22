@@ -2612,9 +2612,10 @@ const blockDayBtn = {
                           ? "Pauza"
                           : isBlock
                           ? "Blokirano"
-                          : `${a.serviceName || "Usluga"} ${
-                              a.clientName ? "· " + a.clientName : ""
-                            }`
+                          : `${a.serviceName || "Usluga"}${
+    price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""
+  }${a.clientName ? " · " + a.clientName : ""}`
+
                       }
                       onDragOver={(e) => e.preventDefault()}
                       onTouchStart={stopTouchPropagation}
