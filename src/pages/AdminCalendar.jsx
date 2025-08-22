@@ -2210,10 +2210,9 @@ const blockDayBtn = {
   padding: "12px 16px",
   fontSize: 13,
   fontWeight: 500,
-  borderRadius: 10,
+  borderRadius: 1,
   border: "1px solid rgba(255,255,255,.35)",
-  background:
-    "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+ background: "rgba(255,95,162,.9)",
   color: "#fff",
   cursor: "pointer",
   lineHeight: 1,
