@@ -3215,7 +3215,7 @@ function ApptModal({
 
   const srv = servicesById.get(appt.serviceId);
   const duration = appt.durationMin || srv?.durationMin || 0;
-
+const price = Number(appt.price ?? srv?.price ?? 0);
  // --- prvi sledeći termin za ovaj telefon
 const earliestId = phoneN ? earliestApptIdByPhone.get(phoneN) : null;
 const isEarliestForPhone = !!(earliestId && earliestId === appt.id);
@@ -3288,6 +3288,9 @@ const hours = (salonHours && salonHours[dow]) || DEFAULT_SALON_HOURS[dow];
             <div style={{ ...badge, background: "#fff3e0", color: "#7a3d0b" }}>
               <FiClock /> {start} → {minToTime(timeToMin(start) + duration)}
             </div>
+             <div style={{ ...badge, background: "#e8fff0", color: "#0b7a3d" }}>
+    Cena: <b>{price.toLocaleString("sr-RS")} RSD</b>
+  </div>
 
           {showNoShowHere && (
   <div style={{ ...badge, background: "#ffe8ea", color: "#7a1b1b" }}>
