@@ -2967,7 +2967,9 @@ function ScheduleGrid({
               servicesById.get(a.serviceId)?.name ||
               a.serviceName ||
               "Usluga";
-const price = Number(a.price ?? srvDef?.price ?? 0); // NOVO
+              const srvDef = servicesById.get(a.serviceId);            // NOVO
+const price = Number(a.price ?? srvDef?.price ?? 0);     // NOVO
+
             const phone = normPhone(a.clientPhone);
             const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
             const pendingPen = a.clientPhone ? pendingPenaltyByPhone.get(normPhone(a.clientPhone)) : null;
