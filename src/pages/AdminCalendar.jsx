@@ -3110,17 +3110,35 @@ function ApptModal({
   noShowByPhone,
 }) {
   const [empId, setEmpId] = useState(appt.employeeId);
-   const [start, setStart] = useState(appt.startHHMM);
- const phoneN = normPhone(appt.clientPhone);
- const hasNoShowHistory = !!(phoneN && noShowByPhone.get(phoneN));
+  const [start, setStart] = useState(appt.startHHMM);
+
+  const phoneN = normPhone(appt.clientPhone);
+  const hasNoShowHistory = !!(phoneN && noShowByPhone.get(phoneN));
+
   const srv = servicesById.get(appt.serviceId);
   const duration = appt.durationMin || srv?.durationMin || 0;
-const earliestId = phoneN ? earliestApptIdByPhone.get(phoneN) : null;
-const showNoShowHere = !!(hasNoShowHistory && earliestId === appt.id);
+
+  // --- ključno: identifikuj prvi sledeći termin za ovaj telefon
+  // --- ključno: identifikuj prvi sledeći termin za ovaj telefon
+  const earliestId = phoneN ? earliestApptIdByPhone.get(phoneN) : null;
+  const isEarliestForPhone = !!(earliestId && earliestId === appt.id);
+
+  // --- no-show bedž samo na prvom sledećem terminu i samo ako kazna nije već zalepljena na ovaj termin
+  const showNoShowHere = !!(hasNoShowHistory && isEarliestForPhone && !penaltyApplied);
+
   const dow = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
   const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
-const pendingPen = phoneN ? pendingPenaltyByPhone.get(phoneN) : null;
-const penaltyApplied = appt?.penaltyApplied?.amount > 0;
+
+  const pendingPen = phoneN ? pendingPenaltyByPhone.get(phoneN) : null;
+  const penaltyApplied = appt?.penaltyApplied?.amount > 0;
+
+  // --- kazna za naplatu samo na prvom sledećem terminu i samo ako nije već primenjena na ovaj termin
+  const showPenaltyHere = !!(pendingPen && isEarliestForPhone && !penaltyApplied);
+
+  // --- "Kazna primenjena" prikazuj samo ako je zalepljena BAŠ na ovaj (prvi sledeći) termin
+  const showPenaltyAppliedHere = !!(penaltyApplied && isEarliestForPhone);
+
+
 
 
   return (
@@ -3174,23 +3192,25 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
             <div style={{ ...badge, background: "#fff3e0", color: "#7a3d0b" }}>
               <FiClock /> {start} → {minToTime(timeToMin(start) + duration)}
             </div>
-           {showNoShowHere && (
-              <div style={{ ...badge, background: "#ffe8ea", color: "#7a1b1b" }}>
-                <FiAlertTriangle /> No-show istorija
-              </div>
-            )}
+
+          {showNoShowHere && (
+  <div style={{ ...badge, background: "#ffe8ea", color: "#7a1b1b" }}>
+    <FiAlertTriangle /> No-show istorija
+  </div>
+)}
           </div>
-          {pendingPen && !penaltyApplied && (
+
+          {showPenaltyHere && (
   <div style={{ ...badge, background: "#fff7e6", color: "#7a3d0b" }}>
     <FiInfo /> Kazna za naplatu: <b>{pendingPen.amount} RSD</b>
   </div>
 )}
-{penaltyApplied && (
+
+        {showPenaltyAppliedHere && (
   <div style={{ ...badge, background: "#e8fff0", color: "#0b7a3d" }}>
     <FiInfo /> Kazna primenjena: <b>{appt.penaltyApplied.amount} RSD</b>
   </div>
 )}
-
 
           {(appt.clientName || appt.clientPhone) && (
             <div style={infoBox}>
@@ -3238,6 +3258,7 @@ const penaltyApplied = appt?.penaltyApplied?.amount > 0;
     </div>
   );
 }
+
 
 /* -------------------- UI helpers & styles -------------------- */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
