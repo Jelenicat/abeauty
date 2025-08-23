@@ -123,7 +123,7 @@ export default function AdminKlijenti() {
 
         {/* NASLOV + PRETRAGA */}
         <div style={headRow(isMobile)}>
-          <h2 style={title}>Klijenti (svi koji su se ulogovali)</h2>
+          <h2 style={title}>Klijenti</h2>
           <div style={searchBox}>
             <input
               style={searchInput(isMobile)}
