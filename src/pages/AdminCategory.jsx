@@ -56,7 +56,6 @@ export default function AdminCategory() {
         setLoading(false);
       })();
 
-      // RANGE filter: prvo orderBy na istom polju (treba indeks: discountPercent ASC, name ASC)
       off = onSnapshot(
         query(
           collection(db, "services"),
@@ -64,9 +63,7 @@ export default function AdminCategory() {
           orderBy("discountPercent", "asc"),
           orderBy("name", "asc")
         ),
-        (s) => {
-          setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })));
-        }
+        (s) => setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })))
       );
     } else {
       (async () => {
@@ -80,10 +77,7 @@ export default function AdminCategory() {
             where("categoryId", "==", catId),
             orderBy("order", "asc")
           ),
-          (s) => {
-            const arr = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-            setServices(arr);
-          }
+          (s) => setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })))
         );
       })();
     }
@@ -96,7 +90,7 @@ export default function AdminCategory() {
     if (!isLongPress) return;
 
     const handleMove = (e) => {
-      e.preventDefault(); // bitno za mobilni drag
+      e.preventDefault(); // ključno da ne krene scroll/selekt
       onTouchMove(e);
     };
     const handleEnd = () => onTouchEnd();
@@ -130,22 +124,12 @@ export default function AdminCategory() {
 
     if (catId === "discounts") {
       try {
-        await updateDoc(doc(db, "meta", "discounts"), {
-          title: n,
-          updatedAt: serverTimestamp(),
-        });
+        await updateDoc(doc(db, "meta", "discounts"), { title: n, updatedAt: serverTimestamp() });
       } catch {
-        await setDoc(doc(db, "meta", "discounts"), {
-          title: n,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        await setDoc(doc(db, "meta", "discounts"), { title: n, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       }
     } else {
-      await updateDoc(doc(db, "categories", catId), {
-        name: n,
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(doc(db, "categories", catId), { name: n, updatedAt: serverTimestamp() });
     }
     alert("Naziv kategorije sačuvan.");
   };
@@ -311,6 +295,9 @@ export default function AdminCategory() {
   // ===== Mobile long-press DnD =====
   function onTouchStart(e, id) {
     if (!canReorder) return;
+
+    // spreči context meni i selekt odmah
+    e.preventDefault?.();
 
     // zapamti početnu tačku
     touchRef.current.startY = e.touches[0].clientY;
@@ -491,10 +478,14 @@ export default function AdminCategory() {
               <div
                 key={s.id}
                 data-id={s.id}
+                onContextMenu={(e) => e.preventDefault()} // spreči i context meni
                 style={{
                   ...row,
                   cursor: canReorder ? "grab" : "default",
                   touchAction: "none",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitTouchCallout: "none",
                   ...(dragId === s.id && isLongPress ? {
                     transform: "scale(1.05) rotate(1deg)",
                     boxShadow: "0 12px 24px rgba(0,0,0,.3)",
@@ -509,14 +500,14 @@ export default function AdminCategory() {
                 onDragEnd={onDragEnd}
                 onTouchStart={(e) => onTouchStart(e, s.id)}
               >
-                <div>
+                <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
                   <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
                   <div style={{ opacity: .8, fontSize: 13 }}>
                     {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
                     {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, pointerEvents: dragId === s.id && isLongPress ? "none" : "auto" }}>
                   <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
                   <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
                 </div>
@@ -558,7 +549,20 @@ const formBase = {
 };
 
 const list = { display: "grid", gap: 10 };
-const row = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: 14, padding: "10px 12px", boxShadow: "0 10px 20px rgba(0,0,0,.06)", flexWrap: "wrap", gap: 8 };
+const row = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  background: "#fff",
+  borderRadius: 14,
+  padding: "10px 12px",
+  boxShadow: "0 10px 20px rgba(0,0,0,.06)",
+  flexWrap: "wrap",
+  gap: 8,
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+};
 const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800, color:"#fff" };
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
 
@@ -595,6 +599,13 @@ const css = `
   color: #fff;
   font-weight: 800;
   padding: 0 6px;
+}
+
+/* Isključi selekciju/long-press callout-a na redovima i sadržaju redova */
+.srv-row, .srv-row * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* --- TABLET --- */
