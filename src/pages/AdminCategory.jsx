@@ -24,7 +24,7 @@ export default function AdminCategory() {
   const [discount, setDiscount] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // === Reorder state (bez vizuelnih promena) ===
+  // === Reorder state ===
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const [isTouchDrag, setIsTouchDrag] = useState(false);
@@ -52,10 +52,12 @@ export default function AdminCategory() {
         setLoading(false);
       })();
 
+      // ✨ RANGE filter -> prvo orderBy na istom polju + index (discountPercent ASC, name ASC)
       off = onSnapshot(
         query(
           collection(db, "services"),
           where("discountPercent", ">", 0),
+          orderBy("discountPercent", "asc"),
           orderBy("name", "asc")
         ),
         (s) => {
@@ -84,6 +86,30 @@ export default function AdminCategory() {
 
     return () => off();
   }, [catId]);
+
+  // 🔧 Globalni mobilni DnD “patch”: blokiraj skrol dok traje drag
+  useEffect(() => {
+    if (!isTouchDrag) return;
+    const handleMove = (e) => {
+      e.preventDefault();           // bitno za mobilni drag
+      onTouchMove(e);
+    };
+    const handleEnd = () => onTouchEnd();
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden"; // nema skrola tela dok prevlačimo
+
+    window.addEventListener("touchmove", handleMove, { passive: false });
+    window.addEventListener("touchend", handleEnd);
+    window.addEventListener("touchcancel", handleEnd);
+
+    return () => {
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleEnd);
+      window.removeEventListener("touchcancel", handleEnd);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isTouchDrag]);
 
   const resetForm = () => {
     setEditing(null);
@@ -138,7 +164,6 @@ export default function AdminCategory() {
     setDiscount(String(srv.discountPercent ?? srv.discount ?? ""));
   };
 
-  // 👉 OPTIMISTIČKI upsert u lokalni state (odmah prikaže izmenu)
   const upsertLocalService = (id, payload) => {
     setServices((prev) => {
       const idx = prev.findIndex((x) => x.id === id);
@@ -152,7 +177,6 @@ export default function AdminCategory() {
     });
   };
 
-  // 👉 OPTIMISTIČKO uklanjanje iz lokalnog state-a
   const removeLocalService = (id) => {
     setServices((prev) => prev.filter((x) => x.id !== id));
   };
@@ -161,7 +185,6 @@ export default function AdminCategory() {
     e?.preventDefault?.();
     if (saving) return;
 
-    // *** ne gubimo originalni categoryId kada editujemo iz "Na popustu" ***
     const prevObj = editing ? services.find((s) => s.id === editing) : null;
     const resolvedCategoryId = editing
       ? (prevObj?.categoryId ?? (catId === "discounts" ? "" : catId))
@@ -315,24 +338,26 @@ export default function AdminCategory() {
   }
   function onTouchMove(e) {
     if (!isTouchDrag || !dragId || !canReorder) return;
+    e.preventDefault(); // ✨ ključno da ne skroluje umesto da prevlači
     const y = e.touches[0].clientY;
     const nearest = nearestIdByY(y);
     if (nearest && nearest !== overId) setOverId(nearest);
   }
   async function onTouchEnd() {
     if (!canReorder) return;
-    if (!isTouchDrag || !dragId || !overId) {
-      setIsTouchDrag(false);
+    setIsTouchDrag(false);
+    if (!dragId || !overId) {
       setDragId(null);
       setOverId(null);
+      document.body.style.overflow = "";
       return;
     }
     const visibleIds = idsFromList(services);
     const newIds = moveId(visibleIds, dragId, overId);
-    setIsTouchDrag(false);
     const moved = dragId;
     setDragId(null);
     setOverId(null);
+    document.body.style.overflow = ""; // vrati skrol
     if (moved) {
       applyLocalOrder(newIds);
       await persistOrder(newIds);
@@ -344,7 +369,7 @@ export default function AdminCategory() {
       <div style={panel}>
         <style>{css}</style>
 
-        {/* GORNJI BLOK – lep card + mobile kolona */}
+        {/* GORNJI BLOK */}
         <div className="admincat-top">
           <div className="admincat-topbar" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
             <button className="btn-ghost" style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
@@ -415,12 +440,11 @@ export default function AdminCategory() {
               ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
               : s.finalPrice;
 
-            // Minimalno: dodali smo draggable/touch a da ne menjamo izgled
             return (
               <div
                 key={s.id}
                 data-id={s.id}
-                style={{ ...row, cursor: canReorder ? "grab" : "default" }}
+                style={{ ...row, cursor: canReorder ? "grab" : "default", touchAction: "none" }} // ✨ dodato
                 className="admincat-row srv-row"
                 draggable={canReorder}
                 onDragStart={(e) => onDragStart(e, s.id)}
@@ -469,7 +493,7 @@ const btn = { height: 42, border: "none", borderRadius: 12, background: "linear-
 const ghostBtn = { height: 42, borderRadius: 12, border: "1px solid rgba(255,255,255,.7)", background: "transparent", color: "#fff", fontWeight: 800, padding: "0 14px", cursor: "pointer" };
 const dangerBtn = { ...btn, background: "#ff5b6e" };
 
-/* baza forme (kolone definišemo u CSS-u da bi media query radio) */
+/* baza forme */
 const formBase = {
   display: "grid",
   gap: 8,
@@ -497,13 +521,13 @@ const css = `
 /* RASPORED FORME — desktop prvo */
 .admincat-form {
   grid-template-columns:
-    minmax(220px, 2fr)    /* Naziv usluge */
-    minmax(120px, 1fr)    /* Trajanje */
-    minmax(120px, 1fr)    /* Cena */
-    minmax(120px, 1fr)    /* Popust */
-    minmax(160px, auto)   /* Nova cena */
-    minmax(150px, auto)   /* Dodaj/Sačuvaj */
-    minmax(120px, auto);  /* Otkaži (ako je edit) */
+    minmax(220px, 2fr)
+    minmax(120px, 1fr)
+    minmax(120px, 1fr)
+    minmax(120px, 1fr)
+    minmax(160px, auto)
+    minmax(150px, auto)
+    minmax(120px, auto);
 }
 .admincat-form > * {
   width: 100%;
@@ -531,7 +555,6 @@ const css = `
 
 /* --- MOBILE --- */
 @media (max-width: 900px) {
-  /* top bar: Nazad + naslov -> kolona */
   .admincat-topbar {
     display: flex !important;
     flex-direction: column;
@@ -552,7 +575,6 @@ const css = `
     line-height: 1.2;
   }
 
-  /* red sa inputom za naziv + dugmad -> kolona, full width */
   .admincat-catrow {
     display: grid !important;
     grid-template-columns: 1fr !important;
@@ -572,7 +594,6 @@ const css = `
     font-weight: 800;
   }
 
-  /* FORMA ispod – jedna kolona, NIŠTA ne izlazi iz širine */
   .admincat-form {
     grid-template-columns: 1fr !important;
   }
@@ -591,15 +612,8 @@ const css = `
     font-weight: 800;
   }
 
-  /* Redovi u listi: kolona + full-width dugmad */
   .admincat-row { flex-direction: column; align-items: flex-start; gap: 10px; }
   .admincat-row > div:last-child { display: flex; flex-direction: column; gap: 8px; width: 100%; }
   .admincat-row button { width: 100%; height: 42px; border-radius: 12px; font-weight: 800; }
 }
-
-/* (opciono) sticky top na mobilnom – otkomentariši ako želiš da bude zalepljen
-@media (max-width: 900px) {
-  .admincat-top { position: sticky; top: 12px; z-index: 5; }
-}
-*/
 `;
