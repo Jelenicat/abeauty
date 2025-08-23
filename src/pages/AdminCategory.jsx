@@ -24,23 +24,16 @@ export default function AdminCategory() {
   const [discount, setDiscount] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Reorder state (index-based za slobodno ubacivanje)
-  const [dragId, setDragId] = useState(null);     // id koji vučemo
-  const [dragIndex, setDragIndex] = useState(null); // originalni index
-  const [overIndex, setOverIndex] = useState(null); // gde će da se ubaci (0..N)
-  const [isLongPress, setIsLongPress] = useState(false);
-  const [isTouchDrag, setIsTouchDrag] = useState(false);
+  // Reorder state (shared)
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
 
-  // za lebdeći (floating) klon
-  const [dragY, setDragY] = useState(null);
-  const [dragX, setDragX] = useState(null);
-  const [dragW, setDragW] = useState(null);
-  const [grabOffsetY, setGrabOffsetY] = useState(0);
+  // Mobile: tap-to-move
+  const [isMobile, setIsMobile] = useState(false);
+  const [selectedId, setSelectedId] = useState(null); // prvi tap (koji se premešta)
 
-  const holdTimerRef = useRef(null);
-  const touchRef = useRef({ startX: 0, startY: 0, activeId: null });
+  // Auto-scroll target (za stare delove koji ga koriste)
   const listRef = useRef(null);
-  const scrollRAF = useRef(null);
 
   const finalPrice = useMemo(() => {
     const p = Number(price) || 0;
@@ -48,19 +41,22 @@ export default function AdminCategory() {
     return Math.max(0, Math.round(p * (1 - d / 100)));
   }, [price, discount]);
 
-  // Debounce
+  // Debounce utility
   const debounce = (fn, ms) => {
-    let timer;
-    return (...args) => {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn(...args), ms);
-    };
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
   };
-  const debouncedSetOverIndex = useMemo(() => debounce(setOverIndex, 30), []);
+  const debouncedSetOverId = useMemo(() => debounce(setOverId, 50), []);
 
-  /* ==================== load ==================== */
+  // Detect mobile (touch) – ovde uslovljavamo "tap → tap" režim
+  useEffect(() => {
+    const touch = typeof window !== "undefined" && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
+    setIsMobile(!!touch);
+  }, []);
+
+  // Učitavanje
   useEffect(() => {
     if (!catId) return;
+
     let off = () => {};
     if (catId === "discounts") {
       (async () => {
@@ -88,6 +84,7 @@ export default function AdminCategory() {
         const snap = await getDoc(doc(db, "categories", catId));
         if (snap.exists()) setCatName(snap.data().name || "");
         setLoading(false);
+
         off = onSnapshot(
           query(
             collection(db, "services"),
@@ -102,36 +99,22 @@ export default function AdminCategory() {
     return () => off();
   }, [catId]);
 
-  /* ==================== global touch dok traje drag ==================== */
-  useEffect(() => {
-    if (!isLongPress) return;
-
-    const handleMove = (e) => {
-      e.preventDefault(); // tokom draga blokiramo default da ne “beži”
-      onTouchMove(e);
-    };
-    const handleEnd = () => onTouchEnd();
-
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    window.addEventListener("touchmove", handleMove, { passive: false });
-    window.addEventListener("touchend", handleEnd, { passive: true });
-    window.addEventListener("touchcancel", handleEnd, { passive: true });
-
-    return () => {
-      window.removeEventListener("touchmove", handleMove);
-      window.removeEventListener("touchend", handleEnd);
-      window.removeEventListener("touchcancel", handleEnd);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [isLongPress]);
-
-  /* ==================== helpers ==================== */
+  // Helpers
   const canReorder = catId !== "discounts";
   const idsFromList = (list) => list.map((x) => x.id);
 
-  async function persistOrderIds(newOrderIds) {
+  // Pomera element "sa" fromIndex na "pre" toIndex;
+  // ako želimo "posle targeta", koristićemo toIndex+1, a ova funkcija sama koriguje offset.
+  function moveToIndex(listIds, fromIndex, toIndex) {
+    if (fromIndex == null || toIndex == null) return listIds;
+    const arr = listIds.slice();
+    const [item] = arr.splice(fromIndex, 1);
+    const adj = fromIndex < toIndex ? toIndex - 1 : toIndex;
+    arr.splice(adj, 0, item);
+    return arr;
+  }
+
+  async function persistOrder(newOrderIds) {
     if (!canReorder) return;
     const batch = writeBatch(db);
     let pos = 1;
@@ -140,61 +123,87 @@ export default function AdminCategory() {
     }
     await batch.commit();
   }
-
-  function applyLocalOrderByIds(newIds) {
+  function applyLocalOrder(newIds) {
     setServices((prev) => {
       const byId = new Map(prev.map((x) => [x.id, x]));
       return newIds.map((id, idx) => ({ ...(byId.get(id) || {}), id, order: idx + 1 }));
     });
   }
 
-  function moveToIndex(listIds, fromIndex, toIndex) {
-    // pomeri element sa fromIndex na toIndex (0..N), gde toIndex je pozicija pre koje se ubacuje
-    if (fromIndex == null || toIndex == null) return listIds;
-    const arr = listIds.slice();
-    const [item] = arr.splice(fromIndex, 1);
-    // ako je originalni bio pre odredišta i vukli smo nadole, pošto smo ga izbacili, toIndex se smanjuje za 1
-    const adj = fromIndex < toIndex ? toIndex - 1 : toIndex;
-    arr.splice(adj, 0, item);
-    return arr;
+  // Desktop DnD (ostaje isto)
+  function onDragStart(e, id) {
+    if (!canReorder) return e.preventDefault();
+    if (isMobile) return; // na telefonu koristimo tap→tap
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDragOver(e, id) {
+    if (!canReorder || isMobile) return;
+    e.preventDefault();
+    if (id !== overId) setOverId(id);
+  }
+  async function onDrop(e, id) {
+    if (!canReorder || isMobile) return;
+    e.preventDefault();
+    const visibleIds = idsFromList(services);
+    const newIds = (function () {
+      const fromId = dragId;
+      const toId = id;
+      if (!fromId || !toId) return visibleIds;
+      const fromIdx = visibleIds.indexOf(fromId);
+      const toIdx = visibleIds.indexOf(toId);
+      if (fromIdx < 0 || toIdx < 0) return visibleIds;
+      // Desktop ponašanje: ubaci NA poziciju targeta (kao ranije)
+      return moveToIndex(visibleIds, fromIdx, toIdx);
+    })();
+    setDragId(null);
+    setOverId(null);
+    applyLocalOrder(newIds);
+    await persistOrder(newIds);
+  }
+  function onDragEnd() {
+    if (isMobile) return;
+    setDragId(null);
+    setOverId(null);
   }
 
-  /* ==================== auto-scroll ==================== */
-  function startAutoScrollIfNeeded(clientY) {
-    cancelAutoScroll();
-    const container = listRef.current;
-    if (!container) return;
+  // MOBILE: tap → tap
+  function onMobileRowTap(targetId) {
+    if (!canReorder || !isMobile) return;
 
-    const rect = container.getBoundingClientRect();
-    const threshold = 60;
-    const speed = 12;
-
-    function step() {
-      const y = window._lastTouchY ?? clientY;
-      const nearTop = y < rect.top + threshold;
-      const nearBottom = y > rect.bottom - threshold;
-
-      if (nearTop && container.scrollTop > 0) {
-        container.scrollTop = Math.max(0, container.scrollTop - speed);
-        scrollRAF.current = requestAnimationFrame(step);
-      } else if (nearBottom && container.scrollTop < container.scrollHeight - container.clientHeight) {
-        container.scrollTop = Math.min(
-          container.scrollHeight - container.clientHeight,
-          container.scrollTop + speed
-        );
-        scrollRAF.current = requestAnimationFrame(step);
-      }
+    // Ako ništa nije izabrano → izaberi polazni red
+    if (!selectedId) {
+      setSelectedId(targetId);
+      return;
     }
-    scrollRAF.current = requestAnimationFrame(step);
-  }
-  function cancelAutoScroll() {
-    if (scrollRAF.current) {
-      cancelAnimationFrame(scrollRAF.current);
-      scrollRAF.current = null;
+
+    // Ako tapnemo opet na već izabrani → poništi izbor
+    if (selectedId === targetId) {
+      setSelectedId(null);
+      return;
     }
+
+    // Drugi tap: "ubaci posle targeta"
+    const ids = idsFromList(services);
+    const fromIdx = ids.indexOf(selectedId);
+    const targetIdx = ids.indexOf(targetId);
+    if (fromIdx === -1 || targetIdx === -1) {
+      setSelectedId(null);
+      return;
+    }
+
+    const insertIndex = targetIdx + 1; // želimo POSLE targeta
+    const newIds = moveToIndex(ids, fromIdx, insertIndex);
+
+    // Odmah prikaži lokalno i sačuvaj u bazi
+    applyLocalOrder(newIds);
+    persistOrder(newIds).catch(console.error);
+
+    // Poništi selekciju
+    setSelectedId(null);
   }
 
-  /* ==================== “edit/save” ==================== */
+  // Form helpers
   const resetForm = () => {
     setEditing(null);
     setName("");
@@ -250,7 +259,6 @@ export default function AdminCategory() {
       return [...prev, nextObj];
     });
   };
-
   const removeLocalService = (id) => {
     setServices((prev) => prev.filter((x) => x.id !== id));
   };
@@ -321,163 +329,18 @@ export default function AdminCategory() {
     }
   };
 
-  /* ==================== Desktop DnD (ostavljeno da radi) ==================== */
-  function onDragStart(e, id) {
-    if (!canReorder) return e.preventDefault();
-    setDragId(id);
-    const idx = services.findIndex((x) => x.id === id);
-    setDragIndex(idx);
-    e.dataTransfer.effectAllowed = "move";
-  }
-  function onDragOver(e, id) {
-    if (!canReorder) return;
-    e.preventDefault();
-    // desktop: placeholder ispred reda na koji pređemo
-    const idx = services.findIndex((x) => x.id === id);
-    if (idx !== -1 && idx !== overIndex) setOverIndex(idx);
-  }
-  async function onDrop(e, id) {
-    if (!canReorder) return;
-    e.preventDefault();
-    const toIdx = services.findIndex((x) => x.id === id);
-    if (dragIndex == null || toIdx === -1) {
-      setDragId(null); setDragIndex(null); setOverIndex(null);
-      return;
-    }
-    const newIds = moveToIndex(idsFromList(services), dragIndex, toIdx);
-    setDragId(null); setDragIndex(null); setOverIndex(null);
-    applyLocalOrderByIds(newIds);
-    await persistOrderIds(newIds);
-  }
-  function onDragEnd() {
-    setDragId(null); setDragIndex(null); setOverIndex(null);
-  }
-
-  /* ==================== Mobile long-press + floating drag ==================== */
-  function allRowEls() {
-    return Array.from(document.querySelectorAll(".srv-row"));
-  }
-  function measureRowById(id) {
-    const el = document.querySelector(`.srv-row[data-id="${id}"]`);
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    return { el, rect };
-  }
-  function computeInsertionIndexByY(y) {
-    const rows = allRowEls();
-    if (!rows.length) return 0;
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i].getBoundingClientRect();
-      const mid = r.top + r.height / 2;
-      if (y < mid) return i;           // pre ovog reda
-    }
-    return rows.length;                // na kraj
-  }
-
-  function onTouchStart(e, id) {
-    if (!canReorder) return;
-    const t = e.touches[0];
-
-    touchRef.current.startX = t.clientX;
-    touchRef.current.startY = t.clientY;
-    touchRef.current.activeId = id;
-
-    const idx = services.findIndex((x) => x.id === id);
-    setDragId(id);
-    setDragIndex(idx);
-
-    // izmerimo red da bi floating imao istu širinu/početak,
-    // i da bi “grabOffsetY” držao prst na istoj relativnoj visini kartice
-    const m = measureRowById(id);
-    if (m) {
-      setDragX(m.rect.left);
-      setDragW(m.rect.width);
-      setGrabOffsetY(t.clientY - m.rect.top);
-    }
-
-    // vibracija mala
-    if (navigator.vibrate) navigator.vibrate(15);
-
-    // nema preventDefault — dozvoljen normalan skrol dok ne prođe long-press
-    clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = setTimeout(() => {
-      setIsLongPress(true);
-      setIsTouchDrag(true);
-      if (navigator.vibrate) navigator.vibrate(50);
-      // inicijalni prikaz placeholder-a
-      setOverIndex(computeInsertionIndexByY(t.clientY));
-      setDragY(t.clientY);
-    }, 300);
-  }
-
-  function onTouchMove(e) {
-    const t = e.touches[0];
-    window._lastTouchY = t.clientY;
-
-    if (!isLongPress) {
-      // ako je korisnik krenuo da skroluje pre nego što je long-press “kliknuo”, otkaži drag
-      const dx = Math.abs(t.clientX - touchRef.current.startX);
-      const dy = Math.abs(t.clientY - touchRef.current.startY);
-      if (dx > 12 || dy > 12) {
-        clearTimeout(holdTimerRef.current);
-        holdTimerRef.current = null;
-        setDragId(null); setDragIndex(null); setOverIndex(null);
-        setIsTouchDrag(false);
-      }
-      return;
-    }
-
-    // DRAG aktivan: pomeraj lebdeću karticu i računaj insertion index
-    setDragY(t.clientY);
-    const ins = computeInsertionIndexByY(t.clientY);
-    if (ins !== overIndex) debouncedSetOverIndex(ins);
-    startAutoScrollIfNeeded(t.clientY);
-  }
-
-  async function onTouchEnd() {
-    clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = null;
-    cancelAutoScroll();
-
-    if (!isLongPress) {
-      // kratak tap ili skrol — ništa
-      setIsTouchDrag(false);
-      setDragId(null); setDragIndex(null); setOverIndex(null);
-      setDragY(null); setDragX(null); setDragW(null);
-      return;
-    }
-
-    setIsLongPress(false);
-    setIsTouchDrag(false);
-
-    if (dragIndex == null || overIndex == null) {
-      setDragId(null); setDragIndex(null); setOverIndex(null);
-      setDragY(null); setDragX(null); setDragW(null);
-      return;
-    }
-
-    const newIds = moveToIndex(idsFromList(services), dragIndex, overIndex);
-    setDragId(null); setDragIndex(null); setOverIndex(null);
-    setDragY(null); setDragX(null); setDragW(null);
-
-    applyLocalOrderByIds(newIds);
-    await persistOrderIds(newIds);
-  }
-
-  /* ==================== render ==================== */
   return (
     <div style={wrap}>
       <div style={panel}>
         <style>{css}</style>
 
-        {/* GORNJI BLOK */}
+        {/* GORE */}
         <div className="admincat-top">
           <div className="admincat-topbar" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
             <button className="btn-ghost" style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
             <h2 className="admincat-title" style={title}>{catName || "Kategorija"}</h2>
           </div>
 
-          {/* EDIT NAZIVA */}
           <div className="admincat-catrow" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
             <input
               style={inp}
@@ -492,49 +355,22 @@ export default function AdminCategory() {
           </div>
         </div>
 
-        {/* FORMA ZA USLUGU */}
+        {/* FORMA */}
         <form onSubmit={saveService} style={formBase} className="admincat-form">
-          <input
-            style={inp}
-            placeholder="Naziv usluge"
-            value={name}
-            onChange={e => setName(e.target.value)}
-          />
-          <input
-            style={inp}
-            type="number" min="0"
-            placeholder="Trajanje (min)"
-            value={durationMin}
-            onChange={e => setDurationMin(e.target.value)}
-          />
-          <input
-            style={inp}
-            type="number" min="0"
-            placeholder="Cena (RSD)"
-            value={price}
-            onChange={e => setPrice(e.target.value)}
-          />
-          <input
-            style={inp}
-            type="number" min="0" max="90"
-            placeholder="Popust % (opciono)"
-            value={discount}
-            onChange={e => setDiscount(e.target.value)}
-          />
+          <input style={inp} placeholder="Naziv usluge" value={name} onChange={e => setName(e.target.value)} />
+          <input style={inp} type="number" min="0" placeholder="Trajanje (min)" value={durationMin} onChange={e => setDurationMin(e.target.value)} />
+          <input style={inp} type="number" min="0" placeholder="Cena (RSD)" value={price} onChange={e => setPrice(e.target.value)} />
+          <input style={inp} type="number" min="0" max="90" placeholder="Popust % (opciono)" value={discount} onChange={e => setDiscount(e.target.value)} />
           <div className="price-preview">Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
           <button className="btn-primary" style={btn} type="submit" disabled={saving}>
             {saving ? "Čuvam..." : editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}
           </button>
-          {editing && (
-            <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>
-              Otkaži
-            </button>
-          )}
+          {editing && <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>Otkaži</button>}
         </form>
 
-        {/* LISTA + placeholder + floating clone */}
+        {/* LISTA */}
         <div ref={listRef} className="admincat-list" style={list}>
-          {services.map((s, idx) => {
+          {services.map((s) => {
             const isEditing = editing === s.id;
             const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
             const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
@@ -542,88 +378,47 @@ export default function AdminCategory() {
               ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
               : s.finalPrice;
 
-            // pre SVAKOG reda, ako je overIndex == idx, prikaži placeholder traku
-            const showPlaceholderHere = isLongPress && overIndex === idx;
+            const isSelected = isMobile && selectedId === s.id;
 
             return (
-              <React.Fragment key={s.id}>
-                {showPlaceholderHere && <div className="drop-gap" />}
-                <div
-                  data-id={s.id}
-                  className="admincat-row srv-row"
-                  style={{
-                    ...row,
-                    // sakrij originalni red dok vučemo njega (da ne bude duplikat; lebdeći je klon)
-                    visibility: isLongPress && dragId === s.id ? "hidden" : "visible",
-                    touchAction: isLongPress && dragId === s.id ? "none" : "pan-y",
-                    cursor: canReorder ? "grab" : "default",
-                  }}
-                  draggable={false} // mobile long-press koristimo; desktop DnD i dalje radi preko mouse drag handlera gore, ali HTML5 drag nije potreban na mobile
-                  onTouchStart={(e) => onTouchStart(e, s.id)}
-                  onDragStart={(e) => onDragStart(e, s.id)}
-                  onDragOver={(e) => onDragOver(e, s.id)}
-                  onDrop={(e) => onDrop(e, s.id)}
-                  onDragEnd={onDragEnd}
-                >
-                  <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
-                    <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
-                    <div style={{ opacity: .8, fontSize: 13 }}>
-                      {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
-                      {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, pointerEvents: isLongPress && dragId === s.id ? "none" : "auto" }}>
-                    <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
-                    <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
+              <div
+                key={s.id}
+                data-id={s.id}
+                className="admincat-row srv-row"
+                style={{
+                  ...row,
+                  cursor: canReorder ? (isMobile ? "pointer" : "grab") : "default",
+                  border: isSelected ? "2px solid #ff5fa2" : row.border,
+                  background: isSelected ? "rgba(255,95,162,0.08)" : row.background,
+                  transform: isSelected ? "scale(1.01)" : "none",
+                }}
+                draggable={canReorder && !isMobile}
+                onDragStart={(e) => onDragStart(e, s.id)}
+                onDragOver={(e) => onDragOver(e, s.id)}
+                onDrop={(e) => onDrop(e, s.id)}
+                onDragEnd={onDragEnd}
+                onClick={() => isMobile && onMobileRowTap(s.id)}
+              >
+                <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+                  <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
+                  <div style={{ opacity: .8, fontSize: 13 }}>
+                    {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
+                    {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
                   </div>
                 </div>
-              </React.Fragment>
+
+                <div
+                  style={{ display: "flex", gap: 8 }}
+                  onClick={(e) => e.stopPropagation()} // da tap na dugmad ne okida selekciju
+                >
+                  <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
+                  <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
+                </div>
+              </div>
             );
           })}
-          {/* placeholder i na SAMOM KRAJU liste */}
-          {isLongPress && overIndex === services.length && <div className="drop-gap" />}
 
-          {/* floating clone koji prati prst */}
-          {isLongPress && dragId && dragY != null && dragX != null && (
-            <div
-              className="floating-card"
-              style={{
-                position: "fixed",
-                left: `${dragX}px`,
-                top: `${Math.max(0, (dragY - grabOffsetY))}px`,
-                width: `${dragW || 300}px`,
-                zIndex: 9999,
-                pointerEvents: "none",
-                transform: "scale(1.02)",
-                boxShadow: "0 18px 36px rgba(0,0,0,.35)",
-                border: "2px solid #ff5fa2",
-                borderRadius: 14,
-                background: "#fff",
-              }}
-            >
-              {(() => {
-                const s = services[dragIndex ?? -1];
-                if (!s) return null;
-                const isEditing = editing === s.id;
-                const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
-                const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
-                const currentFinal = isEditing
-                  ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
-                  : s.finalPrice;
-                return (
-                  <div style={{ ...row, margin: 0 }}>
-                    <div>
-                      <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
-                      <div style={{ opacity: .8, fontSize: 13 }}>
-                        {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
-                        {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
+          {!services.length && !loading && <div style={{ color: "#fff" }}>Nema usluga.</div>}
         </div>
       </div>
     </div>
@@ -703,22 +498,6 @@ const css = `
     font-weight: 800;
     padding: 0 6px;
   }
-
-  /* placeholder traka (između redova) */
-  .drop-gap {
-    height: 10px;
-    border-radius: 8px;
-    background: rgba(255,95,162,0.25);
-    border: 2px dashed #ff5fa2;
-    margin: 2px 4px;
-  }
-
-  .srv-row, .srv-row * {
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-  }
-
   @media (max-width: 1100px) {
     .admincat-form {
       grid-template-columns:
