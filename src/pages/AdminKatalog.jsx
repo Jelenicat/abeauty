@@ -190,21 +190,24 @@ export default function AdminKatalog() {
     setDragOverId(id);
     setIsDragging(true);
     setPreviewOrderIds(renderCats.map((c) => c.id));
-    if (isTouchDevice()) {
-      const touch = e.touches?.[0];
-      touchStartYRef.current = touch?.clientY ?? 0;
+
+    if (isTouchDevice() && e.touches?.[0]) {
+      // spreči trenutni scroll da ne "proguta" drag
+      e.preventDefault?.();
+      const touch = e.touches[0];
+      touchStartYRef.current = touch.clientY ?? 0;
       const tileRect = tileRefs.current[id]?.getBoundingClientRect();
       if (tileRect) {
         setDragOffsetY(touch.clientY - tileRect.top);
       }
-    } else {
+    } else if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
     }
   }
 
   function onDragOver(e, overId) {
     if (!dragId || filter.trim()) return;
-    e.preventDefault();
+    e.preventDefault?.();
     if (dragOverId === overId) return;
     setDragOverId(overId);
     setPreviewOrderIds((prev) => {
@@ -225,7 +228,7 @@ export default function AdminKatalog() {
     setDragOffsetY(newY - touchStartYRef.current);
 
     // Find the tile under the current touch position
-    const tiles = Object.values(tileRefs.current);
+    const tiles = Object.values(tileRefs.current).filter(Boolean);
     let closestTileId = null;
     let minDistance = Infinity;
 
@@ -245,8 +248,8 @@ export default function AdminKatalog() {
   }
 
   async function onDragEnd(e) {
-    e.preventDefault();
-    if (!dragId || filter.trim()) return;
+    e.preventDefault?.();
+    if (!dragId || filter.trim()) { cleanupDrag(); return; }
     const finalIds = previewOrderIds || renderCats.map((c) => c.id);
     await persistOrderByIds(finalIds);
     cleanupDrag();
@@ -376,6 +379,7 @@ export default function AdminKatalog() {
                 removeCategory={removeCategory}
                 onNav={() => nav("/admin/katalog/discounts")}
                 isDiscounts
+                // ništa od draga na ovoj (virtuelnoj) pločici
               />
             ) : null}
 
@@ -400,6 +404,8 @@ export default function AdminKatalog() {
                   draggable={reorderMode && !filter.trim()}
                   onDragStart={(e) => onDragStart(e, cat.id)}
                   onDragOver={(e) => onDragOver(e, cat.id)}
+                  // ⬇️ mobilni start draga koristi istu funkciju
+                  onTouchStart={(e) => (reorderMode && !filter.trim()) && onDragStart(e, cat.id)}
                   isDragging={isTileDragging}
                   isDragOver={isDragOver}
                   dragOffsetY={isTileDragging ? dragOffsetY : 0}
@@ -432,6 +438,7 @@ function CategoryTile({
   draggable = false,
   onDragStart,
   onDragOver,
+  onTouchStart,
   isDragging = false,
   isDragOver = false,
   dragOffsetY = 0,
@@ -454,6 +461,7 @@ function CategoryTile({
       draggable={draggable && !isDiscounts}
       onDragStart={draggable && !isDiscounts ? (e) => onDragStart?.(e) : undefined}
       onDragOver={draggable && !isDiscounts ? (e) => onDragOver?.(e) : undefined}
+      onTouchStart={draggable && !isDiscounts ? (e) => onTouchStart?.(e) : undefined}
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
@@ -492,7 +500,7 @@ function CategoryTile({
             ...tileButton,
             pointerEvents: isDragging ? "none" : "auto",
           }}
-          onClick={() => !isDragging && onNav()}
+          onClick={() => (!isDragging) && onNav()}
           className="ak-tilebtn"
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -535,7 +543,6 @@ function CategoryTile({
   );
 }
 
-// Styles remain the same as in the original code
 /* ===== STYLES ===== */
 const wrap = {
   minHeight: "100vh",
