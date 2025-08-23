@@ -24,7 +24,7 @@ export default function AdminCategory() {
   const [discount, setDiscount] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // === Reorder state ===
+  // Reorder state
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
 
@@ -39,6 +39,16 @@ export default function AdminCategory() {
     const d = Number(discount) || 0;
     return Math.max(0, Math.round(p * (1 - d / 100)));
   }, [price, discount]);
+
+  // Debounce utility for smoother touch movements
+  const debounce = (fn, ms) => {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), ms);
+    };
+  };
+  const debouncedSetOverId = debounce(setOverId, 50);
 
   useEffect(() => {
     if (!catId) return;
@@ -289,26 +299,31 @@ export default function AdminCategory() {
   }
   function onDragEnd() {
     setDragId(null);
-    setOverId(null);
+    set/overId(null);
   }
 
-  // ===== Mobile long-press DnD =====
+  // Mobile long-press DnD
   function onTouchStart(e, id) {
     if (!canReorder) return;
 
-    // spreči context meni i selekt odmah
-    e.preventDefault?.();
+    e.preventDefault();
 
-    // zapamti početnu tačku
     touchRef.current.startY = e.touches[0].clientY;
     touchRef.current.activeId = id;
     setDragId(id);
 
-    // pokreni tajmer za long-press (250ms)
+    // Haptic feedback
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
+
     const t = setTimeout(() => {
-      setIsLongPress(true);   // prelazimo u "držim stavku"
+      setIsLongPress(true);
       setIsTouchDrag(true);
-    }, 250);
+      if (navigator.vibrate) {
+        navigator.vibrate(100);
+      }
+    }, 200); // Reduced from 250ms
     setHoldTimer(t);
   }
 
@@ -343,32 +358,38 @@ export default function AdminCategory() {
 
     const y = e.touches[0].clientY;
 
-    // pre long-press: ako je korisnik počeo da skroluje, otkaži long-press
+    // Auto-scroll
+    const scrollContainer = document.querySelector(".admincat-row").parentElement;
+    const scrollThreshold = 100;
+    const scrollSpeed = 10;
+    if (y < scrollThreshold && scrollContainer.scrollTop > 0) {
+      scrollContainer.scrollBy({ top: -scrollSpeed, behavior: "smooth" });
+    } else if (y > window.innerHeight - scrollThreshold) {
+      scrollContainer.scrollBy({ top: scrollSpeed, behavior: "smooth" });
+    }
+
     if (!isLongPress) {
-      if (Math.abs(y - touchRef.current.startY) > 8) {
+      if (Math.abs(y - touchRef.current.startY) > 12) { // Increased from 8
         if (holdTimer) clearTimeout(holdTimer);
         setHoldTimer(null);
         setDragId(null);
         setOverId(null);
         setIsTouchDrag(false);
       }
-      return; // dozvoli normalan skrol
+      return;
     }
 
-    // long-press je aktivan => ovo je drag
     e.preventDefault();
     const nearest = nearestIdByY(y);
-    if (nearest && nearest !== overId) setOverId(nearest);
+    if (nearest && nearest !== overId) debouncedSetOverId(nearest);
   }
 
   async function onTouchEnd() {
-    // uvek očisti tajmer
     if (holdTimer) {
       clearTimeout(holdTimer);
       setHoldTimer(null);
     }
 
-    // ako long-press nije aktiviran, ovo je bio samo tap
     if (!isLongPress) {
       setIsTouchDrag(false);
       setDragId(null);
@@ -441,7 +462,7 @@ export default function AdminCategory() {
             onChange={e => setDurationMin(e.target.value)}
           />
           <input
-            style={inp}
+            style={inp łaz
             type="number" min="0"
             placeholder="Cena (RSD)"
             value={price}
@@ -478,7 +499,7 @@ export default function AdminCategory() {
               <div
                 key={s.id}
                 data-id={s.id}
-                onContextMenu={(e) => e.preventDefault()} // spreči i context meni
+                onContextMenu={(e) => e.preventDefault()}
                 style={{
                   ...row,
                   cursor: canReorder ? "grab" : "default",
@@ -486,13 +507,23 @@ export default function AdminCategory() {
                   userSelect: "none",
                   WebkitUserSelect: "none",
                   WebkitTouchCallout: "none",
-                  ...(dragId === s.id && isLongPress ? {
-                    transform: "scale(1.05) rotate(1deg)",
-                    boxShadow: "0 12px 24px rgba(0,0,0,.3)",
-                    zIndex: 999,
-                  } : {}),
+                  ...(dragId === s.id && isLongPress
+                    ? {
+                        transform: "scale(1.1) translateY(2px)",
+                        boxShadow: "0 12px 24px rgba(0,0,0,.4)",
+                        zIndex: 999,
+                        opacity: 0.9,
+                        border: "2px solid #ff5fa2",
+                      }
+                    : {}),
+                  ...(overId === s.id && dragId !== s.id
+                    ? {
+                        border: "2px dashed #ff5fa2",
+                        background: "rgba(255, 95, 162, 0.1)",
+                      }
+                    : {}),
                 }}
-                className="admincat-row srv-row"
+                className={`admincat-row srv-row ${overId === s.id && dragId !== s.id ? "drop-target" : ""}`}
                 draggable={canReorder}
                 onDragStart={(e) => onDragStart(e, s.id)}
                 onDragOver={(e) => onDragOver(e, s.id)}
@@ -522,7 +553,7 @@ export default function AdminCategory() {
   );
 }
 
-/* === styles (nepromenjeni vizuelno) === */
+/* === styles === */
 const wrap = { minHeight: "100vh", background: 'url("/slika1.webp") center/cover no-repeat fixed', padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" };
 const panel = { width: "min(1250px,100%)", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.35)", backdropFilter: "blur(10px)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.25)", padding: "clamp(18px,4vw,28px)" };
 const title = { margin: 0, color: "#fff", fontWeight: 900, fontSize: "clamp(18px,3vw,28px)" };
@@ -539,16 +570,13 @@ const inp = {
 const btn = { height: 42, border: "none", borderRadius: 12, background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff", fontWeight: 800, padding: "0 16px", cursor: "pointer" };
 const ghostBtn = { height: 42, borderRadius: 12, border: "1px solid rgba(255,255,255,.7)", background: "transparent", color: "#fff", fontWeight: 800, padding: "0 14px", cursor: "pointer" };
 const dangerBtn = { ...btn, background: "#ff5b6e" };
-
-/* baza forme */
 const formBase = {
   display: "grid",
   gap: 8,
   marginBottom: 14,
   alignItems: "center",
 };
-
-const list = { display: "grid", gap: 10 };
+const list = { display: "grid", gap: 10, maxHeight: "60vh", overflowY: "auto" };
 const row = {
   display: "flex",
   justifyContent: "space-between",
@@ -562,125 +590,127 @@ const row = {
   userSelect: "none",
   WebkitUserSelect: "none",
   WebkitTouchCallout: "none",
+  transition: "transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease",
 };
-const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800, color:"#fff" };
+const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800, color: "#fff" };
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
 
-/* dodatni CSS */
 const css = `
-/* lep "card" header na svim ekranima */
-.admincat-top {
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.10);
-  backdrop-filter: blur(8px);
-  padding: 12px;
-  margin-bottom: 14px;
-}
-
-/* RASPORED FORME — desktop prvo */
-.admincat-form {
-  grid-template-columns:
-    minmax(220px, 2fr)
-    minmax(120px, 1fr)
-    minmax(120px, 1fr)
-    minmax(120px, 1fr)
-    minmax(160px, auto)
-    minmax(150px, auto)
-    minmax(120px, auto);
-}
-.admincat-form > * {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-.price-preview {
-  align-self: center;
-  color: #fff;
-  font-weight: 800;
-  padding: 0 6px;
-}
-
-/* Isključi selekciju/long-press callout-a na redovima i sadržaju redova */
-.srv-row, .srv-row * {
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-}
-
-/* --- TABLET --- */
-@media (max-width: 1100px) {
+  .admincat-top {
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,.25);
+    background: rgba(255,255,255,.10);
+    backdrop-filter: blur(8px);
+    padding: 12px;
+    margin-bottom: 14px;
+  }
   .admincat-form {
     grid-template-columns:
-      minmax(200px, 1.6fr)
-      repeat(3, minmax(120px, 1fr))
+      minmax(220px, 2fr)
+      minmax(120px, 1fr)
+      minmax(120px, 1fr)
+      minmax(120px, 1fr)
       minmax(160px, auto)
       minmax(150px, auto)
       minmax(120px, auto);
   }
-}
-
-/* --- MOBILE --- */
-@media (max-width: 900px) {
-  .admincat-topbar {
-    display: flex !important;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    margin-bottom: 12px !important;
-  }
-  .admincat-topbar .btn-ghost {
+  .admincat-form > * {
     width: 100%;
-    height: 44px;
-    border-radius: 12px;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .price-preview {
+    align-self: center;
+    color: #fff;
     font-weight: 800;
+    padding: 0 6px;
   }
-  .admincat-title {
-    margin: 0;
-    text-align: left;
-    font-size: 22px;
-    line-height: 1.2;
+  .srv-row, .srv-row * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
-
-  .admincat-catrow {
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    gap: 8px;
-    margin-bottom: 12px !important;
+  .srv-row.drop-target::before {
+    content: "";
+    display: block;
+    height: 3px;
+    background: #ff5fa2;
+    position: absolute;
+    top: -3px;
+    left: 0;
+    right: 0;
+    opacity: 0.8;
   }
-  .admincat-catrow input {
-    width: 100%;
-    height: 44px;
-    border-radius: 12px;
+  .srv-row {
+    position: relative;
   }
-  .admincat-catrow .btn-primary,
-  .admincat-catrow .btn-danger {
-    width: 100%;
-    height: 44px;
-    border-radius: 12px;
-    font-weight: 800;
+  @media (max-width: 1100px) {
+    .admincat-form {
+      grid-template-columns:
+        minmax(200px, 1.6fr)
+        repeat(3, minmax(120px, 1fr))
+        minmax(160px, auto)
+        minmax(150px, auto)
+        minmax(120px, auto);
+    }
   }
-
-  .admincat-form {
-    grid-template-columns: 1fr !important;
+  @media (max-width: 900px) {
+    .admincat-topbar {
+      display: flex !important;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+      margin-bottom: 12px !important;
+    }
+    .admincat-topbar .btn-ghost {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+    .admincat-title {
+      margin: 0;
+      text-align: left;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+    .admincat-catrow {
+      display: grid !important;
+      grid-template-columns: 1fr !important;
+      gap: 8px;
+      margin-bottom: 12px !important;
+    }
+    .admincat-catrow input {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+    }
+    .admincat-catrow .btn-primary,
+    .admincat-catrow .btn-danger {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+    .admincat-form {
+      grid-template-columns: 1fr !important;
+    }
+    .admincat-form input,
+    .admincat-form button,
+    .admincat-form .price-preview {
+      width: 100%;
+    }
+    .admincat-form input {
+      height: 44px;
+      border-radius: 12px;
+    }
+    .admincat-form button {
+      height: 44px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+    .admincat-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .admincat-row > div:last-child { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+    .admincat-row button { width: 100%; height: 42px; border-radius: 12px; font-weight: 800; }
   }
-  .admincat-form input,
-  .admincat-form button,
-  .admincat-form .price-preview {
-    width: 100%;
-  }
-  .admincat-form input {
-    height: 44px;
-    border-radius: 12px;
-  }
-  .admincat-form button {
-    height: 44px;
-    border-radius: 12px;
-    font-weight: 800;
-  }
-
-  .admincat-row { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .admincat-row > div:last-child { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-  .admincat-row button { width: 100%; height: 42px; border-radius: 12px; font-weight: 800; }
-}
 `;

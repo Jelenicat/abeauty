@@ -18,51 +18,93 @@ function useIsMobile(bp = 700) {
 }
 
 export default function AdminKlijenti() {
-  const [clients, setClients] = useState([]);
+  const [users, setUsers] = useState([]);           // korisnici iz 'users'
+  const [lastByPhone, setLastByPhone] = useState({}); // mapa tel -> { lastService, lastDate }
   const [search, setSearch] = useState("");
   const isMobile = useIsMobile(700);
   const nav = useNavigate();
 
-  // učitaj jedinstvene klijente iz appointments (bez duplikata po name+phone)
+  // helperi za pretragu i normalizaciju
+  const normText = (s = "") =>
+    s.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const digits = (s = "") => s.toString().replace(/[^\d]/g, "");
+
+  // 1) UČITAJ SVE KORISNIKE IZ 'users' (bez admin/abeauty)
   useEffect(() => {
-    const q = query(collection(db, "appointments"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const map = new Map();
+    const qUsers = query(collection(db, "users"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(qUsers, (snap) => {
+      const list = [];
       snap.forEach((doc) => {
-        const d = doc.data();
-        const key = `${(d.clientName || "").trim().toLowerCase()}_${(d.clientPhone || "").trim()}`;
-        if (!map.has(key)) {
-          map.set(key, {
-            name: d.clientName || "Nepoznato",
-            phone: d.clientPhone || "",
-            lastService: d.serviceName || "",
-            lastDate: d.dateKey || "",
-          });
-        }
+        const d = doc.data() || {};
+        const phoneRaw = d.phone || "";
+        const phoneDigits = digits(phoneRaw);
+
+        // isključi ova dva broja
+        if (phoneDigits === "0665511005" || phoneDigits === "0000000000") return;
+
+        list.push({
+          uid: doc.id,
+          name:
+            [d.firstName, d.lastName].filter(Boolean).join(" ").trim() ||
+            d.firstName ||
+            d.lastName ||
+            "—",
+          phone: phoneRaw || "",
+          role: d.role || "",
+          isAdmin: !!d.isAdmin,
+          isFinance: !!d.isFinance,
+          createdAt: d.createdAt || null,
+        });
       });
-      setClients(Array.from(map.values()));
+      setUsers(list);
     });
     return unsub;
   }, []);
 
-  // helperi za pretragu
-  const normText = (s = "") =>
-    s.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  const normPhone = (s = "") => s.toString().replace(/[^\d]/g, ""); // samo cifre
+  // 2) UČITAJ POSLEDNJU USLUGU/DATUM po broju telefona iz 'appointments'
+  //    Jedna pretplata, sortirano novije ka starijem; prvi put kad vidimo broj — to je poslednja usluga.
+  useEffect(() => {
+    const qAppts = query(collection(db, "appointments"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(qAppts, (snap) => {
+      const map = new Map(); // phoneDigits -> { lastService, lastDate }
+      snap.forEach((doc) => {
+        const a = doc.data() || {};
+        const ph = digits(a.clientPhone || "");
+        if (!ph) return;
+        if (!map.has(ph)) {
+          map.set(ph, {
+            lastService: a.serviceName || "",
+            lastDate: a.dateKey || "",
+          });
+        }
+      });
+      setLastByPhone(Object.fromEntries(map));
+    });
+    return unsub;
+  }, []);
 
+  // Spoji korisnike sa poslednjim terminom (ako postoji)
+  const merged = useMemo(() => {
+    return users.map((u) => {
+      const info = lastByPhone[digits(u.phone)] || { lastService: "", lastDate: "" };
+      return { ...u, ...info };
+    });
+  }, [users, lastByPhone]);
+
+  // Pretraga po imenu i/ili broju
   const filtered = useMemo(() => {
     const q = normText(search);
-    const qPhone = normPhone(search);
-    if (!q && !qPhone) return clients;
+    const qPhone = digits(search);
+    if (!q && !qPhone) return merged;
 
-    return clients.filter((c) => {
+    return merged.filter((c) => {
       const name = normText(c.name);
-      const phone = normPhone(c.phone);
+      const phone = digits(c.phone);
       const matchName = q ? name.includes(q) : false;
       const matchPhone = qPhone ? phone.includes(qPhone) : false;
       return matchName || matchPhone;
     });
-  }, [clients, search]);
+  }, [merged, search]);
 
   return (
     <div style={wrap}>
@@ -81,7 +123,7 @@ export default function AdminKlijenti() {
 
         {/* NASLOV + PRETRAGA */}
         <div style={headRow(isMobile)}>
-          <h2 style={title}>Klijenti</h2>
+          <h2 style={title}>Klijenti (svi koji su se ulogovali)</h2>
           <div style={searchBox}>
             <input
               style={searchInput(isMobile)}
@@ -106,12 +148,16 @@ export default function AdminKlijenti() {
           ) : isMobile ? (
             // 📱 MOBILNI PRIKAZ — kartice
             <div className="clients-cards">
-              {filtered.map((c, i) => (
-                <div key={`${c.phone}-${i}`} className="client-card">
+              {filtered.map((c) => (
+                <div key={c.uid} className="client-card">
                   <div className="client-name">{c.name}</div>
                   <div className="client-row">
                     <span className="label">Telefon</span>
                     <span className="value">{c.phone || "—"}</span>
+                  </div>
+                  <div className="client-row">
+                    <span className="label">Uloga</span>
+                    <span className="value">{c.role || "client"}</span>
                   </div>
                   <div className="client-row">
                     <span className="label">Usluga</span>
@@ -125,22 +171,24 @@ export default function AdminKlijenti() {
               ))}
             </div>
           ) : (
-            // 💻 DESKTOP — tabela kao do sada
+            // 💻 DESKTOP — tabela
             <div className="clients-table-wrap">
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
                 <thead>
                   <tr style={{ background: "#f6f6f6" }}>
                     <th style={th}>Ime</th>
                     <th style={th}>Telefon</th>
+                    <th style={th}>Uloga</th>
                     <th style={th}>Poslednja usluga</th>
                     <th style={th}>Datum</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((c, i) => (
-                    <tr key={`${c.phone}-${i}`} style={i % 2 ? { background: "#fafafa" } : undefined}>
+                    <tr key={c.uid} style={i % 2 ? { background: "#fafafa" } : undefined}>
                       <td style={tdBold}>{c.name}</td>
                       <td style={td}>{c.phone}</td>
+                      <td style={td}>{c.role || "client"}</td>
                       <td style={td}>{c.lastService}</td>
                       <td style={td}>{c.lastDate}</td>
                     </tr>
