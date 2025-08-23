@@ -1,3 +1,4 @@
+
 // src/pages/AdminCategory.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -95,12 +96,12 @@ export default function AdminCategory() {
     return () => off();
   }, [catId]);
 
-  // Globalni “patch” dok je LONG-PRESS drag aktivan: blokiraj skrol i slušaj pokret/pustanje
+  // Global touch event listeners for long-press drag
   useEffect(() => {
     if (!isLongPress) return;
 
     const handleMove = (e) => {
-      e.preventDefault(); // ključno da ne krene scroll/selekt
+      e.preventDefault();
       onTouchMove(e);
     };
     const handleEnd = () => onTouchEnd();
@@ -246,8 +247,8 @@ export default function AdminCategory() {
     }
   };
 
-  /* ==================== Reorder helpers (desktop + telefon) ==================== */
-  const canReorder = catId !== "discounts"; // u "Na popustu" je sort po imenu
+  /* ==================== Reorder helpers ==================== */
+  const canReorder = catId !== "discounts";
   const idsFromList = (list) => list.map((x) => x.id);
   const moveId = (listIds, fromId, toId) => {
     if (fromId === toId || !fromId || !toId) return listIds;
@@ -299,7 +300,7 @@ export default function AdminCategory() {
   }
   function onDragEnd() {
     setDragId(null);
-    set/overId(null);
+    setOverId(null);
   }
 
   // Mobile long-press DnD
@@ -307,12 +308,10 @@ export default function AdminCategory() {
     if (!canReorder) return;
 
     e.preventDefault();
-
     touchRef.current.startY = e.touches[0].clientY;
     touchRef.current.activeId = id;
     setDragId(id);
 
-    // Haptic feedback
     if (navigator.vibrate) {
       navigator.vibrate(50);
     }
@@ -323,7 +322,7 @@ export default function AdminCategory() {
       if (navigator.vibrate) {
         navigator.vibrate(100);
       }
-    }, 200); // Reduced from 250ms
+    }, 200);
     setHoldTimer(t);
   }
 
@@ -340,16 +339,20 @@ export default function AdminCategory() {
   function nearestIdByY(y) {
     let best = null;
     let bestDist = Infinity;
-    for (const el of allRowEls()) {
+    const rows = allRowEls();
+    console.log("Rows found:", rows.length); // Debug: Check if all rows are detected
+    for (const el of rows) {
       const id = idFromRowEl(el);
       if (!id) continue;
       const cy = rowCenterY(el);
       const d = Math.abs(cy - y);
+      console.log(`Row ${id}: centerY=${cy}, touchY=${y}, distance=${d}`); // Debug
       if (d < bestDist) {
         bestDist = d;
         best = id;
       }
     }
+    console.log("Nearest ID:", best); // Debug
     return best;
   }
 
@@ -357,9 +360,10 @@ export default function AdminCategory() {
     if (!dragId || !canReorder) return;
 
     const y = e.touches[0].clientY;
+    console.log("Touch move: y=", y); // Debug
 
     // Auto-scroll
-    const scrollContainer = document.querySelector(".admincat-row").parentElement;
+    const scrollContainer = document.querySelector(".admincat-row").parentElement || document.body;
     const scrollThreshold = 100;
     const scrollSpeed = 10;
     if (y < scrollThreshold && scrollContainer.scrollTop > 0) {
@@ -369,7 +373,7 @@ export default function AdminCategory() {
     }
 
     if (!isLongPress) {
-      if (Math.abs(y - touchRef.current.startY) > 12) { // Increased from 8
+      if (Math.abs(y - touchRef.current.startY) > 12) {
         if (holdTimer) clearTimeout(holdTimer);
         setHoldTimer(null);
         setDragId(null);
@@ -381,7 +385,10 @@ export default function AdminCategory() {
 
     e.preventDefault();
     const nearest = nearestIdByY(y);
-    if (nearest && nearest !== overId) debouncedSetOverId(nearest);
+    if (nearest && nearest !== overId) {
+      debouncedSetOverId(nearest);
+      console.log("Over ID updated:", nearest); // Debug
+    }
   }
 
   async function onTouchEnd() {
@@ -404,10 +411,13 @@ export default function AdminCategory() {
       setDragId(null);
       setOverId(null);
       document.body.style.overflow = "";
+      console.log("Drag cancelled: no dragId or overId"); // Debug
       return;
     }
+
     const visibleIds = idsFromList(services);
     const newIds = moveId(visibleIds, dragId, overId);
+    console.log("New order:", newIds); // Debug
     const moved = dragId;
     setDragId(null);
     setOverId(null);
@@ -463,7 +473,6 @@ export default function AdminCategory() {
           />
           <input
             style={inp}
-            
             type="number" min="0"
             placeholder="Cena (RSD)"
             value={price}
