@@ -18,9 +18,7 @@ import {
 } from "firebase/firestore";
 import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch, FiArrowLeft, FiMove } from "react-icons/fi";
 
-/**
- * Helper: detekcija mobilnog dodira (grubo, ali praktično za UI odluke)
- */
+/** Da li je touch uređaj */
 const isTouchDevice = () =>
   typeof window !== "undefined" &&
   ("ontouchstart" in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0);
@@ -29,7 +27,7 @@ export default function AdminKatalog() {
   const nav = useNavigate();
 
   // Data
-  const [cats, setCats] = useState([]); // iz baze (pravi objekti sa {id, name, order, ...})
+  const [cats, setCats] = useState([]);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,29 +38,30 @@ export default function AdminKatalog() {
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
 
-  // Custom naslov za "Na popustu"
+  // Popusti
   const [discountTitle, setDiscountTitle] = useState("Na popustu");
 
-  // --- Reorder (desktop DnD) ---
+  // Desktop DnD
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const [previewOrderIds, setPreviewOrderIds] = useState(null); // niz cat.id za vizuelni preview tokom draga
+  const [previewOrderIds, setPreviewOrderIds] = useState(null);
 
-  // --- Mobile long-press select+place ---
+  // Mobile reorder režim (novo)
+  const [reorderMode, setReorderMode] = useState(false);
+
+  // Mobile long-press
   const [mobileSelectedId, setMobileSelectedId] = useState(null);
   const holdTimerRef = useRef(null);
   const holdStartedRef = useRef(false);
   const touchStartXY = useRef({ x: 0, y: 0 });
 
-  // >>> OTVRDNUTI PRAGOVI I STANJE <<<
-  const LONG_PRESS_MS = 450;            // duže držanje pre ulaska u select mod
-  const MOVE_CANCEL_PX = 16;            // veći prag za "pomerila si prst" (skrol)
-  const TAP_OPEN_COOLDOWN_MS = 380;     // posle premeštanja, blokiraj otvaranje kratko
+  // Osetljivost + zaštite
+  const LONG_PRESS_MS = 600;           // stroži long press
+  const MOVE_CANCEL_PX = 24;           // veći prag pomeranja
+  const TAP_OPEN_COOLDOWN_MS = 380;
   const touchMovedRef = useRef(false);
-  const touchStartTimeRef = useRef(0);
   const tapOpenBlockedUntilRef = useRef(0);
 
-  // Realtime: kategorije, usluge
   useEffect(() => {
     const offCats = onSnapshot(
       query(collection(db, "categories"), orderBy("order", "asc")),
@@ -74,27 +73,19 @@ export default function AdminKatalog() {
     const offSrv = onSnapshot(collection(db, "services"), (s) => {
       setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-    return () => {
-      offCats();
-      offSrv();
-    };
+    return () => { offCats(); offSrv(); };
   }, []);
 
-  // Realtime: meta/discounts (naslov)
   useEffect(() => {
     let unsub = () => {};
     (async () => {
       try {
         unsub = onSnapshot(doc(db, "meta", "discounts"), (snap) => {
-          setDiscountTitle(
-            snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu"
-          );
+          setDiscountTitle(snap.exists() ? (snap.data()?.title || "Na popustu") : "Na popustu");
         });
       } catch {
         const snap = await getDoc(doc(db, "meta", "discounts"));
-        setDiscountTitle(
-          snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu"
-        );
+        setDiscountTitle(snap.exists() ? (snap.data()?.title || "Na popustu") : "Na popustu");
       }
     })();
     return () => unsub && unsub();
@@ -114,9 +105,7 @@ export default function AdminKatalog() {
   const filtered = useMemo(() => {
     const t = filter.trim().toLowerCase();
     const orderedFromDb = [...cats].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    return t
-      ? orderedFromDb.filter((c) => (c.name || "").toLowerCase().includes(t))
-      : orderedFromDb;
+    return t ? orderedFromDb.filter((c) => (c.name || "").toLowerCase().includes(t)) : orderedFromDb;
   }, [cats, filter]);
 
   const filteredWithDiscounts = useMemo(() => {
@@ -126,23 +115,13 @@ export default function AdminKatalog() {
       (!t || (discountTitle || "Na popustu").toLowerCase().includes(t) || "popust".includes(t));
     const base = [...filtered];
     if (wants) {
-      base.unshift({
-        id: "discounts",
-        name: discountTitle || "Na popustu",
-        order: -Infinity,
-        _virtual: true,
-      });
+      base.unshift({ id: "discounts", name: discountTitle || "Na popustu", order: -Infinity, _virtual: true });
     }
     return base;
   }, [filtered, discountedServices.length, filter, discountTitle]);
 
-  /**
-   * Render niz za grid uzimajući u obzir previewOrderIds (desktop drag) i discount virtual
-   */
   const renderCats = useMemo(() => {
-    // Uvek polazimo od "čistih" kategorija (bez virtual "discounts"):
     const baseReal = filteredWithDiscounts.filter((c) => c.id !== "discounts");
-    // Ako je aktivan desktop drag preview i nema filtera → prikaži preview raspored:
     if (!filter.trim() && previewOrderIds && previewOrderIds.length) {
       const mapById = new Map(baseReal.map((c) => [c.id, c]));
       const arranged = [];
@@ -151,7 +130,6 @@ export default function AdminKatalog() {
         if (obj) arranged.push(obj);
         mapById.delete(id);
       }
-      // Dodaj sve koje nisu bile u preview listi (safety)
       for (const rest of mapById.values()) arranged.push(rest);
       return arranged;
     }
@@ -163,27 +141,15 @@ export default function AdminKatalog() {
     e.preventDefault();
     const CLEAN = newName.trim();
     if (!CLEAN) return setError("Naziv kategorije ne može biti prazan.");
-    if (
-      cats.some(
-        (c) => (c.name || "").trim().toLowerCase() === CLEAN.toLowerCase()
-      )
-    )
+    if (cats.some((c) => (c.name || "").trim().toLowerCase() === CLEAN.toLowerCase()))
       return setError("Kategorija sa tim nazivom već postoji.");
     try {
-      const maxOrder =
-        cats.reduce((m, c) => Math.max(m, Number(c.order || 0)), 0) || 0;
+      const maxOrder = cats.reduce((m, c) => Math.max(m, Number(c.order || 0)), 0) || 0;
       await addDoc(collection(db, "categories"), {
-        name: CLEAN,
-        order: maxOrder + 1,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        name: CLEAN, order: maxOrder + 1, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
-      setNewName("");
-      setError("");
-    } catch (err) {
-      console.error(err);
-      setError("Greška prilikom dodavanja kategorije.");
-    }
+      setNewName(""); setError("");
+    } catch (err) { console.error(err); setError("Greška prilikom dodavanja kategorije."); }
   }
 
   async function renameCategory(id, name) {
@@ -191,91 +157,53 @@ export default function AdminKatalog() {
     if (!CLEAN) return;
     if (id === "discounts") {
       try {
-        await setDoc(
-          doc(db, "meta", "discounts"),
-          { title: CLEAN, updatedAt: serverTimestamp() },
-          { merge: true }
-        );
-        setEditingId(null);
-        setEditingName("");
-      } catch (err) {
-        console.error(err);
-        setError("Greška prilikom čuvanja naziva popusta.");
-      }
+        await setDoc(doc(db, "meta", "discounts"),
+          { title: CLEAN, updatedAt: serverTimestamp() }, { merge: true });
+        setEditingId(null); setEditingName("");
+      } catch (err) { console.error(err); setError("Greška prilikom čuvanja naziva popusta."); }
       return;
     }
     const current = cats.find((c) => c.id === id);
-    if (current && (current.name || "").trim() === CLEAN) {
-      setEditingId(null);
-      setEditingName("");
-      return;
-    }
-    if (
-      cats.some(
-        (c) =>
-          c.id !== id &&
-          (c.name || "").trim().toLowerCase() === CLEAN.toLowerCase()
-      )
-    )
+    if (current && (current.name || "").trim() === CLEAN) { setEditingId(null); setEditingName(""); return; }
+    if (cats.some((c) => c.id !== id && (c.name || "").trim().toLowerCase() === CLEAN.toLowerCase()))
       return setError("Kategorija sa tim nazivom već postoji.");
     try {
-      await updateDoc(doc(db, "categories", id), {
-        name: CLEAN,
-        updatedAt: serverTimestamp(),
-      });
-      setEditingId(null);
-      setEditingName("");
-    } catch (err) {
-      console.error(err);
-      setError("Greška prilikom preimenovanja kategorije.");
-    }
+      await updateDoc(doc(db, "categories", id), { name: CLEAN, updatedAt: serverTimestamp() });
+      setEditingId(null); setEditingName("");
+    } catch (err) { console.error(err); setError("Greška prilikom preimenovanja kategorije."); }
   }
 
   async function removeCategory(id) {
     if (id === "discounts") return;
     if (!confirm("Obrisati kategoriju? (Usluge ostaju u bazi)")) return;
-    try {
-      await deleteDoc(doc(db, "categories", id));
-    } catch (err) {
-      console.error(err);
-      setError("Greška prilikom brisanja kategorije.");
-    }
+    try { await deleteDoc(doc(db, "categories", id)); }
+    catch (err) { console.error(err); setError("Greška prilikom brisanja kategorije."); }
   }
 
-  /*** Persistiranje novog order-a u Firestore ***/
   async function persistOrderByIds(idList) {
     try {
       const batch = writeBatch(db);
       let idx = 1;
       for (const id of idList) {
-        batch.update(doc(db, "categories", id), {
-          order: idx++,
-          updatedAt: serverTimestamp(),
-        });
+        batch.update(doc(db, "categories", id), { order: idx++, updatedAt: serverTimestamp() });
       }
       await batch.commit();
-    } catch (e) {
-      console.error(e);
-      setError("Greška prilikom čuvanja poretka.");
-    }
+    } catch (e) { console.error(e); setError("Greška prilikom čuvanja poretka."); }
   }
 
-  /*** Desktop DRAG & DROP ***/
+  /*** Desktop DnD ***/
   function onDragStart(e, id) {
-    if (filter.trim()) return; // ne dozvoljavamo reorder kada je filter aktivan
+    if (filter.trim()) return;
     setDragId(id);
     setDragOverId(id);
     e.dataTransfer.effectAllowed = "move";
-    // formiramo inicijalni preview iz trenutnog rasporeda:
     setPreviewOrderIds(renderCats.map((c) => c.id));
   }
-
   function onDragOver(e, overId) {
     if (!dragId || filter.trim()) return;
     e.preventDefault();
     if (dragOverId === overId) return;
     setDragOverId(overId);
-    // Napravi novu preview listu: ubaci dragId ispred/iza overId (mi ćemo “ispred”/na poziciju overId)
     setPreviewOrderIds((prev) => {
       if (!prev) return prev;
       const arr = prev.filter((x) => x !== dragId);
@@ -285,31 +213,21 @@ export default function AdminKatalog() {
       return [...arr];
     });
   }
-
   async function onDrop(e) {
     e.preventDefault();
-    if (!dragId || filter.trim()) {
-      cleanupDrag();
-      return;
-    }
+    if (!dragId || filter.trim()) { cleanupDrag(); return; }
     const finalIds = previewOrderIds || renderCats.map((c) => c.id);
     await persistOrderByIds(finalIds);
     cleanupDrag();
   }
+  function cleanupDrag() { setDragId(null); setDragOverId(null); setPreviewOrderIds(null); }
 
-  function cleanupDrag() {
-    setDragId(null);
-    setDragOverId(null);
-    setPreviewOrderIds(null);
-  }
-
-  /*** Mobile long-press → select → tap to place below ***/
+  /*** Mobile long-press selekcija (radi samo u reorder modu) ***/
   function onTouchStartCat(e, id) {
-    if (!isTouchDevice()) return; // samo za telefon
+    if (!isTouchDevice() || !reorderMode) return; // << samo u Ređaj modu
     const t = e.touches?.[0];
     touchStartXY.current = { x: t?.clientX ?? 0, y: t?.clientY ?? 0 };
     touchMovedRef.current = false;
-    touchStartTimeRef.current = Date.now();
     holdStartedRef.current = false;
 
     clearTimeout(holdTimerRef.current);
@@ -319,7 +237,7 @@ export default function AdminKatalog() {
         holdStartedRef.current = true;
         if (navigator.vibrate) navigator.vibrate(40);
       }
-    }, LONG_PRESS_MS); // 450ms
+    }, LONG_PRESS_MS);
   }
 
   function onTouchMoveCat(e) {
@@ -327,7 +245,6 @@ export default function AdminKatalog() {
     if (!t) return;
     const dx = Math.abs(t.clientX - touchStartXY.current.x);
     const dy = Math.abs(t.clientY - touchStartXY.current.y);
-    // ako korisnik skroluje/miče prstom → otkaži long-press i ne tretiraj kao tap
     if (dx > MOVE_CANCEL_PX || dy > MOVE_CANCEL_PX) {
       touchMovedRef.current = true;
       clearTimeout(holdTimerRef.current);
@@ -338,69 +255,65 @@ export default function AdminKatalog() {
   function onTouchEndCat(e, id, isDiscounts) {
     clearTimeout(holdTimerRef.current);
 
-    // Ako smo ušli u long-press select mod, ne navigiramo,
-    // nego naredni TAP treba da postavi "ispod"
-    if (holdStartedRef.current) {
+    // Ako nismo u Ređaj modu, ponašaj se normalno (nema selekcije/ move)
+    if (!reorderMode) {
+      // zabrani otvaranje ako je aktivan cooldown (npr. posle move)
+      if (Date.now() < tapOpenBlockedUntilRef.current) return;
+      if (id === "discounts") nav(`/admin/katalog/discounts`);
+      else nav(`/admin/katalog/${id}`);
       return;
     }
 
-    // Ako je bilo realnog pomeranja prsta (skrol) – ignoriši tap
-    if (touchMovedRef.current) {
-      return;
-    }
+    // U Ređaj modu:
+    if (holdStartedRef.current) return;      // upravo long-press, ne otvaraj
+    if (touchMovedRef.current) return;       // bio je skrol, ignoriši
 
-    // Ako je cooldown aktivan (npr. posle premeštanja), ne otvaraj
-    if (Date.now() < tapOpenBlockedUntilRef.current) {
-      return;
-    }
-
-    // Kratki tap:
+    // Ako je selektovano – tap na cilj => premesti ispod cilja (bez otvaranja)
     if (mobileSelectedId) {
       e.preventDefault();
       if (!isDiscounts && !filter.trim()) {
         moveSelectedBelow(id);
-        // blokiraj otvaranje narednih ~380ms
         tapOpenBlockedUntilRef.current = Date.now() + TAP_OPEN_COOLDOWN_MS;
       }
       return;
     }
 
-    // bez selekcije → idi u kategoriju
-    if (id === "discounts") {
-      nav(`/admin/katalog/discounts`);
-    } else {
-      nav(`/admin/katalog/${id}`);
-    }
+    // Ako ništa nije selektovano, a u Ređaj modu smo – nemoj otvarati kategoriju slučajno
+    // (zahtevamo da korisnica prvo long-press selektuje pa onda tapne cilj).
+    e.preventDefault();
   }
 
   async function moveSelectedBelow(targetId) {
     if (!mobileSelectedId || mobileSelectedId === targetId) return;
-    // formiramo novi niz id-jeva prema renderCats:
     const ids = renderCats.map((c) => c.id);
     const withoutSel = ids.filter((x) => x !== mobileSelectedId);
     const idx = withoutSel.indexOf(targetId);
-    const insertAt = idx === -1 ? withoutSel.length : idx + 1; // ispod targeta
+    const insertAt = idx === -1 ? withoutSel.length : idx + 1;
     withoutSel.splice(insertAt, 0, mobileSelectedId);
     await persistOrderByIds(withoutSel);
     setMobileSelectedId(null);
   }
 
-  function cancelMobileSelect() {
-    setMobileSelectedId(null);
-  }
+  function cancelMobileSelect() { setMobileSelectedId(null); }
 
   const isMobile = isTouchDevice();
 
   const addBtnStyle = {
     ...addBtn,
-    ...( !newName.trim() ? { opacity: 0.6, cursor: "not-allowed" } : {} ),
+    ...(!newName.trim() ? { opacity: 0.6, cursor: "not-allowed" } : {}),
   };
 
   return (
-    <div style={wrap} className="ak-root" onDrop={onDrop} onDragOver={(e) => dragId && e.preventDefault()}>
+    <div
+      style={wrap}
+      className="ak-root"
+      onDrop={onDrop}
+      onDragOver={(e) => dragId && e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}  // bez context menija na long-press
+    >
       <style>{responsiveCSS}</style>
 
-      {/* Dugme Nazad */}
+      {/* Nazad */}
       <div style={{ marginBottom: 16 }}>
         <button onClick={() => nav("/admin")} style={backBtn} className="ak-backbtn">
           <FiArrowLeft style={{ marginRight: 6 }} /> Nazad
@@ -408,40 +321,28 @@ export default function AdminKatalog() {
       </div>
 
       <div style={panel} className="ak-panel">
-        {/* RED 1: Dodaj kategoriju */}
+        {/* Dodaj kategoriju */}
         <form onSubmit={addCategory} style={topBar} className="ak-topbar">
           <div style={addBox}>
-            <span style={addIcon}>
-              <FiPlus />
-            </span>
+            <span style={addIcon}><FiPlus /></span>
             <input
               style={addInput}
               placeholder="Nova kategorija (npr. Masaže)"
               value={newName}
-              onChange={(e) => {
-                setNewName(e.target.value);
-                if (error) setError("");
-              }}
+              onChange={(e) => { setNewName(e.target.value); if (error) setError(""); }}
               aria-label="Unesite naziv nove kategorije"
               inputMode="text"
             />
           </div>
-          <button
-            style={addBtnStyle}
-            type="submit"
-            disabled={!newName.trim()}
-            className="ak-addbtn"
-          >
+          <button style={addBtnStyle} type="submit" disabled={!newName.trim()} className="ak-addbtn">
             Dodaj
           </button>
         </form>
 
-        {/* RED 2: Pretraga */}
-        <div className="ak-searchrow">
+        {/* Pretraga + Ređaj toggle */}
+        <div className="ak-searchrow" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center", marginTop: 10 }}>
           <div style={searchBox}>
-            <span style={searchIcon}>
-              <FiSearch />
-            </span>
+            <span style={searchIcon}><FiSearch /></span>
             <input
               style={searchInput}
               placeholder="Pretraga kategorija (npr. Lice, Nokti…) "
@@ -451,19 +352,36 @@ export default function AdminKatalog() {
               inputMode="search"
             />
           </div>
+
+          {/* Ređaj toggle (vidljiv na mobilnom, ali može i na desktopu) */}
+          <button
+            type="button"
+            onClick={() => { setReorderMode((v) => !v); setMobileSelectedId(null); }}
+            style={{
+              ...toggleBtn,
+              background: reorderMode ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)" : "#fff",
+              color: reorderMode ? "#fff" : "#333",
+              border: reorderMode ? "none" : "1px solid #ddd",
+            }}
+            className="ak-reorder-toggle"
+          >
+            <FiMove style={{ marginRight: 8 }} />
+            {reorderMode ? "Ređaj: UKLJUČENO" : "Ređaj: isključeno"}
+          </button>
         </div>
 
-        {/* Info o reorder-u */}
+        {/* Hint */}
         {!filter.trim() ? (
-          <div className="ak-reorder-hint" style={reorderHint}>
+          <div className="ak-reorder-hint" style={{ ...reorderHint, background: reorderMode ? "rgba(255,95,162,.12)" : reorderHint.background }}>
             {isMobile ? (
               <span>
                 <FiMove style={{ marginRight: 6 }} />
-                Na telefonu: duže zadrži kategoriju da je selektuješ, pa tapni na drugu da je premestiš ispod nje.
+                {reorderMode
+                  ? "Ređanje je UKLJUČENO: dugo pritisni kategoriju da je selektuješ, pa tapni cilj da je premestiš ispod njega."
+                  : "Za premeštanje na telefonu uključi 'Ređaj' pa dugo pritisni kategoriju."}
                 {mobileSelectedId && (
                   <button onClick={cancelMobileSelect} className="ak-cancel" style={cancelBtn}>
-                    <FiX style={{ marginRight: 6 }} />
-                    Otkaži selekciju
+                    <FiX style={{ marginRight: 6 }} /> Otkaži selekciju
                   </button>
                 )}
               </span>
@@ -487,9 +405,8 @@ export default function AdminKatalog() {
           <div style={{ color: "#fff", textAlign: "center" }}>Učitavanje…</div>
         ) : (
           <div style={grid} className="ak-grid">
-            {/* Virtuelna "Na popustu" pločica ispred, ako je uključena */}
-            {filteredWithDiscounts.length &&
-            filteredWithDiscounts[0]?.id === "discounts" ? (
+            {/* Virtuelna "Na popustu" */}
+            {filteredWithDiscounts.length && filteredWithDiscounts[0]?.id === "discounts" ? (
               <CategoryTile
                 key="discounts"
                 cat={{ id: "discounts", name: discountTitle }}
@@ -502,7 +419,6 @@ export default function AdminKatalog() {
                 removeCategory={removeCategory}
                 onNav={() => nav("/admin/katalog/discounts")}
                 isDiscounts
-                // disable DnD & mobile handlers
               />
             ) : null}
 
@@ -526,17 +442,18 @@ export default function AdminKatalog() {
                   removeCategory={removeCategory}
                   onNav={() => nav(`/admin/katalog/${cat.id}`)}
                   // Desktop DnD
-                  draggable={!filter.trim()} // dozvoljeno samo bez filtera
+                  draggable={!filter.trim()}
                   onDragStart={(e) => onDragStart(e, cat.id)}
                   onDragOver={(e) => onDragOver(e, cat.id)}
                   // Mobile touch
                   onTouchStart={(e) => onTouchStartCat(e, cat.id)}
                   onTouchMove={onTouchMoveCat}
                   onTouchEnd={(e) => onTouchEndCat(e, cat.id, false)}
-                  // UI state
+                  // UI
                   isDragging={isDragging}
                   isDragOver={isDragOver}
                   selectedMobile={selectedMobile}
+                  reorderMode={reorderMode}
                 />
               );
             })}
@@ -551,7 +468,7 @@ export default function AdminKatalog() {
   );
 }
 
-/** Tile komponenta (kategorija) */
+/** Tile */
 function CategoryTile({
   cat,
   count,
@@ -572,6 +489,7 @@ function CategoryTile({
   isDragging = false,
   isDragOver = false,
   selectedMobile = false,
+  reorderMode = false,
 }) {
   const displayName = isDiscounts ? (cat.name || "Na popustu") : (cat.name || "");
 
@@ -586,17 +504,15 @@ function CategoryTile({
       draggable={draggable && !isDiscounts}
       onDragStart={draggable && !isDiscounts ? (e) => onDragStart?.(e) : undefined}
       onDragOver={draggable && !isDiscounts ? (e) => onDragOver?.(e) : undefined}
-      // Mobile touch handlers:
       onTouchStart={!isDiscounts ? onTouchStart : undefined}
       onTouchMove={!isDiscounts ? onTouchMove : undefined}
       onTouchEnd={!isDiscounts ? onTouchEnd : undefined}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <div
         style={{
           ...marble,
-          background: isDiscounts
-            ? "url('/slika3.webp') center/cover no-repeat"
-            : marble.background,
+          background: isDiscounts ? "url('/slika3.webp') center/cover no-repeat" : marble.background,
           filter: selectedMobile ? "hue-rotate(-20deg) saturate(1.2)" : undefined,
         }}
         className="ak-marble"
@@ -606,11 +522,7 @@ function CategoryTile({
           <button
             style={tileActionBtn}
             title="Preimenuj"
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingId(cat.id);
-              setEditingName(displayName || "");
-            }}
+            onClick={(e) => { e.stopPropagation(); setEditingId(cat.id); setEditingName(displayName || ""); }}
             className="ak-actionbtn"
           >
             <FiEdit />
@@ -619,10 +531,7 @@ function CategoryTile({
             <button
               style={{ ...tileActionBtn, background: "#ffe1e1", color: "#7a1b1b" }}
               title="Obriši"
-              onClick={(e) => {
-                e.stopPropagation();
-                removeCategory(cat.id);
-              }}
+              onClick={(e) => { e.stopPropagation(); removeCategory(cat.id); }}
               className="ak-actionbtn"
             >
               <FiTrash2 />
@@ -639,22 +548,19 @@ function CategoryTile({
             boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
           }}
           onClick={(e) => {
-            if (selectedMobile) {
-              // u move modu – samo blokiraj navigaciju
+            // Ako je uključen Ređaj mod ili je selektovano – ne otvaraj
+            if (reorderMode || selectedMobile) {
               e.preventDefault();
               e.stopPropagation();
               return;
             }
-            onNav(); // normalno otvaranje kategorije
+            onNav();
           }}
           className="ak-tilebtn"
+          onContextMenu={(e) => e.preventDefault()}
         >
-          <div style={tileName} className="ak-tilename">
-            {displayName}
-          </div>
-          <div style={badge} className="ak-badge">
-            {count} usl.
-          </div>
+          <div style={tileName} className="ak-tilename">{displayName}</div>
+          <div style={badge} className="ak-badge">{count} usl.</div>
         </button>
       ) : (
         <div style={editRow} className="ak-editrow" onClick={(e) => e.stopPropagation()}>
@@ -664,10 +570,7 @@ function CategoryTile({
             onChange={(e) => setEditingName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") renameCategory(cat.id, editingName);
-              if (e.key === "Escape") {
-                setEditingId(null);
-                setEditingName("");
-              }
+              if (e.key === "Escape") { setEditingId(null); setEditingName(""); }
             }}
             autoFocus
           />
@@ -675,20 +578,13 @@ function CategoryTile({
             <button
               style={{ ...tileActionBtn, background: "#efefef" }}
               title="Otkaži"
-              onClick={() => {
-                setEditingId(null);
-                setEditingName("");
-              }}
+              onClick={() => { setEditingId(null); setEditingName(""); }}
               className="ak-actionbtn"
             >
               <FiX />
             </button>
             <button
-              style={{
-                ...tileActionBtn,
-                background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
-                color: "#fff",
-              }}
+              style={{ ...tileActionBtn, background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff" }}
               title="Sačuvaj"
               onClick={() => renameCategory(cat.id, editingName)}
               className="ak-actionbtn"
@@ -705,10 +601,7 @@ function CategoryTile({
 /* ===== STYLES ===== */
 const wrap = {
   minHeight: "100vh",
-  background: [
-    "url('/slika1.webp') center/cover no-repeat fixed",
-    "linear-gradient(135deg,#f0f0f0,#d9d9d9)",
-  ].join(", "),
+  background: ["url('/slika1.webp') center/cover no-repeat fixed", "linear-gradient(135deg,#f0f0f0,#d9d9d9)"].join(", "),
   padding: "clamp(12px,4vw,24px)",
   display: "flex",
   flexDirection: "column",
@@ -744,7 +637,7 @@ const topBar = {
   display: "grid",
   gridTemplateColumns: "1fr auto",
   gap: 10,
-  maxWidth: "980px",
+  maxWidth: 980,
   margin: "16px auto 0",
 };
 
@@ -759,48 +652,35 @@ const addInput = {
   fontSize: 16,
   boxShadow: "0 6px 14px rgba(0,0,0,.06)",
   WebkitTapHighlightColor: "transparent",
+  WebkitUserSelect: "auto",
+  userSelect: "auto",
 };
-const addIcon = {
-  position: "absolute",
-  left: 12,
-  top: "50%",
-  transform: "translateY(-50%)",
-  opacity: 0.7,
-  fontSize: 16,
-};
+const addIcon = { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", opacity: 0.7, fontSize: 16 };
 const addBtn = {
-  width: "180px",
-  height: 44,
-  border: "none",
-  borderRadius: 12,
-  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
-  color: "#fff",
-  fontWeight: 800,
-  cursor: "pointer",
-  padding: "0 14px",
-  boxShadow: "0 8px 18px rgba(255,127,181,.3)",
-  WebkitTapHighlightColor: "transparent",
+  width: 180, height: 44, border: "none", borderRadius: 12,
+  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff", fontWeight: 800, cursor: "pointer", padding: "0 14px",
+  boxShadow: "0 8px 18px rgba(255,127,181,.3)", WebkitTapHighlightColor: "transparent",
 };
 
 const searchBox = { position: "relative", width: "100%", maxWidth: 980, margin: "10px auto 0" };
 const searchInput = {
-  width: "100%",
-  height: 44,
-  padding: "0 12px 0 36px",
-  borderRadius: 12,
-  border: "1px solid #ececec",
-  background: "#fff",
-  fontSize: 16,
-  boxShadow: "0 6px 14px rgba(0,0,0,.06)",
-  WebkitTapHighlightColor: "transparent",
+  width: "100%", height: 44, padding: "0 12px 0 36px", borderRadius: 12, border: "1px solid #ececec",
+  background: "#fff", fontSize: 16, boxShadow: "0 6px 14px rgba(0,0,0,.06)", WebkitTapHighlightColor: "transparent",
+  WebkitUserSelect: "auto", userSelect: "auto",
 };
-const searchIcon = {
-  position: "absolute",
-  left: 12,
-  top: "50%",
-  transform: "translateY(-50%)",
-  opacity: 0.6,
-  fontSize: 16,
+const searchIcon = { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", opacity: 0.6, fontSize: 16 };
+
+const toggleBtn = {
+  height: 44,
+  padding: "0 14px",
+  borderRadius: 12,
+  border: "1px solid #ddd",
+  background: "#fff",
+  fontWeight: 800,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  WebkitTapHighlightColor: "transparent",
 };
 
 const reorderHint = {
@@ -836,6 +716,7 @@ const grid = {
   gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
   marginTop: 14,
 };
+
 const tile = {
   position: "relative",
   borderRadius: 16,
@@ -843,14 +724,18 @@ const tile = {
   border: "1px solid #ececec",
   boxShadow: "0 8px 20px rgba(0,0,0,.14)",
   userSelect: "none",
-  touchAction: "pan-y", // << bitno za bolje skrolovanje
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+  touchAction: "pan-y",
 };
+
 const marble = {
   position: "absolute",
   inset: 0,
   background: "url('/slika6.webp') center/cover no-repeat",
   opacity: 0.98,
 };
+
 const tileActions = {
   position: "absolute",
   top: 8,
@@ -859,6 +744,7 @@ const tileActions = {
   gap: 6,
   zIndex: 2,
 };
+
 const tileActionBtn = {
   height: 38,
   width: 38,
@@ -870,7 +756,10 @@ const tileActionBtn = {
   alignItems: "center",
   justifyContent: "center",
   WebkitTapHighlightColor: "transparent",
+  WebkitUserSelect: "none",
+  userSelect: "none",
 };
+
 const tileButton = {
   position: "relative",
   display: "grid",
@@ -884,14 +773,20 @@ const tileButton = {
   outline: "none",
   zIndex: 1,
   WebkitTapHighlightColor: "transparent",
+  WebkitUserSelect: "none",
+  userSelect: "none",
 };
+
 const tileName = {
   fontWeight: 800,
   fontSize: 20,
   textAlign: "center",
   color: "#2d2d2d",
   textShadow: "0 1px 0 rgba(255,255,255,.8)",
+  WebkitUserSelect: "none",
+  userSelect: "none",
 };
+
 const badge = {
   position: "absolute",
   right: 10,
@@ -903,9 +798,10 @@ const badge = {
   fontSize: 12,
   fontWeight: 700,
   color: "#444",
+  WebkitUserSelect: "none",
+  userSelect: "none",
 };
 
-/* Edit red: input + dugmad */
 const editRow = {
   position: "relative",
   zIndex: 1,
@@ -916,6 +812,7 @@ const editRow = {
   padding: 12,
   alignItems: "center",
 };
+
 const editInput = {
   width: "100%",
   height: 42,
@@ -924,6 +821,7 @@ const editInput = {
   padding: "0 10px",
   fontSize: 16,
 };
+
 const editBtns = { display: "flex", gap: 8 };
 
 /* ===== RESPONSIVE + FONT CSS ===== */
@@ -931,13 +829,7 @@ const responsiveCSS = `
 .ak-root, .ak-root * { font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
 
 /* Error stil */
-.ak-error{
-  color:#ff5fa2;
-  margin:8px auto 0;
-  max-width:820px;
-  text-align:center;
-  font-weight:700;
-}
+.ak-error{ color:#ff5fa2; margin:8px auto 0; max-width:820px; text-align:center; font-weight:700; }
 
 /* Tablet */
 @media (max-width: 900px) {
@@ -956,7 +848,6 @@ const responsiveCSS = `
   .ak-tilename { font-size: 18px !important; }
   .ak-actions { gap: 6px; }
   .ak-badge { font-size: 11px; padding: 3px 8px; right: 8px; bottom: 8px; }
-  /* Edit red: dugmad ispod inputa */
   .ak-editrow { grid-template-columns: 1fr; }
   .ak-editrow .ak-editbtns { margin-top: 8px; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .ak-editrow .ak-editbtns .ak-actionbtn { width: 100%; }
@@ -968,7 +859,8 @@ const responsiveCSS = `
 .ak-root .ak-tilebtn,
 .ak-root .ak-actionbtn { -webkit-tap-highlight-color: transparent; }
 
-/* Prioritet vertikalnog skrola na pločicama */
-.ak-tile { touch-action: pan-y; }
+/* Bez text-selection i callout na pločicama */
+.ak-tile, .ak-tile * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* Dozvoli selekciju u input poljima */
+.ak-root input, .ak-root textarea { -webkit-user-select: auto; user-select: auto; }
 `;
-

@@ -1703,6 +1703,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
 
         setEmpOrder(arr); // ⇐ ovde menja redosled u UI
       }}
+      onContextMenu={(e) => e.preventDefault()}
   style={{
     outline: empSelectMode && empSelectedId === e.id ? "2px solid hotpink" : "none",
                           flex: "0 0 auto",
@@ -1718,6 +1719,9 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                           fontWeight: 800,
                           cursor: "pointer",
                           whiteSpace: "nowrap",
+                            userSelect: "none",
+  WebkitUserSelect: "none",
+  touchAction: "none",
                         }}
                       >
                         {e.name}
@@ -1784,58 +1788,57 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     </button>
 
     {/* Lista radnica desno */}
-    {employees.map((e) => {
-      const isWorking = workingTodayIds.includes(e.id);
-      const isSelected = selectedEmpIds.includes(e.id);
-      return (
-<button
-  key={e.id}
-  onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
-  draggable                     // ⇐ omogući drag
-  onDragStart={(ev) => {
-    ev.dataTransfer.setData("text/plain", e.id);
-    ev.dataTransfer.effectAllowed = "move";
-  }}
-  onDragOver={(ev) => ev.preventDefault()}
-  onDrop={(ev) => {
-    ev.preventDefault();
-    const movingId = ev.dataTransfer.getData("text/plain");
-    if (!movingId || movingId === e.id) return;
+   {empOrder.map((id) => {
+  const e = employees.find(x => x.id === id);
+  if (!e) return null;
+  const isWorking = workingTodayIds.includes(e.id);
+  const isSelected = selectedEmpIds.includes(e.id);
+  return (
+    <button
+      key={e.id}
+      onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
+      draggable
+      onDragStart={(ev) => {
+        ev.dataTransfer.setData("text/plain", e.id);
+        ev.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(ev) => ev.preventDefault()}
+      onDrop={(ev) => {
+        ev.preventDefault();
+        const movingId = ev.dataTransfer.getData("text/plain");
+        if (!movingId || movingId === e.id) return;
 
-    // napravi novi redosled: movingId ide odmah ispred/iza ovog e.id
-    const arr = employees.map(x => x.id);
-    const from = arr.indexOf(movingId);
-    arr.splice(from, 1);
-    const to = arr.indexOf(e.id);   // ovde ide ispred
-    arr.splice(to, 0, movingId);
+        const arr = [...empOrder];
+        const from = arr.indexOf(movingId);
+        arr.splice(from, 1);
+        const to = arr.indexOf(e.id);
+        arr.splice(to, 0, movingId);
 
-    // TODO: ako želiš, sačuvaj u Firestore:
-    // await setDoc(doc(db, "settings", "employeeOrder"), { order: arr }, { merge: true });
-  }}
-  style={{
-    flex: "0 0 auto",
-    padding: manyEmployees ? "6px 10px" : "8px 14px",
-    marginBottom: 6,
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,.35)",
-    background: isSelected
-      ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
-      : isWorking
-      ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-      : "rgba(255,255,255,.12)",
-    color: isSelected ? "#fff" : "#000",
-    fontWeight: 800,
-    fontSize: manyEmployees ? 13 : 16,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  }}
-  title={isWorking ? "Radi danas" : "Nije u smeni danas"}
->
-  {e.name}
-</button>
-
-      );
-    })}
+        setEmpOrder(arr);  // ⬅ sad osvežava redosled
+      }}
+      style={{
+        flex: "0 0 auto",
+        padding: manyEmployees ? "6px 10px" : "8px 14px",
+        marginBottom: 6,
+        borderRadius: 999,
+        border: "1px solid rgba(255,255,255,.35)",
+        background: isSelected
+          ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+          : isWorking
+          ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
+          : "rgba(255,255,255,.12)",
+        color: isSelected ? "#fff" : "#000",
+        fontWeight: 800,
+        fontSize: manyEmployees ? 13 : 16,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}
+      title={isWorking ? "Radi danas" : "Nije u smeni danas"}
+    >
+      {e.name}
+    </button>
+  );
+})}
   </div>
 )}
 
