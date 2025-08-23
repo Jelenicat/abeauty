@@ -17,17 +17,21 @@ function useIsMobile(bp = 700) {
   return m;
 }
 
+// helperi za pretragu i normalizaciju
+const normText = (s = "") =>
+  s.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const digits = (s = "") => s.toString().replace(/[^\d]/g, "");
+
+// brojevi koje isključujemo
+const EXCLUDE_PHONES = new Set(["0665511005", "0000000000"]);
+
 export default function AdminKlijenti() {
-  const [users, setUsers] = useState([]);           // korisnici iz 'users'
-  const [lastByPhone, setLastByPhone] = useState({}); // mapa tel -> { lastService, lastDate }
+  const [users, setUsers] = useState([]);                // korisnici iz 'users'
+  const [lastByPhone, setLastByPhone] = useState({});    // tel -> { lastService, lastDate }
+  const [apptOnlyClients, setApptOnlyClients] = useState({}); // telDigits -> { uid, name, phone, role, createdAt }
   const [search, setSearch] = useState("");
   const isMobile = useIsMobile(700);
   const nav = useNavigate();
-
-  // helperi za pretragu i normalizaciju
-  const normText = (s = "") =>
-    s.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  const digits = (s = "") => s.toString().replace(/[^\d]/g, "");
 
   // 1) UČITAJ SVE KORISNIKE IZ 'users' (bez admin/abeauty)
   useEffect(() => {
@@ -40,7 +44,7 @@ export default function AdminKlijenti() {
         const phoneDigits = digits(phoneRaw);
 
         // isključi ova dva broja
-        if (phoneDigits === "0665511005" || phoneDigits === "0000000000") return;
+        if (EXCLUDE_PHONES.has(phoneDigits)) return;
 
         list.push({
           uid: doc.id,
@@ -61,37 +65,85 @@ export default function AdminKlijenti() {
     return unsub;
   }, []);
 
-  // 2) UČITAJ POSLEDNJU USLUGU/DATUM po broju telefona iz 'appointments'
-  //    Jedna pretplata, sortirano novije ka starijem; prvi put kad vidimo broj — to je poslednja usluga.
+  // 2) UČITAJ IZ 'appointments':
+  //    - poslednja usluga/datum po telefonu (lastByPhone)
+  //    - "appt-only" klijente (oni koji NISU u users), da ih prikažemo u listi
   useEffect(() => {
     const qAppts = query(collection(db, "appointments"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(qAppts, (snap) => {
-      const map = new Map(); // phoneDigits -> { lastService, lastDate }
+      const lastMap = new Map();         // phoneDigits -> { lastService, lastDate }
+      const apptClientsMap = new Map();  // phoneDigits -> { uid, name, phone, role, createdAt }
+
       snap.forEach((doc) => {
         const a = doc.data() || {};
-        const ph = digits(a.clientPhone || "");
+        const phoneRaw = a.clientPhone || "";
+        const ph = digits(phoneRaw);
         if (!ph) return;
-        if (!map.has(ph)) {
-          map.set(ph, {
+        if (EXCLUDE_PHONES.has(ph)) return;
+
+        // poslednja usluga/datum (prvi put viđen u sortiranom silazno = newest)
+        if (!lastMap.has(ph)) {
+          lastMap.set(ph, {
             lastService: a.serviceName || "",
             lastDate: a.dateKey || "",
           });
         }
+
+        // pripremi "appt-only" klijenta (ako se kasnije ispostavi da je u users, nećemo ga duplirati)
+        if (!apptClientsMap.has(ph)) {
+          const guessedName =
+            a.clientName?.toString().trim() ||
+            a.name?.toString().trim() ||
+            "—";
+          apptClientsMap.set(ph, {
+            uid: `appt:${ph}`,
+            name: guessedName,
+            phone: phoneRaw || ph,
+            role: "client",
+            createdAt: null,
+            source: "appointments",
+          });
+        }
       });
-      setLastByPhone(Object.fromEntries(map));
+
+      setLastByPhone(Object.fromEntries(lastMap));
+      setApptOnlyClients(Object.fromEntries(apptClientsMap));
     });
     return unsub;
   }, []);
 
-  // Spoji korisnike sa poslednjim terminom (ako postoji)
+  // 3) Napravi set brojeva koji su već prisutni u users
+  const userPhonesSet = useMemo(() => {
+    const s = new Set();
+    users.forEach((u) => {
+      const ph = digits(u.phone);
+      if (ph) s.add(ph);
+    });
+    return s;
+  }, [users]);
+
+  // 4) Sastavi finalnu listu:
+  //    - svi iz users
+  //    - plus svi "appt-only" koji NISU u users (po telefonu)
+  const unified = useMemo(() => {
+    const base = [...users];
+    Object.entries(apptOnlyClients).forEach(([ph, c]) => {
+      if (!userPhonesSet.has(ph)) {
+        base.push(c);
+      }
+    });
+    return base;
+  }, [users, apptOnlyClients, userPhonesSet]);
+
+  // 5) Spoji sa poslednjim terminom (ako postoji)
   const merged = useMemo(() => {
-    return users.map((u) => {
+    return unified.map((u) => {
       const info = lastByPhone[digits(u.phone)] || { lastService: "", lastDate: "" };
       return { ...u, ...info };
     });
-  }, [users, lastByPhone]);
+  }, [unified, lastByPhone]);
 
-  // Pretraga po imenu i/ili broju
+  // 6) Pretraga po imenu i/ili broju
   const filtered = useMemo(() => {
     const q = normText(search);
     const qPhone = digits(search);
@@ -150,7 +202,14 @@ export default function AdminKlijenti() {
             <div className="clients-cards">
               {filtered.map((c) => (
                 <div key={c.uid} className="client-card">
-                  <div className="client-name">{c.name}</div>
+                  <div className="client-name">
+                    {c.name}
+                    {c.source === "appointments" ? (
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: "#888" }}>
+                        (kal.)
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="client-row">
                     <span className="label">Telefon</span>
                     <span className="value">{c.phone || "—"}</span>
@@ -186,7 +245,14 @@ export default function AdminKlijenti() {
                 <tbody>
                   {filtered.map((c, i) => (
                     <tr key={c.uid} style={i % 2 ? { background: "#fafafa" } : undefined}>
-                      <td style={tdBold}>{c.name}</td>
+                      <td style={tdBold}>
+                        {c.name}
+                        {c.source === "appointments" ? (
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: "#888" }}>
+                            (kal.)
+                          </span>
+                        ) : null}
+                      </td>
                       <td style={td}>{c.phone}</td>
                       <td style={td}>{c.role || "client"}</td>
                       <td style={td}>{c.lastService}</td>

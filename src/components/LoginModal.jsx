@@ -5,11 +5,17 @@ import "./LoginModal.css";
 
 export default function LoginModal({ open, onClose, onSuccess }) {
   const { login } = useAuth();
+
   const [firstName, setFirstName] = useState("");
   const [lastName,  setLastName]  = useState("");
   const [phone,     setPhone]     = useState("");
+
   const [touched,   setTouched]   = useState(false);
   const [loading,   setLoading]   = useState(false);
+
+  // Potvrda broja – lep modal unutar kartice
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   const cardRef = useRef(null);
 
   useEffect(() => {
@@ -25,32 +31,61 @@ export default function LoginModal({ open, onClose, onSuccess }) {
 
   if (!open) return null;
 
-  // normalizacija broja u format 0xx...
-  const phoneNorm = String(phone || "").replace(/\D/g, "").replace(/^381/, "0");
+  // ---- validacija / normalizacija ----
+  const rawPhone  = String(phone || "").trim();
+  const digits    = rawPhone.replace(/\D/g, "");
+  const phoneNorm = digits.replace(/^381/, "0"); // +381xx -> 0xx
+
+  const isAdminPhone   = phoneNorm === "0665511005";
+  const isAbeautyPhone = phoneNorm === "0000000000";
+
+  // Dozvoljeni opšti obrasci (svi osim admin/abeauty)
+  const startsWith06      = /^06/.test(phoneNorm);
+  const startsWithPlus38  = /^\+38/.test(rawPhone); // dozvoli +38… unos
+
+  // Dužine: lokalno 8–11 cifara; međunarodno (+38…) najčešće 11–12 cifara
+  const baseLenOkLocal = digits.length >= 8 && digits.length <= 11;
+  const baseLenOkIntl  = digits.length >= 11 && digits.length <= 12;
+
+  const regularOk =
+    (startsWith06 && baseLenOkLocal) ||
+    (startsWithPlus38 && baseLenOkIntl);
+
   const nameOk  = firstName.trim().length >= 2 && lastName.trim().length >= 2;
-  const phoneOk = phoneNorm.length >= 8 && phoneNorm.length <= 11;
+  const phoneOk = isAdminPhone || isAbeautyPhone || regularOk;
   const canSubmit = nameOk && phoneOk && !loading;
 
-  const prettyPhone = phoneNorm.replace(/(\d{3})(\d{3})(\d{0,4})/, (m, a, b, c) =>
-    c ? `${a} ${b} ${c}` : `${a} ${b}`
-  );
+  // Lepo formatiran prikaz broja (za modal potvrde)
+  const prettyPhone = (() => {
+    if (rawPhone.startsWith("+")) {
+      // Npr: +381601234567 -> +381 60 123 4567
+      const rp = rawPhone.replace(/\s+/g, "");
+      return rp
+        .replace(/^(\+\d{2,3})(\d{2})(\d{3})(\d{0,4})$/,
+                 (m, c1, a, b, c) => (c ? `${c1} ${a} ${b} ${c}` : `${c1} ${a} ${b}`))
+        // fallback ako ne upadne u gornji obrazac
+        .replace(/(\+\d{1,3})(\d+)/, (_, c, rest) => `${c} ${rest}`);
+    }
+    // domaći format 0xx xxx xxxx
+    return phoneNorm.replace(/(\d{3})(\d{3})(\d{0,4})/, (m, a, b, c) =>
+      c ? `${a} ${b} ${c}` : `${a} ${b}`
+    );
+  })();
 
+  // --- submit: prvo otvara lep modal za potvrdu (osim za admin/abeauty), pa login ---
   const submit = async (e) => {
     e.preventDefault();
     setTouched(true);
     if (!canSubmit) return;
 
-    // === SKIP potvrde za admina i abeauty ===
-    const skipConfirm =
-      phoneNorm === "0665511005" || phoneNorm === "0000000000";
+    const skipConfirm = isAdminPhone || isAbeautyPhone;
 
-    if (!skipConfirm) {
-      const ok = window.confirm(
-        `Potvrdi broj telefona:\n\n${prettyPhone}\n\nAko broj NIJE tačan, klikni “Cancel” i ispravi ga.`
-      );
-      if (!ok) return;
+    if (!skipConfirm && !confirmOpen) {
+      setConfirmOpen(true); // otvori lep modal za potvrdu broja
+      return;
     }
 
+    // ako je skip ili je potvrđeno – radi login
     setLoading(true);
     try {
       const created = await login({
@@ -65,7 +100,30 @@ export default function LoginModal({ open, onClose, onSuccess }) {
       alert("Trenutno ne možemo da sačuvamo prijavu. Pokušaj ponovo.");
     } finally {
       setLoading(false);
+      setConfirmOpen(false);
     }
+  };
+
+  // Klik na "Tačno je" u potvrdi
+  const confirmYes = (e) => {
+    e?.preventDefault?.();
+    // ponovo pozovi submit ali ovaj put confirmOpen je true pa ide login
+    setConfirmOpen(true);
+    setTimeout(() => {
+      const fakeEvent = { preventDefault(){} };
+      submit(fakeEvent);
+    }, 0);
+  };
+
+  // Klik na "Ispravi broj"
+  const confirmNo = (e) => {
+    e?.preventDefault?.();
+    setConfirmOpen(false);
+    // fokus na input telefona
+    setTimeout(() => {
+      const input = cardRef.current?.querySelector('input[type="tel"]');
+      input?.focus();
+    }, 0);
   };
 
   return (
@@ -116,13 +174,39 @@ export default function LoginModal({ open, onClose, onSuccess }) {
               placeholder="npr. 060 123 4567"
               autoComplete="tel"
             />
-            {touched && !phoneOk && <em>Unesi ispravan broj (8–11 cifara).</em>}
+            {touched && !phoneOk && (
+              <em>
+                Unesi ispravan broj: mora početi sa <strong>06</strong> ili <strong>+38</strong>
+                {" "} (osim za admina i abeauty).
+              </em>
+            )}
           </label>
 
           <button className="lm-submit" type="submit" disabled={!canSubmit}>
             {loading ? "Sačuvano" : "Nastavi i zakaži"}
           </button>
         </form>
+
+        {/* Lep modal za potvrdu broja */}
+        {confirmOpen && (
+          <div className="lm-confirm-wrap" role="alertdialog" aria-labelledby="confirm-title">
+            <div className="lm-confirm-card">
+              <h4 id="confirm-title">Potvrdi broj telefona</h4>
+              <p className="lm-confirm-phone">{prettyPhone}</p>
+              <p className="lm-confirm-sub">
+                Ako broj <strong>nije</strong> tačan, klikni <em>Ispravi broj</em> i izmeni ga.
+              </p>
+              <div className="lm-confirm-actions">
+                <button className="lm-btn-secondary" onClick={confirmNo} type="button">
+                  Ispravi broj
+                </button>
+                <button className="lm-btn-primary" onClick={confirmYes} type="button">
+                  Tačno je
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

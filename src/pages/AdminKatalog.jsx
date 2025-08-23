@@ -55,7 +55,7 @@ export default function AdminKatalog() {
   const holdStartedRef = useRef(false);
   const touchStartXY = useRef({ x: 0, y: 0 });
   const touchMovedRef = useRef(false);
-  const suppressNextClickRef = useRef(false); // << blokira sledeći click kad treba
+  const suppressNextClickRef = useRef(false); // blokira sledeći click kad treba
   const tapOpenBlockedUntilRef = useRef(0);
 
   // Pragovi/timeouti
@@ -236,7 +236,7 @@ export default function AdminKatalog() {
         setMobileSelectedId(id);
         holdStartedRef.current = true;
         if (navigator.vibrate) navigator.vibrate(40);
-        // long-press je odradio nešto → blokiraj sledeći click
+        // long-press je odradio nešto → blokiraj sledeći click (da ne otvara)
         suppressNextClickRef.current = true;
       }
     }, LONG_PRESS_MS);
@@ -263,43 +263,44 @@ export default function AdminKatalog() {
   }
 
   function onTouchEndCat(e, id, isDiscounts) {
-  clearTimeout(holdTimerRef.current);
+    clearTimeout(holdTimerRef.current);
 
-  // Ako nismo u Ređaj modu: standardno ponašanje
-  if (!reorderMode) {
-    if (Date.now() < tapOpenBlockedUntilRef.current) { suppressNextClickRef.current = true; return; }
-    if (id === "discounts") nav(`/admin/katalog/discounts`);
-    else nav(`/admin/katalog/${id}`);
-    return;
-  }
-
-  // --- Reorder režim ---
-  // Ako je long-press tek završen → samo selektuj, NE otvaraj
-  if (holdStartedRef.current) {
-    holdStartedRef.current = false; // RESET da sledeći tap radi pomeranje
-    suppressNextClickRef.current = true;
-    return;
-  }
-
-  // Ako je bilo skrola → ništa
-  if (touchMovedRef.current) { suppressNextClickRef.current = true; return; }
-
-  // Ako imamo selektovan ID → pomeri ispod cilja
-  if (mobileSelectedId) {
-    e.preventDefault();
-    if (!isDiscounts && !filter.trim()) {
-      moveSelectedBelow(id);
-      tapOpenBlockedUntilRef.current = Date.now() + TAP_OPEN_COOLDOWN_MS;
-      suppressNextClickRef.current = true;
+    // Ako nismo u Ređaj modu: standardno ponašanje
+    if (!reorderMode) {
+      if (Date.now() < tapOpenBlockedUntilRef.current) { suppressNextClickRef.current = true; return; }
+      if (id === "discounts") nav(`/admin/katalog/discounts`);
+      else nav(`/admin/katalog/${id}`);
+      return;
     }
-    return;
+
+    // --- Reorder režim ---
+    // Ako je long-press tek završen → samo selektuj, NE otvaraj
+    if (holdStartedRef.current) {
+      holdStartedRef.current = false; // RESET da sledeći tap radi pomeranje
+      suppressNextClickRef.current = true;
+      return;
+    }
+
+    // Ako je bilo skrola → ništa
+    if (touchMovedRef.current) { suppressNextClickRef.current = true; return; }
+
+    // Ako imamo selektovan ID → pomeri ispod cilja
+    if (mobileSelectedId) {
+      e.preventDefault();
+      if (!isDiscounts && !filter.trim()) {
+        moveSelectedBelow(id);
+        // ❗FIX: NE blokiramo sledeći klik nakon uspešnog premeštanja,
+        //       niti dižemo tapOpenBlockedUntil — želimo da naredni tap normalno radi.
+        // tapOpenBlockedUntilRef.current = Date.now() + TAP_OPEN_COOLDOWN_MS; // (uklonjeno)
+        // suppressNextClickRef.current = true; // (uklonjeno)
+      }
+      return;
+    }
+
+    // Inače: ništa (blokiraj otvaranje u ređaj modu)
+    e.preventDefault();
+    suppressNextClickRef.current = true;
   }
-
-  // Inače: ništa (blokiraj otvaranje u ređaj modu)
-  e.preventDefault();
-  suppressNextClickRef.current = true;
-}
-
 
   async function moveSelectedBelow(targetId) {
     if (!mobileSelectedId || mobileSelectedId === targetId) return;
@@ -565,7 +566,7 @@ function CategoryTile({
             border: selectedMobile ? "2px solid #ff5fa2" : "none",
             boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
           }}
-          // NAJVAŽNIJE: blokiraj klik pre nego što React “spusti” do onClick
+          // Blokiraj klik pre nego što React “spusti” do onClick
           onClickCapture={(e) => {
             if (reorderMode || selectedMobile || suppressNextClickRef?.current) {
               e.preventDefault();
@@ -574,7 +575,7 @@ function CategoryTile({
               setTimeout(() => { if (suppressNextClickRef) suppressNextClickRef.current = false; }, 0);
             }
           }}
-          onClick={(e) => {
+          onClick={() => {
             // Ako nije blokirano gore, ovo je “namerni” klik → navigacija
             onNav();
           }}
