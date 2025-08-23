@@ -40,19 +40,19 @@ export default function AdminKatalog() {
   // Discount “virtual” category
   const [discountTitle, setDiscountTitle] = useState("Na popustu");
 
-  // Drag state (for both desktop and mobile)
+  // Desktop drag state
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [previewOrderIds, setPreviewOrderIds] = useState(null);
-  const [dragOffsetY, setDragOffsetY] = useState(0); // For mobile drag visual offset
-  const [isDragging, setIsDragging] = useState(false);
 
-  // Reorder mode
+  // Reorder mode (manual toggle)
   const [reorderMode, setReorderMode] = useState(false);
 
-  // Touch state
-  const touchStartYRef = useRef(0);
-  const tileRefs = useRef({}); // Store refs for each tile to calculate positions
+  // Mobile tap-to-move state
+  const [mobileSelectedId, setMobileSelectedId] = useState(null);
+
+  // Refs
+  const tileRefs = useRef({});
 
   // Realtime
   useEffect(() => {
@@ -183,31 +183,17 @@ export default function AdminKatalog() {
     } catch (e) { console.error(e); setError("Greška prilikom čuvanja poretka."); }
   }
 
-  /*** Drag Handlers (Desktop + Mobile) ***/
+  /*** Desktop DnD ***/
   function onDragStart(e, id) {
     if (filter.trim()) return;
     setDragId(id);
     setDragOverId(id);
-    setIsDragging(true);
+    e.dataTransfer.effectAllowed = "move";
     setPreviewOrderIds(renderCats.map((c) => c.id));
-
-    if (isTouchDevice() && e.touches?.[0]) {
-      // spreči trenutni scroll da ne "proguta" drag
-      e.preventDefault?.();
-      const touch = e.touches[0];
-      touchStartYRef.current = touch.clientY ?? 0;
-      const tileRect = tileRefs.current[id]?.getBoundingClientRect();
-      if (tileRect) {
-        setDragOffsetY(touch.clientY - tileRect.top);
-      }
-    } else if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-    }
   }
-
   function onDragOver(e, overId) {
     if (!dragId || filter.trim()) return;
-    e.preventDefault?.();
+    e.preventDefault();
     if (dragOverId === overId) return;
     setDragOverId(overId);
     setPreviewOrderIds((prev) => {
@@ -219,48 +205,46 @@ export default function AdminKatalog() {
       return [...arr];
     });
   }
-
-  function onDragMove(e) {
-    if (!isTouchDevice() || !dragId || filter.trim()) return;
-    const touch = e.touches?.[0];
-    if (!touch) return;
-    const newY = touch.clientY;
-    setDragOffsetY(newY - touchStartYRef.current);
-
-    // Find the tile under the current touch position
-    const tiles = Object.values(tileRefs.current).filter(Boolean);
-    let closestTileId = null;
-    let minDistance = Infinity;
-
-    tiles.forEach((tile) => {
-      const rect = tile.getBoundingClientRect();
-      const tileCenterY = rect.top + rect.height / 2;
-      const distance = Math.abs(newY - tileCenterY);
-      if (distance < minDistance && tile.dataset.id !== dragId) {
-        minDistance = distance;
-        closestTileId = tile.dataset.id;
-      }
-    });
-
-    if (closestTileId) {
-      onDragOver(e, closestTileId);
-    }
-  }
-
-  async function onDragEnd(e) {
-    e.preventDefault?.();
+  async function onDrop(e) {
+    e.preventDefault();
     if (!dragId || filter.trim()) { cleanupDrag(); return; }
     const finalIds = previewOrderIds || renderCats.map((c) => c.id);
     await persistOrderByIds(finalIds);
     cleanupDrag();
   }
+  function cleanupDrag() { setDragId(null); setDragOverId(null); setPreviewOrderIds(null); }
 
-  function cleanupDrag() {
-    setDragId(null);
-    setDragOverId(null);
-    setPreviewOrderIds(null);
-    setIsDragging(false);
-    setDragOffsetY(0);
+  /*** Mobile tap-to-move ***/
+  async function handleMobileTap(catId, isDiscounts = false) {
+    // dozvoljeno samo kad je Ređaj i nema filtera
+    if (!isTouchDevice() || !reorderMode || filter.trim()) return false;
+    if (isDiscounts) return true; // ignorišemo tap na virtuelnu "popusti" pločicu u ređanju
+
+    if (!mobileSelectedId) {
+      setMobileSelectedId(catId);
+      return true;
+    }
+
+    if (mobileSelectedId === catId) {
+      // tap na istu → otkaži selekciju
+      setMobileSelectedId(null);
+      return true;
+    }
+
+    // pomeri selektovanu ispod cilja
+    await moveSelectedBelow(catId);
+    setMobileSelectedId(null);
+    return true;
+  }
+
+  async function moveSelectedBelow(targetId) {
+    if (!mobileSelectedId || mobileSelectedId === targetId) return;
+    const ids = renderCats.map((c) => c.id);
+    const withoutSel = ids.filter((x) => x !== mobileSelectedId);
+    const idx = withoutSel.indexOf(targetId);
+    const insertAt = idx === -1 ? withoutSel.length : idx + 1;
+    withoutSel.splice(insertAt, 0, mobileSelectedId);
+    await persistOrderByIds(withoutSel);
   }
 
   const isMobile = isTouchDevice();
@@ -274,10 +258,7 @@ export default function AdminKatalog() {
     <div
       style={wrap}
       className="ak-root"
-      onTouchMove={isDragging ? onDragMove : undefined}
-      onTouchEnd={isDragging ? onDragEnd : undefined}
-      onTouchCancel={cleanupDrag}
-      onDrop={onDragEnd}
+      onDrop={onDrop}
       onDragOver={(e) => dragId && e.preventDefault()}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -324,7 +305,7 @@ export default function AdminKatalog() {
           </div>
           <button
             type="button"
-            onClick={() => { setReorderMode((v) => !v); cleanupDrag(); }}
+            onClick={() => { setReorderMode((v) => !v); setMobileSelectedId(null); }}
             style={{
               ...toggleBtn,
               background: reorderMode ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)" : "#fff",
@@ -345,8 +326,13 @@ export default function AdminKatalog() {
               <span>
                 <FiMove style={{ marginRight: 6 }} />
                 {reorderMode
-                  ? "Ređanje je UKLJUČENO: pritisni i povuci kategoriju da je premestiš."
-                  : "Za premeštanje na telefonu uključi 'Ređaj' pa pritisni i povuci kategoriju."}
+                  ? "Ređanje (telefon): tap na prvu karticu da je selektuješ, zatim tap na drugu ispod koje želiš da bude."
+                  : "Za premeštanje na telefonu uključi 'Ređaj', pa tap-tap princip."}
+                {mobileSelectedId && (
+                  <button onClick={() => setMobileSelectedId(null)} className="ak-cancel" style={cancelBtn}>
+                    <FiX style={{ marginRight: 6 }} /> Otkaži selekciju
+                  </button>
+                )}
               </span>
             ) : (
               <span><FiMove style={{ marginRight: 6 }} /> Na računaru: prevuci (drag & drop) da promeniš redosled.</span>
@@ -377,17 +363,20 @@ export default function AdminKatalog() {
                 setEditingName={setEditingName}
                 renameCategory={renameCategory}
                 removeCategory={removeCategory}
-                onNav={() => nav("/admin/katalog/discounts")}
+                onPress={() => {
+                  // u ređaju ignorišemo popuste
+                  if (handleMobileTap("discounts", true)) return;
+                  nav("/admin/katalog/discounts");
+                }}
                 isDiscounts
-                // ništa od draga na ovoj (virtuelnoj) pločici
+                selectedMobile={false}
               />
             ) : null}
 
             {renderCats.map((cat) => {
               const isEditing = editingId === cat.id;
               const count = countByCat.get(cat.id) || 0;
-              const isTileDragging = dragId === cat.id;
-              const isDragOver = dragOverId === cat.id;
+              const selectedMobile = mobileSelectedId === cat.id;
 
               return (
                 <CategoryTile
@@ -400,16 +389,18 @@ export default function AdminKatalog() {
                   setEditingName={setEditingName}
                   renameCategory={renameCategory}
                   removeCategory={removeCategory}
-                  onNav={() => nav(`/admin/katalog/${cat.id}`)}
-                  draggable={reorderMode && !filter.trim()}
+                  isDiscounts={false}
+                  selectedMobile={selectedMobile}
+                  onPress={async () => {
+                    // ako smo na telefonu i u ređaj modu → tap-tap logika
+                    if (await handleMobileTap(cat.id, false)) return;
+                    // inače normalna navigacija
+                    nav(`/admin/katalog/${cat.id}`);
+                  }}
+                  // Desktop drag (dozvoljen samo kad nema filtera i nismo na telefonu)
+                  draggable={!isTouchDevice() && reorderMode && !filter.trim()}
                   onDragStart={(e) => onDragStart(e, cat.id)}
                   onDragOver={(e) => onDragOver(e, cat.id)}
-                  // ⬇️ mobilni start draga koristi istu funkciju
-                  onTouchStart={(e) => (reorderMode && !filter.trim()) && onDragStart(e, cat.id)}
-                  isDragging={isTileDragging}
-                  isDragOver={isDragOver}
-                  dragOffsetY={isTileDragging ? dragOffsetY : 0}
-                  tileRef={(el) => (tileRefs.current[cat.id] = el)}
                 />
               );
             })}
@@ -433,54 +424,46 @@ function CategoryTile({
   setEditingName,
   renameCategory,
   removeCategory,
-  onNav,
+  onPress,
   isDiscounts = false,
   draggable = false,
   onDragStart,
   onDragOver,
-  onTouchStart,
-  isDragging = false,
-  isDragOver = false,
-  dragOffsetY = 0,
-  tileRef,
+  selectedMobile = false,
 }) {
   const displayName = isDiscounts ? (cat.name || "Na popustu") : (cat.name || "");
 
   return (
     <div
-      ref={(el) => tileRef && tileRef(el)}
+      ref={(el) => (el && (/** store ref only if needed **/ el.dataset && (el.dataset.id = cat.id)))}
       data-id={cat.id}
-      style={{
-        ...tile,
-        outline: isDragging ? "2px dashed rgba(0,0,0,.35)" : isDragOver ? "2px solid #ff94c1" : "none",
-        transform: isDragging ? `translateY(${dragOffsetY}px) scale(0.98)` : "none",
-        zIndex: isDragging ? 10 : 1,
-        transition: isDragging ? "none" : "transform 0.2s ease",
-      }}
+      style={tile}
       className="ak-tile"
       draggable={draggable && !isDiscounts}
       onDragStart={draggable && !isDiscounts ? (e) => onDragStart?.(e) : undefined}
       onDragOver={draggable && !isDiscounts ? (e) => onDragOver?.(e) : undefined}
-      onTouchStart={draggable && !isDiscounts ? (e) => onTouchStart?.(e) : undefined}
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
         style={{
           ...marble,
           background: isDiscounts ? "url('/slika3.webp') center/cover no-repeat" : marble.background,
+          filter: selectedMobile ? "hue-rotate(-20deg) saturate(1.2)" : undefined,
         }}
         className="ak-marble"
       />
       {!isEditing && (
         <div style={tileActions} className="ak-actions">
-          <button
-            style={tileActionBtn}
-            title="Preimenuj"
-            onClick={(e) => { e.stopPropagation(); setEditingId(cat.id); setEditingName(displayName || ""); }}
-            className="ak-actionbtn"
-          >
-            <FiEdit />
-          </button>
+          {!isDiscounts && (
+            <button
+              style={tileActionBtn}
+              title="Preimenuj"
+              onClick={(e) => { e.stopPropagation(); setEditingId(cat.id); setEditingName(displayName || ""); }}
+              className="ak-actionbtn"
+            >
+              <FiEdit />
+            </button>
+          )}
           {!isDiscounts && (
             <button
               style={{ ...tileActionBtn, background: "#ffe1e1", color: "#7a1b1b" }}
@@ -498,9 +481,10 @@ function CategoryTile({
         <button
           style={{
             ...tileButton,
-            pointerEvents: isDragging ? "none" : "auto",
+            border: selectedMobile ? "2px solid #ff5fa2" : "none",
+            boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
           }}
-          onClick={() => (!isDragging) && onNav()}
+          onClick={(e) => { e.preventDefault(); onPress?.(); }}
           className="ak-tilebtn"
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -795,7 +779,7 @@ const responsiveCSS = `
   .ak-badge { font-size: 11px; padding: 3px 8px; right: 8px; bottom: 8px; }
   .ak-editrow { grid-template-columns: 1fr; }
   .ak-editrow .ak-editbtns { margin-top: 8px; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .ak-editrow .ak-editbtns .ak-actionbtn { width: 100%; }
+  .ak-editrow .ak-actionbtn { width: 100%; }
 }
 
 /* Bez plavog tap highlight-a */
