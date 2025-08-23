@@ -462,7 +462,8 @@ export default function AdminCategory() {
             onChange={e => setDurationMin(e.target.value)}
           />
           <input
-            style={inp łaz
+            style={inp}
+            
             type="number" min="0"
             placeholder="Cena (RSD)"
             value={price}
