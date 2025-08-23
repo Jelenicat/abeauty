@@ -607,24 +607,31 @@ function CategoryTile({
         </div>
       )}
 
-      {!isEditing ? (
-        <button
-          style={{
-            ...tileButton,
-            border: selectedMobile ? "2px solid #ff5fa2" : "none",
-            boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
-          }}
-          onClick={onNav}
-          className="ak-tilebtn"
-        >
-          <div style={tileName} className="ak-tilename">
-            {displayName}
-          </div>
-          <div style={badge} className="ak-badge">
-            {count} usl.
-          </div>
-        </button>
-      ) : (
+{!isEditing ? (
+  <button
+    style={{
+      ...tileButton,
+      border: selectedMobile ? "2px solid #ff5fa2" : "none",
+      boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
+    }}
+    onClick={(e) => {
+      if (selectedMobile) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      onNav();
+    }}
+    className="ak-tilebtn"
+  >
+    <div style={tileName} className="ak-tilename">
+      {displayName}
+    </div>
+    <div style={badge} className="ak-badge">
+      {count} usl.
+    </div>
+  </button>
+) : (
         <div style={editRow} className="ak-editrow" onClick={(e) => e.stopPropagation()}>
           <input
             style={editInput}
