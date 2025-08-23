@@ -1,4 +1,3 @@
-
 // src/pages/AdminCategory.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -32,8 +31,19 @@ export default function AdminCategory() {
   // Mobile long-press drag
   const [isTouchDrag, setIsTouchDrag] = useState(false);
   const [isLongPress, setIsLongPress] = useState(false);
-  const [holdTimer, setHoldTimer] = useState(null);
-  const touchRef = useRef({ startY: 0, activeId: null });
+  const holdTimerRef = useRef(null);
+
+  // info o dodiru
+  const touchRef = useRef({
+    startY: 0,
+    startX: 0,
+    activeId: null,
+    moved: false,
+  });
+
+  // auto-scroll
+  const listRef = useRef(null);
+  const scrollRAF = useRef(null);
 
   const finalPrice = useMemo(() => {
     const p = Number(price) || 0;
@@ -41,7 +51,7 @@ export default function AdminCategory() {
     return Math.max(0, Math.round(p * (1 - d / 100)));
   }, [price, discount]);
 
-  // Debounce utility for smoother touch movements
+  // Debounce util
   const debounce = (fn, ms) => {
     let timer;
     return (...args) => {
@@ -49,7 +59,7 @@ export default function AdminCategory() {
       timer = setTimeout(() => fn(...args), ms);
     };
   };
-  const debouncedSetOverId = debounce(setOverId, 50);
+  const debouncedSetOverId = useMemo(() => debounce(setOverId, 40), []);
 
   useEffect(() => {
     if (!catId) return;
@@ -96,11 +106,12 @@ export default function AdminCategory() {
     return () => off();
   }, [catId]);
 
-  // Global touch event listeners for long-press drag
+  // Global touch listeners samo dok je long-press drag aktivan
   useEffect(() => {
     if (!isLongPress) return;
 
     const handleMove = (e) => {
+      // blokiramo pred-def samo kad je DRAG aktivan, da ne "beži" skrol
       e.preventDefault();
       onTouchMove(e);
     };
@@ -110,8 +121,8 @@ export default function AdminCategory() {
     document.body.style.overflow = "hidden";
 
     window.addEventListener("touchmove", handleMove, { passive: false });
-    window.addEventListener("touchend", handleEnd);
-    window.addEventListener("touchcancel", handleEnd);
+    window.addEventListener("touchend", handleEnd, { passive: true });
+    window.addEventListener("touchcancel", handleEnd, { passive: true });
 
     return () => {
       window.removeEventListener("touchmove", handleMove);
@@ -303,28 +314,7 @@ export default function AdminCategory() {
     setOverId(null);
   }
 
-  // Mobile long-press DnD
-  function onTouchStart(e, id) {
-    if (!canReorder) return;
-
-    e.preventDefault();
-    touchRef.current.startY = e.touches[0].clientY;
-    touchRef.current.activeId = id;
-    setDragId(id);
-
-    if (navigator.vibrate) {
-      navigator.vibrate(50);
-    }
-
-    const t = setTimeout(() => {
-      setIsLongPress(true);
-      setIsTouchDrag(true);
-      if (navigator.vibrate) {
-        navigator.vibrate(100);
-      }
-    }, 200);
-    setHoldTimer(t);
-  }
+  /* ==================== Mobile long-press DnD ==================== */
 
   function rowCenterY(el) {
     const rect = el.getBoundingClientRect();
@@ -339,89 +329,133 @@ export default function AdminCategory() {
   function nearestIdByY(y) {
     let best = null;
     let bestDist = Infinity;
-    const rows = allRowEls();
-    console.log("Rows found:", rows.length); // Debug: Check if all rows are detected
-    for (const el of rows) {
+    for (const el of allRowEls()) {
       const id = idFromRowEl(el);
       if (!id) continue;
       const cy = rowCenterY(el);
       const d = Math.abs(cy - y);
-      console.log(`Row ${id}: centerY=${cy}, touchY=${y}, distance=${d}`); // Debug
       if (d < bestDist) {
         bestDist = d;
         best = id;
       }
     }
-    console.log("Nearest ID:", best); // Debug
     return best;
   }
 
-  function onTouchMove(e) {
-    if (!dragId || !canReorder) return;
+  function startAutoScrollIfNeeded(clientY) {
+    cancelAutoScroll();
+    const container = listRef.current;
+    if (!container) return;
 
-    const y = e.touches[0].clientY;
-    console.log("Touch move: y=", y); // Debug
+    const rect = container.getBoundingClientRect();
+    const threshold = 64; // px od ivice
+    const speed = 14;     // px po frame-u
 
-    // Auto-scroll
-    const scrollContainer = document.querySelector(".admincat-row").parentElement || document.body;
-    const scrollThreshold = 100;
-    const scrollSpeed = 10;
-    if (y < scrollThreshold && scrollContainer.scrollTop > 0) {
-      scrollContainer.scrollBy({ top: -scrollSpeed, behavior: "smooth" });
-    } else if (y > window.innerHeight - scrollThreshold) {
-      scrollContainer.scrollBy({ top: scrollSpeed, behavior: "smooth" });
+    function step() {
+      const y = window._lastTouchY ?? clientY;
+      const nearTop = y < rect.top + threshold;
+      const nearBottom = y > rect.bottom - threshold;
+
+      if (nearTop && container.scrollTop > 0) {
+        container.scrollTop = Math.max(0, container.scrollTop - speed);
+        scrollRAF.current = requestAnimationFrame(step);
+      } else if (nearBottom && container.scrollTop < container.scrollHeight - container.clientHeight) {
+        container.scrollTop = Math.min(
+          container.scrollHeight - container.clientHeight,
+          container.scrollTop + speed
+        );
+        scrollRAF.current = requestAnimationFrame(step);
+      }
     }
+    scrollRAF.current = requestAnimationFrame(step);
+  }
+  function cancelAutoScroll() {
+    if (scrollRAF.current) {
+      cancelAnimationFrame(scrollRAF.current);
+      scrollRAF.current = null;
+    }
+  }
 
+  // Aktivira se na pritisak BILO GDE u redu
+  function onTouchStart(e, id) {
+    if (!canReorder) return;
+
+    // NE pozivamo preventDefault ovde, da bi skrol radio dok ne "zaključamo" drag
+    const t = e.touches[0];
+    touchRef.current.startY = t.clientY;
+    touchRef.current.startX = t.clientX;
+    touchRef.current.activeId = id;
+    touchRef.current.moved = false;
+
+    // vizuelno označi potencijalni drag target
+    setDragId(id);
+
+    // kratak haptic hint
+    if (navigator.vibrate) navigator.vibrate(20);
+
+    // startujemo tajmer za long-press
+    clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = setTimeout(() => {
+      // Long-press priznat → prelazimo u pravi drag režim
+      setIsLongPress(true);
+      setIsTouchDrag(true);
+      if (navigator.vibrate) navigator.vibrate(50);
+    }, 300); // 300ms long-press
+  }
+
+  function onTouchMove(e) {
+    const t = e.touches[0];
+    window._lastTouchY = t.clientY; // za auto-scroll petlju
+
+    // ako long-press još NIJE, proveri da li je korisnik samo skrolovao
     if (!isLongPress) {
-      if (Math.abs(y - touchRef.current.startY) > 12) {
-        if (holdTimer) clearTimeout(holdTimer);
-        setHoldTimer(null);
+      const dx = Math.abs(t.clientX - touchRef.current.startX);
+      const dy = Math.abs(t.clientY - touchRef.current.startY);
+      // ako pomeranje > 12px, tretiramo kao skrol → otkaži eventualni drag
+      if (dx > 12 || dy > 12) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
         setDragId(null);
         setOverId(null);
         setIsTouchDrag(false);
       }
-      return;
+      return; // dozvoljen skrol
     }
 
-    e.preventDefault();
-    const nearest = nearestIdByY(y);
-    if (nearest && nearest !== overId) {
-      debouncedSetOverId(nearest);
-      console.log("Over ID updated:", nearest); // Debug
-    }
+    // odavde je DRAG aktivan
+    const nearest = nearestIdByY(t.clientY);
+    if (nearest && nearest !== overId) debouncedSetOverId(nearest);
+    startAutoScrollIfNeeded(t.clientY);
   }
 
   async function onTouchEnd() {
-    if (holdTimer) {
-      clearTimeout(holdTimer);
-      setHoldTimer(null);
-    }
+    clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
+    cancelAutoScroll();
 
     if (!isLongPress) {
+      // nije došlo do drag-a (kratak tap ili skrol)
       setIsTouchDrag(false);
       setDragId(null);
       setOverId(null);
       return;
     }
 
+    // završetak drag-a
     setIsLongPress(false);
     setIsTouchDrag(false);
 
     if (!dragId || !overId) {
       setDragId(null);
       setOverId(null);
-      document.body.style.overflow = "";
-      console.log("Drag cancelled: no dragId or overId"); // Debug
       return;
     }
 
     const visibleIds = idsFromList(services);
     const newIds = moveId(visibleIds, dragId, overId);
-    console.log("New order:", newIds); // Debug
     const moved = dragId;
     setDragId(null);
     setOverId(null);
-    document.body.style.overflow = "";
 
     if (moved) {
       applyLocalOrder(newIds);
@@ -430,7 +464,7 @@ export default function AdminCategory() {
   }
 
   return (
-    <div style={wrap} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+    <div style={wrap}>
       <div style={panel}>
         <style>{css}</style>
 
@@ -496,7 +530,7 @@ export default function AdminCategory() {
           )}
         </form>
 
-        <div style={list}>
+        <div ref={listRef} className="admincat-list" style={list}>
           {services.map(s => {
             const isEditing = editing === s.id;
             const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
@@ -505,6 +539,8 @@ export default function AdminCategory() {
               ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
               : s.finalPrice;
 
+            const isActiveDrag = dragId === s.id && isLongPress;
+
             return (
               <div
                 key={s.id}
@@ -512,24 +548,25 @@ export default function AdminCategory() {
                 onContextMenu={(e) => e.preventDefault()}
                 style={{
                   ...row,
-                  cursor: canReorder ? "grab" : "default",
-                  touchAction: "none",
+                  // Dozvoli prirodan skrol dok nije drag
+                  touchAction: isActiveDrag ? "none" : "pan-y",
+                  cursor: canReorder ? (isActiveDrag ? "grabbing" : "grab") : "default",
                   userSelect: "none",
                   WebkitUserSelect: "none",
                   WebkitTouchCallout: "none",
-                  ...(dragId === s.id && isLongPress
+                  ...(isActiveDrag
                     ? {
-                        transform: "scale(1.1) translateY(2px)",
-                        boxShadow: "0 12px 24px rgba(0,0,0,.4)",
+                        transform: "scale(1.03)",
+                        boxShadow: "0 16px 32px rgba(0,0,0,.35)",
                         zIndex: 999,
-                        opacity: 0.9,
+                        opacity: 0.96,
                         border: "2px solid #ff5fa2",
                       }
                     : {}),
                   ...(overId === s.id && dragId !== s.id
                     ? {
                         border: "2px dashed #ff5fa2",
-                        background: "rgba(255, 95, 162, 0.1)",
+                        background: "rgba(255, 95, 162, 0.08)",
                       }
                     : {}),
                 }}
@@ -541,14 +578,14 @@ export default function AdminCategory() {
                 onDragEnd={onDragEnd}
                 onTouchStart={(e) => onTouchStart(e, s.id)}
               >
-                <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+                <div style={{ userSelect: "none", WebkitUserSelect: "none", pointerEvents: isActiveDrag ? "none" : "auto" }}>
                   <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
                   <div style={{ opacity: .8, fontSize: 13 }}>
                     {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
                     {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8, pointerEvents: dragId === s.id && isLongPress ? "none" : "auto" }}>
+                <div style={{ display: "flex", gap: 8, pointerEvents: isActiveDrag ? "none" : "auto" }}>
                   <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
                   <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
                 </div>
@@ -586,7 +623,7 @@ const formBase = {
   marginBottom: 14,
   alignItems: "center",
 };
-const list = { display: "grid", gap: 10, maxHeight: "60vh", overflowY: "auto" };
+const list = { display: "grid", gap: 10, maxHeight: "60vh", overflowY: "auto", paddingBottom: 2 };
 const row = {
   display: "flex",
   justifyContent: "space-between",
@@ -600,7 +637,8 @@ const row = {
   userSelect: "none",
   WebkitUserSelect: "none",
   WebkitTouchCallout: "none",
-  transition: "transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease",
+  transition: "transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, border 0.1s ease",
+  position: "relative",
 };
 const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800, color: "#fff" };
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
@@ -649,10 +687,7 @@ const css = `
     top: -3px;
     left: 0;
     right: 0;
-    opacity: 0.8;
-  }
-  .srv-row {
-    position: relative;
+    opacity: 0.85;
   }
   @media (max-width: 1100px) {
     .admincat-form {
