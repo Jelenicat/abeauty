@@ -335,8 +335,10 @@ export default function AdminKatalog() {
 
     // Kratki tap:
     if (mobileSelectedId) {
+        e.preventDefault();
       // u selekciji smo → kratak tap na target = premesti selektovani ispod targeta
       if (!isDiscounts && !filter.trim()) {
+        
         moveSelectedBelow(id);
       }
     } else {
@@ -614,16 +616,17 @@ function CategoryTile({
       border: selectedMobile ? "2px solid #ff5fa2" : "none",
       boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
     }}
-    onClick={(e) => {
-      if (selectedMobile) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      onNav();
-    }}
-    className="ak-tilebtn"
-  >
+      onClick={(e) => {
+    if (selectedMobile) {
+      // u move modu – samo blokiraj navigaciju
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onNav(); // normalno otvaranje kategorije
+  }}
+  className="ak-tilebtn"
+>
     <div style={tileName} className="ak-tilename">
       {displayName}
     </div>
