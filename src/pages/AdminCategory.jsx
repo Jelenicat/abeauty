@@ -448,7 +448,8 @@ const formBase = {
   marginBottom: 14,
   alignItems: "center",
 };
-const list = { display: "grid", gap: 10, maxHeight: "60vh", overflowY: "auto", paddingBottom: 2 };
+const list = { display: "grid", gap: 10, paddingBottom: 2 };
+
 const row = {
   display: "flex",
   justifyContent: "space-between",

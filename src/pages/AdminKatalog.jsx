@@ -1,760 +1,719 @@
-// src/pages/AdminKatalog.jsx
+// src/pages/AdminCategory.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  query,
-  orderBy,
-  serverTimestamp,
-  setDoc,
-  getDoc,
-  writeBatch,           // ⬅️ dodato za batch upis
+  doc, getDoc, setDoc, updateDoc, deleteDoc,
+  collection, query, where, onSnapshot, addDoc,
+  serverTimestamp, orderBy, writeBatch
 } from "firebase/firestore";
-import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch, FiArrowLeft } from "react-icons/fi";
 
-export default function AdminKatalog() {
+export default function AdminCategory() {
+  const { categoryId } = useParams();
+  const catId = categoryId;
   const nav = useNavigate();
 
-  // Data
-  const [cats, setCats] = useState([]);
-  const [services, setServices] = useState([]);
+  const [catName, setCatName] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [isAdding, setIsAdding] = useState(false);
+  const [services, setServices] = useState([]);
 
-  // Forms
-  const [newName, setNewName] = useState("");
-  const [filter, setFilter] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editingName, setEditingName] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [name, setName] = useState("");
+  const [durationMin, setDurationMin] = useState("");
+  const [price, setPrice] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // Custom naslov za "Na popustu"
-  const [discountTitle, setDiscountTitle] = useState("Na popustu");
-
-  // === Reorder state (bez vizuelnih promena) ===
+  // Desktop DnD
   const [dragId, setDragId] = useState(null);
-  const [overId, setOverId] = useState(null);
-  const [isTouchDrag, setIsTouchDrag] = useState(false);
-  const touchRef = useRef({ startY: 0, activeId: null });
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
 
-  // Realtime: kategorije, usluge
+  // Mobile long-press select → tap to place
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const holdTimerRef = useRef(null);
+  const touchStartRef = useRef({ x: 0, y: 0 });
+
+  const listRef = useRef(null);
+  const scrollRAF = useRef(null);
+
+  const finalPrice = useMemo(() => {
+    const p = Number(price) || 0;
+    const d = Number(discount) || 0;
+    return Math.max(0, Math.round(p * (1 - d / 100)));
+  }, [price, discount]);
+
+  const debounce = (fn, ms) => {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  };
+  const debouncedSetOverIndex = useMemo(() => debounce(setOverIndex, 30), []);
+
+  /* ==================== load ==================== */
   useEffect(() => {
-    const offCats = onSnapshot(
-      query(collection(db, "categories"), orderBy("order", "asc")),
-      (s) => {
-        setCats(s.docs.map((d) => ({ id: d.id, ...d.data() })));
+    if (!catId) return;
+    let off = () => {};
+    if (catId === "discounts") {
+      (async () => {
+        try {
+          const snap = await getDoc(doc(db, "meta", "discounts"));
+          const t = snap.exists() ? (snap.data().title || "Na popustu") : "Na popustu";
+          setCatName(t);
+        } catch {
+          setCatName("Na popustu");
+        }
         setLoading(false);
-      }
-    );
-    const offSrv = onSnapshot(collection(db, "services"), (s) => {
-      setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => {
-      offCats();
-      offSrv();
-    };
-  }, []);
+      })();
 
-  // Realtime: meta/discounts (naslov)
-  useEffect(() => {
-    let unsub = () => {};
-    (async () => {
-      try {
-        unsub = onSnapshot(doc(db, "meta", "discounts"), (snap) => {
-          setDiscountTitle(snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu");
-        });
-      } catch {
-        const snap = await getDoc(doc(db, "meta", "discounts"));
-        setDiscountTitle(snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu");
-      }
-    })();
-    return () => unsub && unsub();
-  }, []);
-
-  const countByCat = useMemo(() => {
-    const m = new Map();
-    for (const s of services) m.set(s.categoryId, (m.get(s.categoryId) || 0) + 1);
-    return m;
-  }, [services]);
-
-  const discountedServices = useMemo(
-    () => services.filter((s) => Number(s.discountPercent || 0) > 0),
-    [services]
-  );
-
-  const filtered = useMemo(() => {
-    const t = filter.trim().toLowerCase();
-    return t ? cats.filter((c) => (c.name || "").toLowerCase().includes(t)) : cats;
-  }, [cats, filter]);
-
-  const filteredWithDiscounts = useMemo(() => {
-    const t = filter.trim().toLowerCase();
-    const wants =
-      discountedServices.length > 0 &&
-      (!t || discountTitle.toLowerCase().includes(t) || "popust".includes(t));
-
-    const base = [...filtered];
-    if (wants) {
-      base.unshift({
-        id: "discounts",
-        name: discountTitle || "Na popustu",
-        order: -Infinity,
-        _virtual: true,
-      });
+      off = onSnapshot(
+        query(
+          collection(db, "services"),
+          where("discountPercent", ">", 0),
+          orderBy("discountPercent", "asc"),
+          orderBy("name", "asc")
+        ),
+        (s) => setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })))
+      );
+    } else {
+      (async () => {
+        const snap = await getDoc(doc(db, "categories", catId));
+        if (snap.exists()) setCatName(snap.data().name || "");
+        setLoading(false);
+        off = onSnapshot(
+          query(
+            collection(db, "services"),
+            where("categoryId", "==", catId),
+            orderBy("order", "asc")
+          ),
+          (s) => setServices(s.docs.map((d) => ({ id: d.id, ...d.data() })))
+        );
+      })();
     }
-    return base;
-  }, [filtered, discountedServices.length, filter, discountTitle]);
+    return () => off();
+  }, [catId]);
 
-  /* ==================== Reorder helpers (bez UI efekata) ==================== */
-  function idsFromList(list) {
-    return list.map((x) => x.id);
-  }
-  function moveId(listIds, fromId, toId) {
-    if (fromId === toId || !fromId || !toId) return listIds;
-    const arr = listIds.slice();
-    const fromIdx = arr.indexOf(fromId);
-    const toIdx = arr.indexOf(toId);
-    if (fromIdx < 0 || toIdx < 0) return arr;
-    const [item] = arr.splice(fromIdx, 1);
-    arr.splice(toIdx, 0, item);
-    return arr;
-  }
-  async function persistOrder(newOrderIds) {
-    const realIds = newOrderIds.filter((id) => id !== "discounts"); // ignoriši virtuelnu
+  /* ==================== helpers ==================== */
+  const canReorder = catId !== "discounts";
+  const idsFromList = (list) => list.map((x) => x.id);
+
+  async function persistOrderIds(newOrderIds) {
+    if (!canReorder) return;
     const batch = writeBatch(db);
     let pos = 1;
-    for (const id of realIds) {
-      batch.update(doc(db, "categories", id), {
-        order: pos++,
-        updatedAt: serverTimestamp(),
-      });
+    for (const id of newOrderIds) {
+      batch.update(doc(db, "services", id), { order: pos++, updatedAt: serverTimestamp() });
     }
     await batch.commit();
   }
 
-  /* ===== Desktop DnD ===== */
+  function applyLocalOrderByIds(newIds) {
+    setServices((prev) => {
+      const byId = new Map(prev.map((x) => [x.id, x]));
+      return newIds.map((id, idx) => ({ ...(byId.get(id) || {}), id, order: idx + 1 }));
+    });
+  }
+
+  // Move to index (insert BEFORE toIndex)
+  function moveToIndex(listIds, fromIndex, toIndex) {
+    if (fromIndex == null || toIndex == null) return listIds;
+    const arr = listIds.slice();
+    const [item] = arr.splice(fromIndex, 1);
+    const adj = fromIndex < toIndex ? toIndex - 1 : toIndex;
+    arr.splice(adj, 0, item);
+    return arr;
+  }
+
+  // Move AFTER a given target index (used for mobile tap-to-place-below)
+  function moveAfter(listIds, fromIndex, targetIndex) {
+    if (fromIndex == null || targetIndex == null) return listIds;
+    const arr = listIds.slice();
+    const [item] = arr.splice(fromIndex, 1);
+    // if we removed from above, target shifts -1, inserting "after" == at target
+    // else insert at target+1
+    const insertIndex = fromIndex < targetIndex ? targetIndex : targetIndex + 1;
+    arr.splice(insertIndex, 0, item);
+    return arr;
+  }
+
+  /* ==================== auto-scroll (desktop hover) ==================== */
+  function startAutoScrollIfNeeded(clientY) {
+    cancelAutoScroll();
+    const container = listRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const threshold = 60;
+    const speed = 12;
+
+    function step() {
+      const y = window._lastTouchY ?? clientY;
+      const nearTop = y < rect.top + threshold;
+      const nearBottom = y > rect.bottom - threshold;
+
+      if (nearTop && container.scrollTop > 0) {
+        container.scrollTop = Math.max(0, container.scrollTop - speed);
+        scrollRAF.current = requestAnimationFrame(step);
+      } else if (nearBottom && container.scrollTop < container.scrollHeight - container.clientHeight) {
+        container.scrollTop = Math.min(
+          container.scrollHeight - container.clientHeight,
+          container.scrollTop + speed
+        );
+        scrollRAF.current = requestAnimationFrame(step);
+      }
+    }
+    scrollRAF.current = requestAnimationFrame(step);
+  }
+  function cancelAutoScroll() {
+    if (scrollRAF.current) {
+      cancelAnimationFrame(scrollRAF.current);
+      scrollRAF.current = null;
+    }
+  }
+
+  /* ==================== “edit/save” ==================== */
+  const resetForm = () => {
+    setEditing(null);
+    setName("");
+    setDurationMin("");
+    setPrice("");
+    setDiscount("");
+  };
+
+  const saveCategoryName = async () => {
+    const n = catName.trim();
+    if (!n) return;
+
+    if (catId === "discounts") {
+      try {
+        await updateDoc(doc(db, "meta", "discounts"), { title: n, updatedAt: serverTimestamp() });
+      } catch {
+        await setDoc(doc(db, "meta", "discounts"), { title: n, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      }
+    } else {
+      await updateDoc(doc(db, "categories", catId), { name: n, updatedAt: serverTimestamp() });
+    }
+    alert("Naziv kategorije sačuvan.");
+  };
+
+  const deleteCategory = async () => {
+    if (catId === "discounts") return;
+    if (services.length) {
+      if (!confirm(`Kategorija ima ${services.length} usluga. Obrisaćeš SAMO kategoriju (usluge ostaju). Nastavi?`)) return;
+    } else {
+      if (!confirm("Obrisati kategoriju?")) return;
+    }
+    await deleteDoc(doc(db, "categories", catId));
+    nav("/admin/katalog");
+  };
+
+  const startEdit = (srv) => {
+    setEditing(srv.id);
+    setName(srv.name || "");
+    setDurationMin(String(srv.durationMin || ""));
+    setPrice(String(srv.basePrice || ""));
+    setDiscount(String(srv.discountPercent ?? srv.discount ?? ""));
+  };
+
+  const upsertLocalService = (id, payload) => {
+    setServices((prev) => {
+      const idx = prev.findIndex((x) => x.id === id);
+      const nextObj = { ...(prev[idx] || {}), id, ...payload };
+      if (idx >= 0) {
+        const copy = prev.slice();
+        copy[idx] = nextObj;
+        return copy;
+      }
+      return [...prev, nextObj];
+    });
+  };
+
+  const removeLocalService = (id) => {
+    setServices((prev) => prev.filter((x) => x.id !== id));
+  };
+
+  const saveService = async (e) => {
+    e?.preventDefault?.();
+    if (saving) return;
+
+    const prevObj = editing ? services.find((s) => s.id === editing) : null;
+    const resolvedCategoryId = editing
+      ? (prevObj?.categoryId ?? (catId === "discounts" ? "" : catId))
+      : (catId === "discounts" ? "" : catId);
+
+    const payload = {
+      categoryId: resolvedCategoryId,
+      name: name.trim(),
+      durationMin: Number(durationMin) || 0,
+      basePrice: Number(price) || 0,
+      discountPercent: Number(discount) || 0,
+      finalPrice,
+      updatedAt: serverTimestamp(),
+    };
+    if (!payload.name) return;
+
+    setSaving(true);
+    try {
+      if (editing) {
+        upsertLocalService(editing, { ...payload, updatedAt: new Date() });
+        await updateDoc(doc(db, "services", editing), payload);
+        if (catId === "discounts" && payload.discountPercent <= 0) {
+          removeLocalService(editing);
+        }
+      } else {
+        const orderVal = (services?.length || 0) + 1;
+        const docRef = await addDoc(collection(db, "services"), {
+          ...payload,
+          order: orderVal,
+          createdAt: serverTimestamp(),
+        });
+        upsertLocalService(docRef.id, {
+          ...payload,
+          order: orderVal,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        if (catId === "discounts" && payload.discountPercent <= 0) {
+          removeLocalService(docRef.id);
+        }
+      }
+      resetForm();
+    } catch (err) {
+      console.error(err);
+      alert("Greška pri čuvanju usluge.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeService = async (id) => {
+    if (!confirm("Obrisati uslugu?")) return;
+    removeLocalService(id);
+    try {
+      await deleteDoc(doc(db, "services", id));
+      if (editing === id) resetForm();
+    } catch (e) {
+      console.error(e);
+      alert("Greška pri brisanju. Osveži stranicu.");
+    }
+  };
+
+  /* ==================== Desktop DnD (ostaje isto) ==================== */
   function onDragStart(e, id) {
-    if (id === "discounts") return e.preventDefault();
+    if (!canReorder) return e.preventDefault();
     setDragId(id);
+    const idx = services.findIndex((x) => x.id === id);
+    setDragIndex(idx);
     e.dataTransfer.effectAllowed = "move";
   }
   function onDragOver(e, id) {
+    if (!canReorder) return;
     e.preventDefault();
-    if (id !== overId) setOverId(id);
+    const idx = services.findIndex((x) => x.id === id);
+    if (idx !== -1 && idx !== overIndex) setOverIndex(idx);
   }
   async function onDrop(e, id) {
+    if (!canReorder) return;
     e.preventDefault();
-    const visibleIds = idsFromList(filteredWithDiscounts);
-    const newIds = moveId(visibleIds, dragId, id);
-    setDragId(null);
-    setOverId(null);
-    if (!dragId || dragId === "discounts") return;
-    await persistOrder(newIds);
+    const toIdx = services.findIndex((x) => x.id === id);
+    if (dragIndex == null || toIdx === -1) {
+      setDragId(null); setDragIndex(null); setOverIndex(null);
+      return;
+    }
+    const newIds = moveToIndex(idsFromList(services), dragIndex, toIdx);
+    setDragId(null); setDragIndex(null); setOverIndex(null);
+    applyLocalOrderByIds(newIds);
+    await persistOrderIds(newIds);
   }
   function onDragEnd() {
-    setDragId(null);
-    setOverId(null);
+    setDragId(null); setDragIndex(null); setOverIndex(null);
   }
 
-  /* ===== Touch DnD (telefon) ===== */
-  function onTouchStart(e, id) {
-    if (id === "discounts") return;
-    setIsTouchDrag(true);
-    touchRef.current.startY = e.touches[0].clientY;
-    touchRef.current.activeId = id;
-    setDragId(id);
+  /* ==================== Mobile: long-press select → tap target ==================== */
+  function onTouchStartRow(e, id) {
+    if (!canReorder) return;
+    const t = e.touches?.[0];
+    touchStartRef.current.x = t?.clientX ?? 0;
+    touchStartRef.current.y = t?.clientY ?? 0;
+
+    // armiiramo long-press (300ms) → ulaz u select mode
+    clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = setTimeout(() => {
+      const idx = services.findIndex((x) => x.id === id);
+      setSelectMode(true);
+      setSelectedId(id);
+      setSelectedIndex(idx);
+      if (navigator.vibrate) navigator.vibrate(50);
+    }, 300);
   }
-  function tileCenterY(el) {
-    const rect = el.getBoundingClientRect();
-    return rect.top + rect.height / 2;
-  }
-  function allTileEls() {
-    return Array.from(document.querySelectorAll(".ak-tile"));
-  }
-  function idFromTileEl(el) {
-    return el?.getAttribute("data-id");
-  }
-  function nearestIdByY(y) {
-    let best = null;
-    let bestDist = Infinity;
-    for (const el of allTileEls()) {
-      const id = idFromTileEl(el);
-      if (!id) continue;
-      const cy = tileCenterY(el);
-      const d = Math.abs(cy - y);
-      if (d < bestDist) {
-        bestDist = d;
-        best = id;
-      }
-    }
-    return best;
-  }
-  function onTouchMove(e) {
-    if (!isTouchDrag || !dragId) return;
-    const y = e.touches[0].clientY;
-    const nearest = nearestIdByY(y);
-    if (nearest && nearest !== overId) setOverId(nearest);
-  }
-  async function onTouchEnd() {
-    if (!isTouchDrag || !dragId || !overId) {
-      setIsTouchDrag(false);
-      setDragId(null);
-      setOverId(null);
-      return;
-    }
-    const visibleIds = idsFromList(filteredWithDiscounts);
-    const newIds = moveId(visibleIds, dragId, overId);
-    setIsTouchDrag(false);
-    const moved = dragId;
-    setDragId(null);
-    setOverId(null);
-    if (moved && moved !== "discounts") {
-      await persistOrder(newIds);
+  function onTouchMoveRow(e) {
+    const t = e.touches?.[0];
+    if (!t) return;
+    const dx = Math.abs(t.clientX - touchStartRef.current.x);
+    const dy = Math.abs(t.clientY - touchStartRef.current.y);
+    // ako je korisnik krenuo da skroluje pre long-pressa, otkaži armiranje
+    if (dx > 12 || dy > 12) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
     }
   }
-
-  async function addCategory(e) {
-    e.preventDefault();
-    const CLEAN = newName.trim();
-    if (!CLEAN) return setError("Naziv kategorije ne može biti prazan.");
-    if (cats.some((c) => (c.name || "").trim().toLowerCase() === CLEAN.toLowerCase()))
-      return setError("Kategorija sa tim nazivom već postoji.");
-
-    setIsAdding(true);
-    try {
-      await addDoc(collection(db, "categories"), {
-        name: CLEAN,
-        order: (cats?.length || 0) + 1,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      setNewName("");
-      setError("");
-    } catch (err) {
-      console.error(err);
-      setError("Greška prilikom dodavanja kategorije.");
-    } finally {
-      setIsAdding(false);
-    }
+  function onTouchEndRow() {
+    clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
   }
 
-  async function renameCategory(id, name) {
-    const CLEAN = (name || "").trim();
-    if (!CLEAN) return;
+  // Tap na red: ako smo u select modu → premesti "odabrani" ispod cilja
+  async function onRowClickTarget(targetId) {
+    if (!selectMode || !canReorder) return;
+    if (!selectedId) return;
 
-    if (id === "discounts") {
-      try {
-        await setDoc(
-          doc(db, "meta", "discounts"),
-          { title: CLEAN, updatedAt: serverTimestamp() },
-          { merge: true }
-        );
-        setEditingId(null);
-        setEditingName("");
-      } catch (err) {
-        console.error(err);
-        setError("Greška prilikom čuvanja naziva popusta.");
-      }
+    if (targetId === selectedId) {
+      // tap na isti red → izlaz iz select moda
+      setSelectMode(false);
+      setSelectedId(null);
+      setSelectedIndex(null);
       return;
     }
 
-    const current = cats.find((c) => c.id === id);
-    if (current && (current.name || "").trim() === CLEAN) {
-      setEditingId(null);
-      setEditingName("");
+    const fromIdx = selectedIndex;
+    const toIdx = services.findIndex((x) => x.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) {
+      setSelectMode(false);
+      setSelectedId(null);
+      setSelectedIndex(null);
       return;
     }
-    if (
-      cats.some(
-        (c) => c.id !== id && (c.name || "").trim().toLowerCase() === CLEAN.toLowerCase()
-      )
-    )
-      return setError("Kategorija sa tim nazivom već postoji.");
 
-    try {
-      await updateDoc(doc(db, "categories", id), {
-        name: CLEAN,
-        updatedAt: serverTimestamp(),
-      });
-      setEditingId(null);
-      setEditingName("");
-    } catch (err) {
-      console.error(err);
-      setError("Greška prilikom preimenovanja kategorije.");
-    }
+    const newIds = moveAfter(idsFromList(services), fromIdx, toIdx); // ISPOD targeta
+    applyLocalOrderByIds(newIds);
+    await persistOrderIds(newIds);
+
+    setSelectMode(false);
+    setSelectedId(null);
+    setSelectedIndex(null);
   }
 
-  async function removeCategory(id) {
-    if (id === "discounts") return;
-    if (!confirm("Obrisati kategoriju? (Usluge ostaju u bazi)")) return;
-    try {
-      await deleteDoc(doc(db, "categories", id));
-    } catch (err) {
-      console.error(err);
-      setError("Greška prilikom brisanja kategorije.");
-    }
-  }
-
-  const addBtnStyle = {
-    ...addBtn,
-    ...(isAdding || !newName.trim() ? { opacity: 0.6, cursor: "not-allowed" } : {}),
-  };
-
+  /* ==================== render ==================== */
   return (
-    <div
-      style={wrap}
-      className="ak-root"
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-    >
-      <style>{responsiveCSS}</style>
+    <div style={wrap}>
+      <div style={panel}>
+        <style>{css}</style>
 
-      {/* Dugme Nazad */}
-      <div style={{ marginBottom: 16 }}>
-        <button
-          onClick={() => nav("/admin")}
-          style={backBtn}
-          className="ak-backbtn"
-        >
-          <FiArrowLeft style={{ marginRight: 6 }} /> Nazad
-        </button>
-      </div>
-
-      <div style={panel} className="ak-panel">
-        {/* RED 1: Dodaj kategoriju */}
-        <form onSubmit={addCategory} style={topBar} className="ak-topbar">
-          <div style={addBox}>
-            <span style={addIcon}>
-              <FiPlus />
-            </span>
-            <input
-              style={addInput}
-              placeholder="Nova kategorija (npr. Masaže)"
-              value={newName}
-              onChange={(e) => {
-                setNewName(e.target.value);
-                if (error) setError("");
-              }}
-              aria-label="Unesite naziv nove kategorije"
-              inputMode="text"
-            />
+        {/* GORNJI BLOK */}
+        <div className="admincat-top">
+          <div className="admincat-topbar" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+            <button className="btn-ghost" style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
+            <h2 className="admincat-title" style={title}>{catName || "Kategorija"}</h2>
           </div>
-          <button
-            style={addBtnStyle}
-            type="submit"
-            disabled={isAdding || !newName.trim()}
-            className="ak-addbtn"
-          >
-            {isAdding ? "Dodavanje…" : "Dodaj"}
-          </button>
-        </form>
 
-        {/* RED 2: Pretraga */}
-        <div className="ak-searchrow">
-          <div style={searchBox}>
-            <span style={searchIcon}>
-              <FiSearch />
-            </span>
+          {/* EDIT NAZIVA */}
+          <div className="admincat-catrow" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
             <input
-              style={searchInput}
-              placeholder="Pretraga kategorija (npr. Lice, Nokti…) "
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              aria-label="Pretraga kategorija"
-              inputMode="search"
+              style={inp}
+              value={catName}
+              onChange={e => setCatName(e.target.value)}
+              placeholder="Naziv kategorije"
             />
-          </div>
-        </div>
-
-        {error && <div className="ak-error">{error}</div>}
-
-        {/* Grid */}
-        {loading ? (
-          <div style={{ color: "#fff", textAlign: "center" }}>Učitavanje…</div>
-        ) : (
-          <div style={grid} className="ak-grid">
-            {filteredWithDiscounts.map((cat) => {
-              const isDiscounts = cat.id === "discounts";
-              const isEditing = editingId === cat.id;
-              const count = isDiscounts ? discountedServices.length : countByCat.get(cat.id) || 0;
-              const displayName = isDiscounts ? discountTitle : cat.name;
-
-              return (
-                <div
-                  key={cat.id}
-                  data-id={cat.id}
-                  style={tile}
-                  className="ak-tile"
-                  // Desktop drag and drop
-                  draggable={!isDiscounts}
-                  onDragStart={(e) => onDragStart(e, cat.id)}
-                  onDragOver={(e) => onDragOver(e, cat.id)}
-                  onDrop={(e) => onDrop(e, cat.id)}
-                  onDragEnd={onDragEnd}
-                  // Touch drag
-                  onTouchStart={(e) => onTouchStart(e, cat.id)}
-                >
-                  <div
-                    style={{
-                      ...marble,
-                      background: isDiscounts
-                        ? "url('/slika3.webp') center/cover no-repeat"
-                        : marble.background,
-                    }}
-                    className="ak-marble"
-                  />
-
-                  {!isEditing && (
-                    <div style={tileActions} className="ak-actions">
-                      <button
-                        style={tileActionBtn}
-                        title="Preimenuj"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingId(cat.id);
-                          setEditingName(displayName || "");
-                        }}
-                        className="ak-actionbtn"
-                      >
-                        <FiEdit />
-                      </button>
-                      {!isDiscounts && (
-                        <button
-                          style={{ ...tileActionBtn, background: "#ffe1e1", color: "#7a1b1b" }}
-                          title="Obriši"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeCategory(cat.id);
-                          }}
-                          className="ak-actionbtn"
-                        >
-                          <FiTrash2 />
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {!isEditing ? (
-                    <button
-                      style={tileButton}
-                      onClick={() =>
-                        nav(isDiscounts ? "/admin/katalog/discounts" : `/admin/katalog/${cat.id}`)
-                      }
-                      className="ak-tilebtn"
-                    >
-                      <div style={tileName} className="ak-tilename">
-                        {displayName}
-                      </div>
-                      <div style={badge} className="ak-badge">
-                        {count} usl.
-                      </div>
-                    </button>
-                  ) : (
-                    <div style={editRow} className="ak-editrow" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        style={editInput}
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") renameCategory(cat.id, editingName);
-                          if (e.key === "Escape") {
-                            setEditingId(null);
-                            setEditingName("");
-                          }
-                        }}
-                        autoFocus
-                      />
-                      <div className="ak-editbtns" style={editBtns}>
-                        <button
-                          style={{ ...tileActionBtn, background: "#efefef" }}
-                          title="Otkaži"
-                          onClick={() => {
-                            setEditingId(null);
-                            setEditingName("");
-                          }}
-                          className="ak-actionbtn"
-                        >
-                          <FiX />
-                        </button>
-                        <button
-                          style={{
-                            ...tileActionBtn,
-                            background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
-                            color: "#fff",
-                          }}
-                          title="Sačuvaj"
-                          onClick={() => renameCategory(cat.id, editingName)}
-                          className="ak-actionbtn"
-                        >
-                          <FiCheck />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {!filteredWithDiscounts.length && (
-              <div style={{ color: "#fff", textAlign: "center" }}>Nema rezultata.</div>
+            <button className="btn-primary" style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
+            {catId !== "discounts" && (
+              <button className="btn-danger" style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
             )}
           </div>
-        )}
+
+          {selectMode && (
+            <div style={hintBox}>
+              <strong>Ređanje na telefonu:</strong> Odabrana usluga je označena. Dodirni uslugu <em>ispod koje</em> želiš da je premestiš,
+              ili ponovo dodirni odabranu da otkažeš.
+              <button onClick={()=>{setSelectMode(false); setSelectedId(null); setSelectedIndex(null);}} style={hintCancel}>Otkaži</button>
+            </div>
+          )}
+        </div>
+
+        {/* FORMA ZA USLUGU */}
+        <form onSubmit={saveService} style={formBase} className="admincat-form">
+          <input
+            style={inp}
+            placeholder="Naziv usluge"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <input
+            style={inp}
+            type="number" min="0"
+            placeholder="Trajanje (min)"
+            value={durationMin}
+            onChange={e => setDurationMin(e.target.value)}
+          />
+          <input
+            style={inp}
+            type="number" min="0"
+            placeholder="Cena (RSD)"
+            value={price}
+            onChange={e => setPrice(e.target.value)}
+          />
+          <input
+            style={inp}
+            type="number" min="0" max="90"
+            placeholder="Popust % (opciono)"
+            value={discount}
+            onChange={e => setDiscount(e.target.value)}
+          />
+          <div className="price-preview">Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
+          <button className="btn-primary" style={btn} type="submit" disabled={saving}>
+            {saving ? "Čuvam..." : editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}
+          </button>
+          {editing && (
+            <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>
+              Otkaži
+            </button>
+          )}
+        </form>
+
+        {/* LISTA */}
+        <div ref={listRef} className="admincat-list" style={list}>
+          {services.map((s, idx) => {
+            const isEditing = editing === s.id;
+            const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
+            const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
+            const currentFinal = isEditing
+              ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
+              : s.finalPrice;
+
+            const isSelected = selectMode && selectedId === s.id;
+
+            return (
+              <div
+                key={s.id}
+                data-id={s.id}
+                className={`admincat-row srv-row ${isSelected ? "row-selected" : ""}`}
+                style={{
+                  ...row,
+                  border: isSelected ? "2px solid #ff5fa2" : "1px solid #f1f1f1",
+                  boxShadow: isSelected ? "0 14px 30px rgba(255,95,162,.25)" : row.boxShadow,
+                  cursor: canReorder ? (selectMode ? "pointer" : "grab") : "default",
+                  touchAction: "manipulation",
+                }}
+
+                // Desktop DnD:
+                draggable={false}
+                onDragStart={(e) => onDragStart(e, s.id)}
+                onDragOver={(e) => onDragOver(e, s.id)}
+                onDrop={(e) => onDrop(e, s.id)}
+                onDragEnd={onDragEnd}
+
+                // Mobile long-press select:
+                onTouchStart={(e) => onTouchStartRow(e, s.id)}
+                onTouchMove={onTouchMoveRow}
+                onTouchEnd={onTouchEndRow}
+
+                // Tap target (radi i na mobile i na desktopu)
+                onClick={() => onRowClickTarget(s.id)}
+              >
+                <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+                  <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
+                  <div style={{ opacity: .8, fontSize: 13 }}>
+                    {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
+                    {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, pointerEvents: selectMode ? "none" : "auto", opacity: selectMode ? .5 : 1 }}>
+                  <button className="btn-primary" style={smBtn} disabled={selectMode} onClick={() => startEdit(s)}>Izmeni</button>
+                  <button className="btn-danger" style={smDel} disabled={selectMode} onClick={() => removeService(s.id)}>Obriši</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
 
-/* ===== STYLES (neizmenjeni) ===== */
-
-const wrap = {
-  minHeight: "100vh",
-  background: ["url('/slika1.webp') center/cover no-repeat fixed", "linear-gradient(135deg,#f0f0f0,#d9d9d9)"].join(", "),
-  padding: "clamp(12px,4vw,24px)",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "flex-start",
-  alignItems: "center",
-};
-
-const panel = {
-  width: "min(1280px,100%)",
-  background: "rgba(255,255,255,.14)",
-  border: "1px solid rgba(255,255,255,.35)",
-  backdropFilter: "blur(10px)",
-  borderRadius: 20,
-  boxShadow: "0 24px 60px rgba(0,0,0,.25)",
-  padding: "clamp(16px,4vw,32px)",
-};
-
-const backBtn = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "10px 16px",
-  borderRadius: 12,
-  border: "none",
-  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
-  color: "#fff",
-  fontWeight: 700,
-  fontSize: 16,
-  cursor: "pointer",
-  boxShadow: "0 6px 14px rgba(0,0,0,.18)",
-};
-
-const topBar = {
-  display: "grid",
-  gridTemplateColumns: "1fr auto",
-  gap: 10,
-  maxWidth: "980px",
-  margin: "16px auto 0",
-};
-
-const addBox = { position: "relative", width: "100%" };
-const addInput = {
-  width: "100%",
-  height: 44,
-  padding: "0 12px 0 36px",
-  borderRadius: 12,
-  border: "1px solid #ececec",
-  background: "#fff",
-  fontSize: 16,
-  boxShadow: "0 6px 14px rgba(0,0,0,.06)",
-  WebkitTapHighlightColor: "transparent",
-};
-const addIcon = {
-  position: "absolute",
-  left: 12,
-  top: "50%",
-  transform: "translateY(-50%)",
-  opacity: 0.7,
-  fontSize: 16,
-};
-const addBtn = {
-  width: "180px",
-  height: 44,
-  border: "none",
-  borderRadius: 12,
-  background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)",
-  color: "#fff",
-  fontWeight: 800,
-  cursor: "pointer",
-  padding: "0 14px",
-  boxShadow: "0 8px 18px rgba(255,127,181,.3)",
-  WebkitTapHighlightColor: "transparent",
-};
-
-const searchBox = { position: "relative", width: "100%", maxWidth: 980, margin: "10px auto 0" };
-const searchInput = {
-  width: "100%",
-  height: 44,
-  padding: "0 12px 0 36px",
-  borderRadius: 12,
-  border: "1px solid #ececec",
-  background: "#fff",
-  fontSize: 16,
-  boxShadow: "0 6px 14px rgba(0,0,0,.06)",
-  WebkitTapHighlightColor: "transparent",
-};
-const searchIcon = {
-  position: "absolute",
-  left: 12,
-  top: "50%",
-  transform: "translateY(-50%)",
-  opacity: 0.6,
-  fontSize: 16,
-};
-
-const grid = {
-  display: "grid",
-  gap: 12,
-  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-  marginTop: 14,
-};
-
-const tile = {
-  position: "relative",
-  borderRadius: 16,
-  overflow: "hidden",
-  border: "1px solid #ececec",
-  boxShadow: "0 8px 20px rgba(0,0,0,.14)",
-  userSelect: "none",
-};
-const marble = {
-  position: "absolute",
-  inset: 0,
-  background: "url('/slika6.webp') center/cover no-repeat",
-  opacity: 0.98,
-};
-const tileActions = { position: "absolute", top: 8, right: 8, display: "flex", gap: 6, zIndex: 2 };
-const tileActionBtn = {
-  height: 38,
-  width: 38,
-  borderRadius: 10,
-  border: "none",
-  background: "#efefef",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  WebkitTapHighlightColor: "transparent",
-};
-const tileButton = {
-  position: "relative",
-  display: "grid",
-  placeItems: "center",
-  width: "100%",
-  height: 120,
-  cursor: "pointer",
-  padding: 12,
-  background: "rgba(255,255,255,.1)",
-  border: "none",
-  outline: "none",
-  zIndex: 1,
-  WebkitTapHighlightColor: "transparent",
-};
-const tileName = {
-  fontWeight: 800,
-  fontSize: 20,
-  textAlign: "center",
-  color: "#2d2d2d",
-  textShadow: "0 1px 0 rgba(255,255,255,.8)",
-};
-const badge = {
-  position: "absolute",
-  right: 10,
-  bottom: 10,
-  background: "rgba(255,255,255,.92)",
-  border: "1px solid #eee",
-  borderRadius: 999,
-  padding: "4px 10px",
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#444",
-};
-
-/* Edit red: input + dugmad */
-const editRow = {
-  position: "relative",
-  zIndex: 1,
-  background: "rgba(255,255,255,.96)",
-  display: "grid",
-  gridTemplateColumns: "1fr auto",
-  gap: 8,
-  padding: 12,
-  alignItems: "center",
-};
-const editInput = {
-  width: "100%",
+/* === styles === */
+const wrap = { minHeight: "100vh", background: 'url("/slika1.webp") center/cover no-repeat fixed', padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" };
+const panel = { width: "min(1250px,100%)", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.35)", backdropFilter: "blur(10px)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.25)", padding: "clamp(18px,4vw,28px)" };
+const title = { margin: 0, color: "#fff", fontWeight: 900, fontSize: "clamp(18px,3vw,28px)" };
+const inp = {
   height: 42,
   borderRadius: 12,
-  border: "1px solid #ddd",
-  padding: "0 10px",
-  fontSize: 16,
+  border: "1px solid #ececec",
+  padding: "0 12px",
+  background: "#fff",
+  width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
 };
-const editBtns = {
+const btn = { height: 42, border: "none", borderRadius: 12, background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff", fontWeight: 800, padding: "0 16px", cursor: "pointer" };
+const ghostBtn = { height: 42, borderRadius: 12, border: "1px solid rgba(255,255,255,.7)", background: "transparent", color: "#fff", fontWeight: 800, padding: "0 14px", cursor: "pointer" };
+const dangerBtn = { ...btn, background: "#ff5b6e" };
+const formBase = {
+  display: "grid",
+  gap: 8,
+  marginBottom: 14,
+  alignItems: "center",
+};
+const list = { display: "grid", gap: 10, maxHeight: "60vh", overflowY: "auto", paddingBottom: 2 };
+const row = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  background: "#fff",
+  borderRadius: 14,
+  padding: "10px 12px",
+  boxShadow: "0 10px 20px rgba(0,0,0,.06)",
+  flexWrap: "wrap",
+  gap: 8,
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+  transition: "transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, border 0.1s ease",
+  position: "relative",
+};
+const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800, color: "#fff" };
+const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
+const hintBox = {
+  background: "rgba(255,255,255,.85)",
+  border: "1px solid rgba(0,0,0,.08)",
+  borderRadius: 12,
+  padding: "10px 12px",
+  fontSize: 14,
   display: "flex",
   gap: 8,
+  alignItems: "center",
+  justifyContent: "space-between",
+  marginTop: 8
+};
+const hintCancel = {
+  border: "1px solid #ff5fa2",
+  background: "transparent",
+  color: "#ff5fa2",
+  borderRadius: 10,
+  height: 34,
+  padding: "0 10px",
+  fontWeight: 800,
+  cursor: "pointer"
 };
 
-/* ===== RESPONSIVE + FONT CSS (ostavljeno kao u tvom fajlu) ===== */
-const responsiveCSS = `
-.ak-root, .ak-root * {
-  font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-}
-
-/* Error stil */
-.ak-error{
-  color:#ff5fa2;
-  margin:8px auto 0;
-  max-width:820px;
-  text-align:center;
-  font-weight:700;
-}
-
-/* Tablet */
-@media (max-width: 900px) {
-  .ak-panel { padding: 16px; border-radius: 18px; }
-  .ak-topbar { grid-template-columns: 1fr; }
-  .ak-addbtn { width: 100%; }
-  .ak-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-}
-
-/* Telefon */
-@media (max-width: 600px) {
-  .ak-topbar { gap: 8px; margin-top: 8px; }
-  .ak-searchrow { margin-top: 6px; }
-  .ak-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
-  .ak-tilebtn { height: 108px; }
-  .ak-tilename { font-size: 18px !important; }
-  .ak-actions { gap: 6px; }
-  .ak-badge { font-size: 11px; padding: 3px 8px; right: 8px; bottom: 8px; }
-
-  /* Edit red: dugmad ispod inputa */
-  .ak-editrow {
-    grid-template-columns: 1fr;
+const css = `
+  .admincat-top {
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,.25);
+    background: rgba(255,255,255,.10);
+    backdrop-filter: blur(8px);
+    padding: 12px;
+    margin-bottom: 14px;
   }
-  .ak-editrow .ak-editbtns {
-    margin-top: 8px;
+  .admincat-form {
+    grid-template-columns:
+      minmax(220px, 2fr)
+      minmax(120px, 1fr)
+      minmax(120px, 1fr)
+      minmax(120px, 1fr)
+      minmax(160px, auto)
+      minmax(150px, auto)
+      minmax(120px, auto);
+  }
+  .admincat-form > * {
     width: 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    min-width: 0;
+    box-sizing: border-box;
   }
-  .ak-editrow .ak-editbtns .ak-actionbtn {
-    width: 100%;
+  .price-preview {
+    align-self: center;
+    color: #fff;
+    font-weight: 800;
+    padding: 0 6px;
   }
-}
 
-/* Bez plavog tap highlight-a */
-.ak-root button,
-.ak-root input,
-.ak-root .ak-tilebtn,
-.ak-root .ak-actionbtn {
-  -webkit-tap-highlight-color: transparent;
-}
+  .srv-row, .srv-row * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .row-selected::after {
+    content: "ODABRANO";
+    position: absolute;
+    top: -10px;
+    right: 12px;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 2px 6px;
+    border-radius: 8px;
+    background: #ff5fa2;
+    color: #fff;
+    letter-spacing: .4px;
+  }
+
+  @media (max-width: 1100px) {
+    .admincat-form {
+      grid-template-columns:
+        minmax(200px, 1.6fr)
+        repeat(3, minmax(120px, 1fr))
+        minmax(160px, auto)
+        minmax(150px, auto)
+        minmax(120px, auto);
+    }
+  }
+  @media (max-width: 900px) {
+    .admincat-topbar {
+      display: flex !important;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+      margin-bottom: 12px !important;
+    }
+    .admincat-topbar .btn-ghost {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+    .admincat-title {
+      margin: 0;
+      text-align: left;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+    .admincat-catrow {
+      display: grid !important;
+      grid-template-columns: 1fr !important;
+      gap: 8px;
+      margin-bottom: 12px !important;
+    }
+    .admincat-catrow input {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+    }
+    .admincat-catrow .btn-primary,
+    .admincat-catrow .btn-danger {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+    .admincat-form {
+      grid-template-columns: 1fr !important;
+    }
+    .admincat-form input,
+    .admincat-form button,
+    .admincat-form .price-preview {
+      width: 100%;
+    }
+    .admincat-form input {
+      height: 44px;
+      border-radius: 12px;
+    }
+    .admincat-form button {
+      height: 44px;
+      border-radius: 12px;
+      font-weight: 800;
+    }
+    .admincat-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .admincat-row > div:last-child { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+    .admincat-row button { width: 100%; height: 42px; border-radius: 12px; font-weight: 800; }
+  }
 `;
