@@ -173,7 +173,14 @@ export default function SelectServices() {
   /* ---------- POPUSTI: virtuelna kategorija ---------- */
   const SALE_ID = "__discounts__";
   const discountedServices = useMemo(
-    () => services.filter((s) => Number(discountOf(s) || 0) > 0),
+    () =>
+      services
+        .filter((s) => Number(discountOf(s) || 0) > 0)
+        .sort(
+          (a, b) =>
+            (a.order ?? 0) - (b.order ?? 0) ||
+            String(a.name || "").localeCompare(String(b.name || ""))
+        ),
     [services]
   );
 
@@ -236,33 +243,27 @@ export default function SelectServices() {
             </div>
           ))}
         </div>
-<div style={summaryRow}>
-  <div style={{ color: "#000" }}>
-    Izabrano: <b>{selectedServices.length}</b> • Trajanje: <b>{totalMin} min</b>
-    {totalPrice ? (
-      <> • Ukupno: <b>{money(totalPrice)}</b></>
-    ) : null}
-  </div>
+        <div style={summaryRow}>
+          <div style={{ color: "#000" }}>
+            Izabrano: <b>{selectedServices.length}</b> • Trajanje: <b>{totalMin} min</b>
+            {totalPrice ? <> • Ukupno: <b>{money(totalPrice)}</b></> : null}
+          </div>
 
-  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-    {/* NOVO: Dugme Nazad */}
-    <button
-      onClick={() => navigate("/")}
-      style={secondaryBtn}
-    >
-      Nazad
-    </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {/* NOVO: Dugme Nazad */}
+            <button onClick={() => navigate("/")} style={secondaryBtn}>
+              Nazad
+            </button>
 
-    <button
-      disabled={!canContinue}
-      onClick={() => navigate("/rezervisi")}
-      style={primaryBtn(canContinue)}
-    >
-      Nastavi
-    </button>
-  </div>
-</div>
-
+            <button
+              disabled={!canContinue}
+              onClick={() => navigate("/rezervisi")}
+              style={primaryBtn(canContinue)}
+            >
+              Nastavi
+            </button>
+          </div>
+        </div>
       </div>
 
       {isModalOpen && (
@@ -283,9 +284,7 @@ export default function SelectServices() {
       {promptOpen && (
         <Prompt
           title="Želiš li odmah da zakažeš?"
-          subtitle={
-            promptServiceName ? `Dodali smo: ${promptServiceName}` : ""
-          }
+          subtitle={promptServiceName ? `Dodali smo: ${promptServiceName}` : ""}
           primaryLabel="Zakaži sada"
           secondaryLabel="Nastavi izbor"
           onPrimary={() => {
@@ -300,9 +299,6 @@ export default function SelectServices() {
     </div>
   );
 }
-
-
-
 
 /* -------- Modal -------- */
 function Modal({ children, onClose }) {
@@ -324,78 +320,109 @@ function Modal({ children, onClose }) {
   );
 }
 
+/* ====== OVDE JE IZMENJENO: grupisanje usluga ====== */
 function CategoryServicesView({
   services,
   selectedServices,
   toggle,
   isMobile,
 }) {
+  // sortiraj ulaz preventivno po order, pa formiraj grupe po redosledu pojave
+  const grouped = useMemo(() => {
+    const sorted = [...services].sort(
+      (a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) ||
+        String(a.name || "").localeCompare(String(b.name || ""))
+    );
+    const order = [];
+    const map = new Map();
+    for (const s of sorted) {
+      const g = (s.groupName || "Ostalo").trim() || "Ostalo";
+      if (!map.has(g)) {
+        map.set(g, []);
+        order.push(g);
+      }
+      map.get(g).push(s);
+    }
+    return order.map((g) => [g, map.get(g)]);
+  }, [services]);
+
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <h3 style={{ margin: 0, color: "#000" }}>Izaberi uslugu</h3>
-      <div style={srvGrid(isMobile)}>
-        {services.map((s) => {
-          const checked = !!selectedServices.find((x) => x.id === s.id);
-          const base = basePriceOf(s);
-          const disc = discountOf(s);
-          const price = finalPriceOf(s);
-          return (
-            <label key={s.id} style={srvCard(checked)}>
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => toggle(s.id)}
-                style={{ display: "none" }}
-              />
-              <div
-                style={{
-                  fontWeight: 900,
-                  lineHeight: 1.3,
-                  textAlign: "center",
-                  color: "#000",
-                }}
-              >
-                {s.name}
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  marginTop: 6,
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexWrap: "wrap",
-                  color: "#000",
-                }}
-              >
-                <span>{Number(s.durationMin || 0)} min</span>
-                {price != null && (
-                  <>
-                    <span>•</span>
-                    {disc > 0 && base != null ? (
+
+      {grouped.map(([group, arr]) => (
+        <div key={group} style={{ display: "grid", gap: 10 }}>
+          {/* Diskretan naslov grupe – bez menjanja globalnih stilova */}
+          <div style={{ fontWeight: 900, fontSize: 15, color: "#000" }}>
+            {group}
+          </div>
+
+          <div style={srvGrid(isMobile)}>
+            {arr.map((s) => {
+              const checked = !!selectedServices.find((x) => x.id === s.id);
+              const base = basePriceOf(s);
+              const disc = discountOf(s);
+              const price = finalPriceOf(s);
+              return (
+                <label key={s.id} style={srvCard(checked)}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(s.id)}
+                    style={{ display: "none" }}
+                  />
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      lineHeight: 1.3,
+                      textAlign: "center",
+                      color: "#000",
+                    }}
+                  >
+                    {s.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      marginTop: 6,
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexWrap: "wrap",
+                      color: "#000",
+                    }}
+                  >
+                    <span>{Number(s.durationMin || 0)} min</span>
+                    {price != null && (
                       <>
-                        <span
-                          style={{
-                            textDecoration: "line-through",
-                            opacity: 0.7,
-                          }}
-                        >
-                          {money(base)}
-                        </span>
-                        <b style={{ color: "#000" }}>{money(price)}</b>
-                        <span style={badgeSale}>-{disc}%</span>
+                        <span>•</span>
+                        {disc > 0 && base != null ? (
+                          <>
+                            <span
+                              style={{
+                                textDecoration: "line-through",
+                                opacity: 0.7,
+                              }}
+                            >
+                              {money(base)}
+                            </span>
+                            <b style={{ color: "#000" }}>{money(price)}</b>
+                            <span style={badgeSale}>-{disc}%</span>
+                          </>
+                        ) : (
+                          <b style={{ color: "#000" }}>{money(price)}</b>
+                        )}
                       </>
-                    ) : (
-                      <b style={{ color: "#000" }}>{money(price)}</b>
                     )}
-                  </>
-                )}
-              </div>
-            </label>
-          );
-        })}
-      </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -469,7 +496,7 @@ const panel = {
   borderRadius: 28,
   boxShadow: "0 24px 60px rgba(0,0,0,.18)",
   padding: "clamp(16px,3vw,24px)",
-    fontFamily: uiFont, 
+  fontFamily: uiFont,
 };
 const title = { margin: 0, color: "#000" };
 const catStack = { display: "grid", gap: 16, marginTop: 12 };
@@ -554,9 +581,7 @@ const primaryBtn = (on) => ({
   padding: "0 16px",
   fontWeight: 900,
   cursor: on ? "pointer" : "not-allowed",
-  background: on
-    ? "linear-gradient(180deg,#ffd6e7,#ffc2da)"
-    : "#eee",
+  background: on ? "linear-gradient(180deg,#ffd6e7,#ffc2da)" : "#eee",
   color: "#000",
   boxShadow: on ? "0 8px 20px rgba(0,0,0,.15)" : "none",
 });

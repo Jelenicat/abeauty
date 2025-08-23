@@ -22,6 +22,7 @@ export default function AdminCategory() {
   const [durationMin, setDurationMin] = useState("");
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
+  const [groupName, setGroupName] = useState(""); // naziv grupe (upiši ili izaberi)
   const [saving, setSaving] = useState(false);
 
   // Reorder state (shared)
@@ -47,9 +48,9 @@ export default function AdminCategory() {
   };
   const debouncedSetOverId = useMemo(() => debounce(setOverId, 50), []);
 
-  // Detect mobile (touch) – ovde uslovljavamo "tap → tap" režim
+  // Detect mobile (touch)
   useEffect(() => {
-    const touch = typeof window !== "undefined" && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
+    const touch = typeof window !== "undefined" && (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
     setIsMobile(!!touch);
   }, []);
 
@@ -101,6 +102,24 @@ export default function AdminCategory() {
 
   // Helpers
   const canReorder = catId !== "discounts";
+  // Samo za prikaz: u "discounts" sortiraj po groupName da bi se lepo grupisalo
+const renderServices = useMemo(() => {
+  if (catId !== "discounts") return services;
+
+  const byGroup = services.slice().sort((a, b) => {
+    const ga = (a.groupName || "").trim().toLocaleLowerCase("sr");
+    const gb = (b.groupName || "").trim().toLocaleLowerCase("sr");
+    if (ga !== gb) return ga.localeCompare(gb, "sr");
+    // unutar grupe pokušaj da zadržiš postojeći 'order' ako postoji, pa po imenu
+    const oa = Number(a.order ?? 0);
+    const ob = Number(b.order ?? 0);
+    if (oa !== ob) return oa - ob;
+    return String(a.name || "").localeCompare(String(b.name || ""), "sr");
+  });
+
+  return byGroup;
+}, [services, catId]);
+
   const idsFromList = (list) => list.map((x) => x.id);
 
   // Pomera element "sa" fromIndex na "pre" toIndex;
@@ -130,7 +149,7 @@ export default function AdminCategory() {
     });
   }
 
-  // Desktop DnD (ostaje isto)
+  // Desktop DnD
   function onDragStart(e, id) {
     if (!canReorder) return e.preventDefault();
     if (isMobile) return; // na telefonu koristimo tap→tap
@@ -140,7 +159,7 @@ export default function AdminCategory() {
   function onDragOver(e, id) {
     if (!canReorder || isMobile) return;
     e.preventDefault();
-    if (id !== overId) setOverId(id);
+    if (id !== overId) debouncedSetOverId(id);
   }
   async function onDrop(e, id) {
     if (!canReorder || isMobile) return;
@@ -153,8 +172,7 @@ export default function AdminCategory() {
       const fromIdx = visibleIds.indexOf(fromId);
       const toIdx = visibleIds.indexOf(toId);
       if (fromIdx < 0 || toIdx < 0) return visibleIds;
-      // Desktop ponašanje: ubaci NA poziciju targeta (kao ranije)
-      return moveToIndex(visibleIds, fromIdx, toIdx);
+      return moveToIndex(visibleIds, fromIdx, toIdx); // ubaci NA poziciju targeta
     })();
     setDragId(null);
     setOverId(null);
@@ -171,19 +189,15 @@ export default function AdminCategory() {
   function onMobileRowTap(targetId) {
     if (!canReorder || !isMobile) return;
 
-    // Ako ništa nije izabrano → izaberi polazni red
     if (!selectedId) {
       setSelectedId(targetId);
       return;
     }
-
-    // Ako tapnemo opet na već izabrani → poništi izbor
     if (selectedId === targetId) {
       setSelectedId(null);
       return;
     }
 
-    // Drugi tap: "ubaci posle targeta"
     const ids = idsFromList(services);
     const fromIdx = ids.indexOf(selectedId);
     const targetIdx = ids.indexOf(targetId);
@@ -192,14 +206,10 @@ export default function AdminCategory() {
       return;
     }
 
-    const insertIndex = targetIdx + 1; // želimo POSLE targeta
+    const insertIndex = targetIdx; // POSLE targeta (moveToIndex koriguje)
     const newIds = moveToIndex(ids, fromIdx, insertIndex);
-
-    // Odmah prikaži lokalno i sačuvaj u bazi
     applyLocalOrder(newIds);
     persistOrder(newIds).catch(console.error);
-
-    // Poništi selekciju
     setSelectedId(null);
   }
 
@@ -210,6 +220,7 @@ export default function AdminCategory() {
     setDurationMin("");
     setPrice("");
     setDiscount("");
+    setGroupName(""); // reset grupe
   };
 
   const saveCategoryName = async () => {
@@ -245,6 +256,7 @@ export default function AdminCategory() {
     setDurationMin(String(srv.durationMin || ""));
     setPrice(String(srv.basePrice || ""));
     setDiscount(String(srv.discountPercent ?? srv.discount ?? ""));
+    setGroupName(srv.groupName || "");
   };
 
   const upsertLocalService = (id, payload) => {
@@ -263,6 +275,52 @@ export default function AdminCategory() {
     setServices((prev) => prev.filter((x) => x.id !== id));
   };
 
+  // === Grupni helperi ===
+  function ensureInGroupBlock(serviceId, targetGroup, position = "end") {
+    const norm = (x) => (x || "").trim();
+   const ids = renderServices.map(x => x.id);
+    const fromIdx = ids.indexOf(serviceId);
+    if (fromIdx < 0) return;
+
+    // granice bloka te grupe (bez same usluge)
+    let first = -1, last = -1;
+    services.forEach((x, i) => {
+      if (x.id === serviceId) return;
+      if (norm(x.groupName) === norm(targetGroup)) {
+        if (first === -1) first = i;
+        last = i;
+      }
+    });
+
+    // gde ubaciti
+    let insertIndex;
+    if (position === "start") insertIndex = first >= 0 ? first : ids.length;
+    else insertIndex = last >= 0 ? last + 1 : ids.length;
+
+    const newIds = moveToIndex(ids, fromIdx, insertIndex);
+    applyLocalOrder(newIds);
+    persistOrder(newIds).catch(console.error);
+  }
+
+  // Jednokratno sređivanje svih grupa
+  function compactGroups() {
+    const norm = (x) => (x || "").trim();
+    const groupOrder = [];
+    const buckets = new Map(); // group -> [ids po trenutnom redosledu]
+
+    for (const s of services) {
+      const g = norm(s.groupName);
+      if (!buckets.has(g)) {
+        buckets.set(g, []);
+        groupOrder.push(g);
+      }
+      buckets.get(g).push(s.id);
+    }
+    const newIds = groupOrder.flatMap((g) => buckets.get(g));
+    applyLocalOrder(newIds);
+    persistOrder(newIds).catch(console.error);
+  }
+
   const saveService = async (e) => {
     e?.preventDefault?.();
     if (saving) return;
@@ -279,6 +337,7 @@ export default function AdminCategory() {
       basePrice: Number(price) || 0,
       discountPercent: Number(discount) || 0,
       finalPrice,
+      groupName: (groupName || "").trim(),
       updatedAt: serverTimestamp(),
     };
     if (!payload.name) return;
@@ -288,6 +347,12 @@ export default function AdminCategory() {
       if (editing) {
         upsertLocalService(editing, { ...payload, updatedAt: new Date() });
         await updateDoc(doc(db, "services", editing), payload);
+
+        // ako smo promenili grupu – spakuj u blok
+        if ((groupName || "") !== (prevObj?.groupName || "")) {
+          ensureInGroupBlock(editing, (groupName || "").trim(), "end");
+        }
+
         if (catId === "discounts" && payload.discountPercent <= 0) {
           removeLocalService(editing);
         }
@@ -304,6 +369,11 @@ export default function AdminCategory() {
           createdAt: new Date(),
           updatedAt: new Date(),
         });
+
+        if ((groupName || "").trim()) {
+          ensureInGroupBlock(docRef.id, (groupName || "").trim(), "end");
+        }
+
         if (catId === "discounts" && payload.discountPercent <= 0) {
           removeLocalService(docRef.id);
         }
@@ -329,6 +399,29 @@ export default function AdminCategory() {
     }
   };
 
+  // === Helpers za prikaz ===
+  function normalizeGroupName(x) {
+    const t = (x || "").trim();
+    return t || "Ostalo";
+  }
+  async function changeServiceGroup(db, id, newGroup) {
+    try {
+      await updateDoc(doc(db, "services", id), { groupName: (newGroup || "").trim(), updatedAt: serverTimestamp() });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Poznate grupe – samo iz OVE kategorije
+  const knownGroups = useMemo(() => {
+    const set = new Set();
+    services.forEach((s) => {
+      const g = (s.groupName || "").trim();
+      if (g) set.add(g);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "sr"));
+  }, [services]);
+
   return (
     <div style={wrap}>
       <div style={panel}>
@@ -337,15 +430,28 @@ export default function AdminCategory() {
         {/* GORE */}
         <div className="admincat-top">
           <div className="admincat-topbar" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-            <button className="btn-ghost" style={ghostBtn} onClick={() => nav("/admin/katalog")}>← Nazad</button>
+            <button className="btn-ghost" style={ghostBtn} onClick={() => nav("/admin/katalog")}>
+              ← Nazad
+            </button>
             <h2 className="admincat-title" style={title}>{catName || "Kategorija"}</h2>
+
+            {/* Dugme: Sredi grupe */}
+            <button
+              className="btn-ghost"
+              style={{ ...ghostBtn, height: 34, padding: "0 10px", marginLeft: "auto" }}
+              onClick={compactGroups}
+              type="button"
+              title="Grupiši sve usluge po nazivu grupe"
+            >
+              Sredi grupe
+            </button>
           </div>
 
           <div className="admincat-catrow" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, marginBottom: 14 }}>
             <input
               style={inp}
               value={catName}
-              onChange={e => setCatName(e.target.value)}
+              onChange={(e) => setCatName(e.target.value)}
               placeholder="Naziv kategorije"
             />
             <button className="btn-primary" style={btn} onClick={saveCategoryName}>Sačuvaj naziv</button>
@@ -357,66 +463,120 @@ export default function AdminCategory() {
 
         {/* FORMA */}
         <form onSubmit={saveService} style={formBase} className="admincat-form">
-          <input style={inp} placeholder="Naziv usluge" value={name} onChange={e => setName(e.target.value)} />
-          <input style={inp} type="number" min="0" placeholder="Trajanje (min)" value={durationMin} onChange={e => setDurationMin(e.target.value)} />
-          <input style={inp} type="number" min="0" placeholder="Cena (RSD)" value={price} onChange={e => setPrice(e.target.value)} />
-          <input style={inp} type="number" min="0" max="90" placeholder="Popust % (opciono)" value={discount} onChange={e => setDiscount(e.target.value)} />
+          <input style={inp} placeholder="Naziv usluge" value={name} onChange={(e) => setName(e.target.value)} />
+          <input style={inp} type="number" min="0" placeholder="Trajanje (min)" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} />
+          <input style={inp} type="number" min="0" placeholder="Cena (RSD)" value={price} onChange={(e) => setPrice(e.target.value)} />
+          <input style={inp} type="number" min="0" max="90" placeholder="Popust % (opciono)" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+
+          {/* Grupa: upiši novu ili izaberi postojeću */}
+          <input
+            style={inp}
+            placeholder="Grupa (opciono)"
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            list="groupList"
+          />
+          <datalist id="groupList">
+            <option value=""></option>
+            {knownGroups.map((g) => (
+              <option key={g} value={g} />
+            ))}
+          </datalist>
+
           <div className="price-preview">Nova cena: {isNaN(finalPrice) ? 0 : finalPrice} RSD</div>
           <button className="btn-primary" style={btn} type="submit" disabled={saving}>
             {saving ? "Čuvam..." : editing ? "Sačuvaj uslugu" : "Dodaj uslugu"}
           </button>
-          {editing && <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>Otkaži</button>}
+          {editing && (
+            <button className="btn-ghost" style={ghostBtn} type="button" onClick={resetForm}>
+              Otkaži
+            </button>
+          )}
         </form>
 
-        {/* LISTA */}
+        {/* LISTA sa blagim grupnim naslovima */}
         <div ref={listRef} className="admincat-list" style={list}>
-          {services.map((s) => {
-            const isEditing = editing === s.id;
-            const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
-            const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
-            const currentFinal = isEditing
-              ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
-              : s.finalPrice;
+          {(() => {
+            let lastGroup = null;
+            const seq = [];
+            renderServices.forEach((s, idx) => {
+              const g = normalizeGroupName(s.groupName);
+              const isNewGroup = g !== lastGroup;
+              if (isNewGroup) {
+                lastGroup = g;
+                seq.push(
+                  <div key={`g-${g}-${idx}`} className="group-title">
+                    {g}
+                  </div>
+                );
+              }
 
-            const isSelected = isMobile && selectedId === s.id;
+              const isEditing = editing === s.id;
+              const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
+              const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
+              const currentFinal = isEditing
+                ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
+                : s.finalPrice;
+              const isSelected = isMobile && selectedId === s.id;
 
-            return (
-              <div
-                key={s.id}
-                data-id={s.id}
-                className="admincat-row srv-row"
-                style={{
-                  ...row,
-                  cursor: canReorder ? (isMobile ? "pointer" : "grab") : "default",
-                  border: isSelected ? "2px solid #ff5fa2" : row.border,
-                  background: isSelected ? "rgba(255,95,162,0.08)" : row.background,
-                  transform: isSelected ? "scale(1.01)" : "none",
-                }}
-                draggable={canReorder && !isMobile}
-                onDragStart={(e) => onDragStart(e, s.id)}
-                onDragOver={(e) => onDragOver(e, s.id)}
-                onDrop={(e) => onDrop(e, s.id)}
-                onDragEnd={onDragEnd}
-                onClick={() => isMobile && onMobileRowTap(s.id)}
-              >
-                <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
-                  <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
-                  <div style={{ opacity: .8, fontSize: 13 }}>
-                    {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
-                    {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
+              seq.push(
+                <div
+                  key={s.id}
+                  data-id={s.id}
+                  className="admincat-row srv-row"
+                  style={{
+                    ...row,
+                    cursor: canReorder ? (isMobile ? "pointer" : "grab") : "default",
+                    border: isSelected ? "2px solid #ff5fa2" : row.border,
+                    background: isSelected ? "rgba(255,95,162,0.08)" : row.background,
+                    transform: isSelected ? "scale(1.01)" : "none",
+                  }}
+                  draggable={canReorder && !isMobile}
+                  onDragStart={(e) => onDragStart(e, s.id)}
+                  onDragOver={(e) => onDragOver(e, s.id)}
+                  onDrop={async (e) => { await onDrop(e, s.id); }}
+                  onDragEnd={() => {}}
+                  onClick={async () => {
+                    if (!isMobile) return;
+                    const previousSel = selectedId;
+                    onMobileRowTap(s.id);
+                    // Ako je postojao selekt i target pripada drugoj grupi → promeni grupu izabranom
+                    if (previousSel && previousSel !== s.id) {
+                      const src = services.find((x) => x.id === previousSel);
+                      const tgt = services.find((x) => x.id === s.id);
+                      const tgtGroup = normalizeGroupName(tgt?.groupName);
+                      const srcGroup = normalizeGroupName(src?.groupName);
+                      if (tgtGroup !== srcGroup) {
+                        changeServiceGroup(db, previousSel, tgt?.groupName || "");
+                        setServices((prev) =>
+                          prev.map((x) => (x.id === previousSel ? { ...x, groupName: tgt?.groupName || "" } : x))
+                        );
+                      }
+                    }
+                  }}
+                >
+                  <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
+                    <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
+                    <div style={{ opacity: 0.8, fontSize: 13 }}>
+                      {(isEditing ? Number(durationMin) || 0 : s.durationMin) || 0} min · {currentPrice || 0} RSD{" "}
+                      {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
+                      {s.groupName ? ` · grupa: ${s.groupName}` : ""}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }} onClick={(e) => e.stopPropagation()}>
+                    <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>
+                      Izmeni
+                    </button>
+                    <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>
+                      Obriši
+                    </button>
                   </div>
                 </div>
-
-                <div
-                  style={{ display: "flex", gap: 8 }}
-                  onClick={(e) => e.stopPropagation()} // da tap na dugmad ne okida selekciju
-                >
-                  <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
-                  <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
-                </div>
-              </div>
-            );
-          })}
+              );
+            });
+            return seq;
+          })()}
 
           {!services.length && !loading && <div style={{ color: "#fff" }}>Nema usluga.</div>}
         </div>
@@ -568,4 +728,5 @@ const css = `
     .admincat-row > div:last-child { display: flex; flex-direction: column; gap: 8px; width: 100%; }
     .admincat-row button { width: 100%; height: 42px; border-radius: 12px; font-weight: 800; }
   }
+  .group-title { color: #fff; font-weight: 900; margin: 6px 0 8px; }
 `;

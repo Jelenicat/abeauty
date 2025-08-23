@@ -51,7 +51,7 @@ export default function AdminKatalog() {
   // Mobile tap-to-move state
   const [mobileSelectedId, setMobileSelectedId] = useState(null);
 
-  // Refs
+  // Refs (trenutno nisu neophodni, zadržano po potrebi)
   const tileRefs = useRef({});
 
   // Realtime
@@ -218,7 +218,7 @@ export default function AdminKatalog() {
   async function handleMobileTap(catId, isDiscounts = false) {
     // dozvoljeno samo kad je Ređaj i nema filtera
     if (!isTouchDevice() || !reorderMode || filter.trim()) return false;
-    if (isDiscounts) return true; // ignorišemo tap na virtuelnu "popusti" pločicu u ređanju
+    if (isDiscounts) return true; // (za "akcija" više ne koristimo ovaj handler — navigacija je direktna)
 
     if (!mobileSelectedId) {
       setMobileSelectedId(catId);
@@ -352,26 +352,30 @@ export default function AdminKatalog() {
         ) : (
           <div style={grid} className="ak-grid">
             {/* Discount tile */}
-            {filteredWithDiscounts.length && filteredWithDiscounts[0]?.id === "discounts" ? (
-              <CategoryTile
-                key="discounts"
-                cat={{ id: "discounts", name: discountTitle }}
-                count={discountedServices.length}
-                isEditing={editingId === "discounts"}
-                editingName={editingName}
-                setEditingId={setEditingId}
-                setEditingName={setEditingName}
-                renameCategory={renameCategory}
-                removeCategory={removeCategory}
-                onPress={() => {
-                  // u ređaju ignorišemo popuste
-                  if (handleMobileTap("discounts", true)) return;
-                  nav("/admin/katalog/discounts");
-                }}
-                isDiscounts
-                selectedMobile={false}
-              />
-            ) : null}
+        {/* Discount tile */}
+{filteredWithDiscounts.length && filteredWithDiscounts[0]?.id === "discounts" ? (
+  <CategoryTile
+    key="discounts"
+    cat={{ id: "discounts", name: discountTitle }}
+    count={discountedServices.length}
+    isEditing={editingId === "discounts"}
+    editingName={editingName}
+    setEditingId={setEditingId}
+    setEditingName={setEditingName}
+    renameCategory={renameCategory}
+    removeCategory={removeCategory}
+    onPress={() => {
+      // Ako je Ređaj uključen na telefonu i nema filtera → "progutaj" tap (ne ulazi)
+      if (isTouchDevice() && reorderMode && !filter.trim()) return;
+      // Inače normalno uđi u karticu
+      nav("/admin/katalog/discounts");
+    }}
+    isDiscounts
+    selectedMobile={false}
+  />
+) : null}
+
+         
 
             {renderCats.map((cat) => {
               const isEditing = editingId === cat.id;
@@ -454,16 +458,17 @@ function CategoryTile({
       />
       {!isEditing && (
         <div style={tileActions} className="ak-actions">
-          {!isDiscounts && (
-            <button
-              style={tileActionBtn}
-              title="Preimenuj"
-              onClick={(e) => { e.stopPropagation(); setEditingId(cat.id); setEditingName(displayName || ""); }}
-              className="ak-actionbtn"
-            >
-              <FiEdit />
-            </button>
-          )}
+          {/* Edit DOZVOLJEN i za isDiscounts */}
+          <button
+            style={tileActionBtn}
+            title="Preimenuj"
+            onClick={(e) => { e.stopPropagation(); setEditingId(cat.id); setEditingName(displayName || ""); }}
+            className="ak-actionbtn"
+          >
+            <FiEdit />
+          </button>
+
+          {/* Brisanje i dalje ZABRANJENO za isDiscounts */}
           {!isDiscounts && (
             <button
               style={{ ...tileActionBtn, background: "#ffe1e1", color: "#7a1b1b" }}
