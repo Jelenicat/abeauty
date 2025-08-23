@@ -54,6 +54,14 @@ export default function AdminKatalog() {
   const holdStartedRef = useRef(false);
   const touchStartXY = useRef({ x: 0, y: 0 });
 
+  // >>> OTVRDNUTI PRAGOVI I STANJE <<<
+  const LONG_PRESS_MS = 450;            // duže držanje pre ulaska u select mod
+  const MOVE_CANCEL_PX = 16;            // veći prag za "pomerila si prst" (skrol)
+  const TAP_OPEN_COOLDOWN_MS = 380;     // posle premeštanja, blokiraj otvaranje kratko
+  const touchMovedRef = useRef(false);
+  const touchStartTimeRef = useRef(0);
+  const tapOpenBlockedUntilRef = useRef(0);
+
   // Realtime: kategorije, usluge
   useEffect(() => {
     const offCats = onSnapshot(
@@ -298,10 +306,12 @@ export default function AdminKatalog() {
   /*** Mobile long-press → select → tap to place below ***/
   function onTouchStartCat(e, id) {
     if (!isTouchDevice()) return; // samo za telefon
-    // Ako je aktivna selekcija, ne želimo da je slučajno resetujemo ovde
     const t = e.touches?.[0];
     touchStartXY.current = { x: t?.clientX ?? 0, y: t?.clientY ?? 0 };
+    touchMovedRef.current = false;
+    touchStartTimeRef.current = Date.now();
     holdStartedRef.current = false;
+
     clearTimeout(holdTimerRef.current);
     holdTimerRef.current = setTimeout(() => {
       if (id !== "discounts" && !filter.trim()) {
@@ -309,7 +319,7 @@ export default function AdminKatalog() {
         holdStartedRef.current = true;
         if (navigator.vibrate) navigator.vibrate(40);
       }
-    }, 320); // ~0.32s za long press
+    }, LONG_PRESS_MS); // 450ms
   }
 
   function onTouchMoveCat(e) {
@@ -317,9 +327,11 @@ export default function AdminKatalog() {
     if (!t) return;
     const dx = Math.abs(t.clientX - touchStartXY.current.x);
     const dy = Math.abs(t.clientY - touchStartXY.current.y);
-    // ako korisnik skroluje/miče prstom → otkaži long-press
-    if (dx > 10 || dy > 10) {
+    // ako korisnik skroluje/miče prstom → otkaži long-press i ne tretiraj kao tap
+    if (dx > MOVE_CANCEL_PX || dy > MOVE_CANCEL_PX) {
+      touchMovedRef.current = true;
       clearTimeout(holdTimerRef.current);
+      holdStartedRef.current = false;
     }
   }
 
@@ -329,25 +341,35 @@ export default function AdminKatalog() {
     // Ako smo ušli u long-press select mod, ne navigiramo,
     // nego naredni TAP treba da postavi "ispod"
     if (holdStartedRef.current) {
-      // ništa – čekamo sledeći tap na target
+      return;
+    }
+
+    // Ako je bilo realnog pomeranja prsta (skrol) – ignoriši tap
+    if (touchMovedRef.current) {
+      return;
+    }
+
+    // Ako je cooldown aktivan (npr. posle premeštanja), ne otvaraj
+    if (Date.now() < tapOpenBlockedUntilRef.current) {
       return;
     }
 
     // Kratki tap:
     if (mobileSelectedId) {
-        e.preventDefault();
-      // u selekciji smo → kratak tap na target = premesti selektovani ispod targeta
+      e.preventDefault();
       if (!isDiscounts && !filter.trim()) {
-        
         moveSelectedBelow(id);
+        // blokiraj otvaranje narednih ~380ms
+        tapOpenBlockedUntilRef.current = Date.now() + TAP_OPEN_COOLDOWN_MS;
       }
+      return;
+    }
+
+    // bez selekcije → idi u kategoriju
+    if (id === "discounts") {
+      nav(`/admin/katalog/discounts`);
     } else {
-      // bez selekcije → idi u kategoriju
-      if (id === "discounts") {
-        nav(`/admin/katalog/discounts`);
-      } else {
-        nav(`/admin/katalog/${id}`);
-      }
+      nav(`/admin/katalog/${id}`);
     }
   }
 
@@ -609,32 +631,32 @@ function CategoryTile({
         </div>
       )}
 
-{!isEditing ? (
-  <button
-    style={{
-      ...tileButton,
-      border: selectedMobile ? "2px solid #ff5fa2" : "none",
-      boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
-    }}
-      onClick={(e) => {
-    if (selectedMobile) {
-      // u move modu – samo blokiraj navigaciju
-      e.preventDefault();
-      e.stopPropagation();
-      return;
-    }
-    onNav(); // normalno otvaranje kategorije
-  }}
-  className="ak-tilebtn"
->
-    <div style={tileName} className="ak-tilename">
-      {displayName}
-    </div>
-    <div style={badge} className="ak-badge">
-      {count} usl.
-    </div>
-  </button>
-) : (
+      {!isEditing ? (
+        <button
+          style={{
+            ...tileButton,
+            border: selectedMobile ? "2px solid #ff5fa2" : "none",
+            boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
+          }}
+          onClick={(e) => {
+            if (selectedMobile) {
+              // u move modu – samo blokiraj navigaciju
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            onNav(); // normalno otvaranje kategorije
+          }}
+          className="ak-tilebtn"
+        >
+          <div style={tileName} className="ak-tilename">
+            {displayName}
+          </div>
+          <div style={badge} className="ak-badge">
+            {count} usl.
+          </div>
+        </button>
+      ) : (
         <div style={editRow} className="ak-editrow" onClick={(e) => e.stopPropagation()}>
           <input
             style={editInput}
@@ -821,6 +843,7 @@ const tile = {
   border: "1px solid #ececec",
   boxShadow: "0 8px 20px rgba(0,0,0,.14)",
   userSelect: "none",
+  touchAction: "pan-y", // << bitno za bolje skrolovanje
 };
 const marble = {
   position: "absolute",
@@ -944,5 +967,8 @@ const responsiveCSS = `
 .ak-root input,
 .ak-root .ak-tilebtn,
 .ak-root .ak-actionbtn { -webkit-tap-highlight-color: transparent; }
+
+/* Prioritet vertikalnog skrola na pločicama */
+.ak-tile { touch-action: pan-y; }
 `;
 

@@ -471,7 +471,8 @@ const [showBlockDaysUI, setShowBlockDaysUI] = useState(false);
 
   // collections
   const [employees, setEmployees] = useState([]);
-  
+  const [empOrder, setEmpOrder] = useState([]);
+
   const [services, setServices] = useState([]);
   // DESKTOP multi-select
 const [selectedEmpIds, setSelectedEmpIds] = useState([]);
@@ -498,6 +499,14 @@ useEffect(() => {
 
 
 const [selEmpId, setSelEmpId] = useState(null);
+// --- mobile reordering state ---
+const [empSelectMode, setEmpSelectMode] = useState(false);
+const [empSelectedId, setEmpSelectedId] = useState(null);
+const [empSelectedIndex, setEmpSelectedIndex] = useState(-1);
+
+const empHoldTimerRef = useRef(null);
+const empTouchStartRef = useRef({ x: 0, y: 0 });
+
 const autoPickedRef = useRef(false);
   const [selSrvId, setSelSrvId] = useState("");
   const [startTime, setStartTime] = useState("09:00");
@@ -584,7 +593,12 @@ const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
   useEffect(() => {
     const offEmp = onSnapshot(
       query(collection(db, "employees"), orderBy("name", "asc")),
-      (s) => setEmployees(s.docs.map((d) => ({ id: d.id, ...d.data() })))
+     (s) => {
+  const arr = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+  setEmployees(arr);
+  setEmpOrder(arr.map(e => e.id)); // inicijalni redosled
+}
+
     );
     const offSrv = onSnapshot(collection(db, "services"), (s) => {
       const arr = s.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -866,6 +880,48 @@ const idsToRender = useMemo(() => {
     }
     return res;
   }
+  function onEmpTouchStart(e, id) {
+  const t = e.touches?.[0];
+  empTouchStartRef.current.x = t?.clientX ?? 0;
+  empTouchStartRef.current.y = t?.clientY ?? 0;
+  clearTimeout(empHoldTimerRef.current);
+  empHoldTimerRef.current = setTimeout(() => {
+    const idx = employees.findIndex(x => x.id === id);
+    setEmpSelectMode(true);
+    setEmpSelectedId(id);
+    setEmpSelectedIndex(idx);
+    if (navigator.vibrate) navigator.vibrate(40);
+  }, 300); // long press threshold
+}
+function onEmpTouchMove(e) {
+  const t = e.touches?.[0];
+  if (!t) return;
+  const dx = Math.abs(t.clientX - empTouchStartRef.current.x);
+  const dy = Math.abs(t.clientY - empTouchStartRef.current.y);
+  if (dx > 12 || dy > 12) clearTimeout(empHoldTimerRef.current);
+}
+function onEmpTouchEnd() {
+  clearTimeout(empHoldTimerRef.current);
+}
+async function onEmpMobileClick(targetId) {
+  if (empSelectMode && empSelectedId && empSelectedId !== targetId) {
+    // promeni redosled tako da selektovana ide DESNO od targeta
+    const arr = employees.map(e => e.id);
+    const moving = empSelectedId;
+    const from = arr.indexOf(moving);
+    arr.splice(from, 1);
+    const to = arr.indexOf(targetId) + 1;
+    arr.splice(to, 0, moving);
+    // ovde možeš sačuvati u bazu ako želiš (setDoc u settings/employeeOrder)
+    setEmpSelectMode(false);
+    setEmpSelectedId(null);
+    setEmpSelectedIndex(-1);
+    return;
+  }
+  // običan tap → otvori raspored
+  setSelEmpId(targetId);
+}
+
 
   const apptsByEmp = useMemo(() => {
     const m = new Map();
@@ -1619,14 +1675,36 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                     scrollbarWidth: "none",
                   }}
                 >
-                  {employees.map((e) => {
-                    const isWorking = workingTodayIds.includes(e.id);
-                    const isSelected = selEmpId === e.id;
-                    return (
-                      <button
-                        key={e.id}
-                        onClick={() => setSelEmpId(e.id)}
-                        style={{
+                 {empOrder.map((id) => {
+  const e = employees.find(x => x.id === id);
+  if (!e) return null;
+  const isWorking = workingTodayIds.includes(e.id);
+  const isSelected = selectedEmpIds.includes(e.id);
+  return (
+    <button
+      key={e.id}
+      onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
+      draggable
+      onDragStart={(ev) => {
+        ev.dataTransfer.setData("text/plain", e.id);
+        ev.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(ev) => ev.preventDefault()}
+      onDrop={(ev) => {
+        ev.preventDefault();
+        const movingId = ev.dataTransfer.getData("text/plain");
+        if (!movingId || movingId === e.id) return;
+
+        const arr = empOrder.slice();
+        const from = arr.indexOf(movingId);
+        arr.splice(from, 1);
+        const to = arr.indexOf(e.id);
+        arr.splice(to, 0, movingId);
+
+        setEmpOrder(arr); // ⇐ ovde menja redosled u UI
+      }}
+  style={{
+    outline: empSelectMode && empSelectedId === e.id ? "2px solid hotpink" : "none",
                           flex: "0 0 auto",
                           padding: "8px 14px",
                           borderRadius: 999,
@@ -1710,31 +1788,52 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
       const isWorking = workingTodayIds.includes(e.id);
       const isSelected = selectedEmpIds.includes(e.id);
       return (
-        <button
-          key={e.id}
-        onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
-          style={{
-            flex: "0 0 auto",
-             padding: manyEmployees ? "6px 10px" : "8px 14px",
-           marginBottom: 6,
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,.35)",
-background: isSelected
-  ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
-  : isWorking
-  ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-  : "rgba(255,255,255,.12)",
+<button
+  key={e.id}
+  onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
+  draggable                     // ⇐ omogući drag
+  onDragStart={(ev) => {
+    ev.dataTransfer.setData("text/plain", e.id);
+    ev.dataTransfer.effectAllowed = "move";
+  }}
+  onDragOver={(ev) => ev.preventDefault()}
+  onDrop={(ev) => {
+    ev.preventDefault();
+    const movingId = ev.dataTransfer.getData("text/plain");
+    if (!movingId || movingId === e.id) return;
 
-            color: isSelected ? "#fff" : "#000",
-            fontWeight: 800,
-               fontSize: manyEmployees ? 13 : 16,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-          title={isWorking ? "Radi danas" : "Nije u smeni danas"}
-        >
-          {e.name}
-        </button>
+    // napravi novi redosled: movingId ide odmah ispred/iza ovog e.id
+    const arr = employees.map(x => x.id);
+    const from = arr.indexOf(movingId);
+    arr.splice(from, 1);
+    const to = arr.indexOf(e.id);   // ovde ide ispred
+    arr.splice(to, 0, movingId);
+
+    // TODO: ako želiš, sačuvaj u Firestore:
+    // await setDoc(doc(db, "settings", "employeeOrder"), { order: arr }, { merge: true });
+  }}
+  style={{
+    flex: "0 0 auto",
+    padding: manyEmployees ? "6px 10px" : "8px 14px",
+    marginBottom: 6,
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,.35)",
+    background: isSelected
+      ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+      : isWorking
+      ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
+      : "rgba(255,255,255,.12)",
+    color: isSelected ? "#fff" : "#000",
+    fontWeight: 800,
+    fontSize: manyEmployees ? 13 : 16,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  }}
+  title={isWorking ? "Radi danas" : "Nije u smeni danas"}
+>
+  {e.name}
+</button>
+
       );
     })}
   </div>
