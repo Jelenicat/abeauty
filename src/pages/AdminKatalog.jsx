@@ -263,38 +263,43 @@ export default function AdminKatalog() {
   }
 
   function onTouchEndCat(e, id, isDiscounts) {
-    clearTimeout(holdTimerRef.current);
+  clearTimeout(holdTimerRef.current);
 
-    // Ako nismo u Ređaj modu: standardno ponašanje
-    if (!reorderMode) {
-      if (Date.now() < tapOpenBlockedUntilRef.current) { suppressNextClickRef.current = true; return; }
-      // normalna navigacija
-      if (id === "discounts") nav(`/admin/katalog/discounts`);
-      else nav(`/admin/katalog/${id}`);
-      return;
-    }
-
-    // U Ređaj modu nikada ne otvaramo kategoriju “usputnim” tapom
-    // 1) ako je bio long-press → ne otvaraj
-    if (holdStartedRef.current) { suppressNextClickRef.current = true; return; }
-    // 2) ako je bilo pomeranja (skrol) → ne otvaraj
-    if (touchMovedRef.current) { suppressNextClickRef.current = true; return; }
-
-    // 3) ako je selektovano → tap na cilj = pomeri ispod cilja
-    if (mobileSelectedId) {
-      e.preventDefault();
-      if (!isDiscounts && !filter.trim()) {
-        moveSelectedBelow(id);
-        tapOpenBlockedUntilRef.current = Date.now() + TAP_OPEN_COOLDOWN_MS;
-        suppressNextClickRef.current = true;
-      }
-      return;
-    }
-
-    // 4) U Ređaj modu bez selekcije → ne otvaraj ničim
-    e.preventDefault();
-    suppressNextClickRef.current = true;
+  // Ako nismo u Ređaj modu: standardno ponašanje
+  if (!reorderMode) {
+    if (Date.now() < tapOpenBlockedUntilRef.current) { suppressNextClickRef.current = true; return; }
+    if (id === "discounts") nav(`/admin/katalog/discounts`);
+    else nav(`/admin/katalog/${id}`);
+    return;
   }
+
+  // --- Reorder režim ---
+  // Ako je long-press tek završen → samo selektuj, NE otvaraj
+  if (holdStartedRef.current) {
+    holdStartedRef.current = false; // RESET da sledeći tap radi pomeranje
+    suppressNextClickRef.current = true;
+    return;
+  }
+
+  // Ako je bilo skrola → ništa
+  if (touchMovedRef.current) { suppressNextClickRef.current = true; return; }
+
+  // Ako imamo selektovan ID → pomeri ispod cilja
+  if (mobileSelectedId) {
+    e.preventDefault();
+    if (!isDiscounts && !filter.trim()) {
+      moveSelectedBelow(id);
+      tapOpenBlockedUntilRef.current = Date.now() + TAP_OPEN_COOLDOWN_MS;
+      suppressNextClickRef.current = true;
+    }
+    return;
+  }
+
+  // Inače: ništa (blokiraj otvaranje u ređaj modu)
+  e.preventDefault();
+  suppressNextClickRef.current = true;
+}
+
 
   async function moveSelectedBelow(targetId) {
     if (!mobileSelectedId || mobileSelectedId === targetId) return;
