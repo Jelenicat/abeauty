@@ -1,5 +1,5 @@
 // src/pages/AdminCategory.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
@@ -24,20 +24,13 @@ export default function AdminCategory() {
   const [discount, setDiscount] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Desktop DnD
+  // Reorder (desktop DnD)
   const [dragId, setDragId] = useState(null);
-  const [dragIndex, setDragIndex] = useState(null);
-  const [overIndex, setOverIndex] = useState(null);
+  const [overId, setOverId] = useState(null);
 
-  // Mobile long-press select → tap to place
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedId, setSelectedId] = useState(null);
-  const [selectedIndex, setSelectedIndex] = useState(null);
-  const holdTimerRef = useRef(null);
-  const touchStartRef = useRef({ x: 0, y: 0 });
-
-  const listRef = useRef(null);
-  const scrollRAF = useRef(null);
+  // Mobile tap→tap
+  const [isMobile, setIsMobile] = useState(false);
+  const [selectedId, setSelectedId] = useState(null); // prvi tap
 
   const finalPrice = useMemo(() => {
     const p = Number(price) || 0;
@@ -45,15 +38,15 @@ export default function AdminCategory() {
     return Math.max(0, Math.round(p * (1 - d / 100)));
   }, [price, discount]);
 
-  const debounce = (fn, ms) => {
-    let t;
-    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-  };
-  const debouncedSetOverIndex = useMemo(() => debounce(setOverIndex, 30), []);
+  useEffect(() => {
+    const touch = typeof window !== "undefined" && (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+    setIsMobile(!!touch);
+  }, []);
 
   /* ==================== load ==================== */
   useEffect(() => {
     if (!catId) return;
+
     let off = () => {};
     if (catId === "discounts") {
       (async () => {
@@ -81,6 +74,7 @@ export default function AdminCategory() {
         const snap = await getDoc(doc(db, "categories", catId));
         if (snap.exists()) setCatName(snap.data().name || "");
         setLoading(false);
+
         off = onSnapshot(
           query(
             collection(db, "services"),
@@ -91,12 +85,22 @@ export default function AdminCategory() {
         );
       })();
     }
+
     return () => off();
   }, [catId]);
 
   /* ==================== helpers ==================== */
   const canReorder = catId !== "discounts";
   const idsFromList = (list) => list.map((x) => x.id);
+
+  function moveToIndex(listIds, fromIndex, toIndex) {
+    if (fromIndex == null || toIndex == null) return listIds;
+    const arr = listIds.slice();
+    const [item] = arr.splice(fromIndex, 1);
+    const adj = fromIndex < toIndex ? toIndex - 1 : toIndex;
+    arr.splice(adj, 0, item);
+    return arr;
+  }
 
   async function persistOrderIds(newOrderIds) {
     if (!canReorder) return;
@@ -115,64 +119,77 @@ export default function AdminCategory() {
     });
   }
 
-  // Move to index (insert BEFORE toIndex)
-  function moveToIndex(listIds, fromIndex, toIndex) {
-    if (fromIndex == null || toIndex == null) return listIds;
-    const arr = listIds.slice();
-    const [item] = arr.splice(fromIndex, 1);
-    const adj = fromIndex < toIndex ? toIndex - 1 : toIndex;
-    arr.splice(adj, 0, item);
-    return arr;
+  /* ==================== Desktop DnD (ostaje) ==================== */
+  function onDragStart(e, id) {
+    if (!canReorder) return e.preventDefault();
+    if (isMobile) return; // na telefonu koristimo tap→tap
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDragOver(e, id) {
+    if (!canReorder || isMobile) return;
+    e.preventDefault();
+    if (id !== overId) setOverId(id);
+  }
+  async function onDrop(e, id) {
+    if (!canReorder || isMobile) return;
+    e.preventDefault();
+    const visibleIds = idsFromList(services);
+    const fromId = dragId;
+    const toId = id;
+    if (!fromId || !toId) return;
+    const fromIdx = visibleIds.indexOf(fromId);
+    const toIdx = visibleIds.indexOf(toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    const newIds = moveToIndex(visibleIds, fromIdx, toIdx);
+    setDragId(null);
+    setOverId(null);
+    applyLocalOrderByIds(newIds);
+    await persistOrderIds(newIds);
+  }
+  function onDragEnd() {
+    if (isMobile) return;
+    setDragId(null);
+    setOverId(null);
   }
 
-  // Move AFTER a given target index (used for mobile tap-to-place-below)
-  function moveAfter(listIds, fromIndex, targetIndex) {
-    if (fromIndex == null || targetIndex == null) return listIds;
-    const arr = listIds.slice();
-    const [item] = arr.splice(fromIndex, 1);
-    // if we removed from above, target shifts -1, inserting "after" == at target
-    // else insert at target+1
-    const insertIndex = fromIndex < targetIndex ? targetIndex : targetIndex + 1;
-    arr.splice(insertIndex, 0, item);
-    return arr;
-  }
+  /* ==================== Mobile: tap → tap ==================== */
+  function onMobileRowTap(targetId) {
+    if (!canReorder || !isMobile) return;
 
-  /* ==================== auto-scroll (desktop hover) ==================== */
-  function startAutoScrollIfNeeded(clientY) {
-    cancelAutoScroll();
-    const container = listRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const threshold = 60;
-    const speed = 12;
-
-    function step() {
-      const y = window._lastTouchY ?? clientY;
-      const nearTop = y < rect.top + threshold;
-      const nearBottom = y > rect.bottom - threshold;
-
-      if (nearTop && container.scrollTop > 0) {
-        container.scrollTop = Math.max(0, container.scrollTop - speed);
-        scrollRAF.current = requestAnimationFrame(step);
-      } else if (nearBottom && container.scrollTop < container.scrollHeight - container.clientHeight) {
-        container.scrollTop = Math.min(
-          container.scrollHeight - container.clientHeight,
-          container.scrollTop + speed
-        );
-        scrollRAF.current = requestAnimationFrame(step);
-      }
+    // 1) Nemamo selekciju → selektuj polazni red
+    if (!selectedId) {
+      setSelectedId(targetId);
+      if (navigator.vibrate) navigator?.vibrate(10);
+      return;
     }
-    scrollRAF.current = requestAnimationFrame(step);
-  }
-  function cancelAutoScroll() {
-    if (scrollRAF.current) {
-      cancelAnimationFrame(scrollRAF.current);
-      scrollRAF.current = null;
+
+    // 2) Tap opet na isti → poništi selekciju
+    if (selectedId === targetId) {
+      setSelectedId(null);
+      return;
     }
+
+    // 3) Drugi tap na neki drugi red → ubaci POSLE njega
+    const ids = idsFromList(services);
+    const fromIdx = ids.indexOf(selectedId);
+    const targetIdx = ids.indexOf(targetId);
+    if (fromIdx === -1 || targetIdx === -1) {
+      setSelectedId(null);
+      return;
+    }
+
+    const insertIndex = targetIdx + 1; // POSLE targeta
+    const newIds = moveToIndex(ids, fromIdx, insertIndex);
+
+    applyLocalOrderByIds(newIds);
+    persistOrderIds(newIds).catch(console.error);
+    setSelectedId(null);
+    if (navigator.vibrate) navigator?.vibrate(20);
   }
 
-  /* ==================== “edit/save” ==================== */
+  /* ==================== CRUD helpers ==================== */
   const resetForm = () => {
     setEditing(null);
     setName("");
@@ -299,101 +316,6 @@ export default function AdminCategory() {
     }
   };
 
-  /* ==================== Desktop DnD (ostaje isto) ==================== */
-  function onDragStart(e, id) {
-    if (!canReorder) return e.preventDefault();
-    setDragId(id);
-    const idx = services.findIndex((x) => x.id === id);
-    setDragIndex(idx);
-    e.dataTransfer.effectAllowed = "move";
-  }
-  function onDragOver(e, id) {
-    if (!canReorder) return;
-    e.preventDefault();
-    const idx = services.findIndex((x) => x.id === id);
-    if (idx !== -1 && idx !== overIndex) setOverIndex(idx);
-  }
-  async function onDrop(e, id) {
-    if (!canReorder) return;
-    e.preventDefault();
-    const toIdx = services.findIndex((x) => x.id === id);
-    if (dragIndex == null || toIdx === -1) {
-      setDragId(null); setDragIndex(null); setOverIndex(null);
-      return;
-    }
-    const newIds = moveToIndex(idsFromList(services), dragIndex, toIdx);
-    setDragId(null); setDragIndex(null); setOverIndex(null);
-    applyLocalOrderByIds(newIds);
-    await persistOrderIds(newIds);
-  }
-  function onDragEnd() {
-    setDragId(null); setDragIndex(null); setOverIndex(null);
-  }
-
-  /* ==================== Mobile: long-press select → tap target ==================== */
-  function onTouchStartRow(e, id) {
-    if (!canReorder) return;
-    const t = e.touches?.[0];
-    touchStartRef.current.x = t?.clientX ?? 0;
-    touchStartRef.current.y = t?.clientY ?? 0;
-
-    // armiiramo long-press (300ms) → ulaz u select mode
-    clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = setTimeout(() => {
-      const idx = services.findIndex((x) => x.id === id);
-      setSelectMode(true);
-      setSelectedId(id);
-      setSelectedIndex(idx);
-      if (navigator.vibrate) navigator.vibrate(50);
-    }, 300);
-  }
-  function onTouchMoveRow(e) {
-    const t = e.touches?.[0];
-    if (!t) return;
-    const dx = Math.abs(t.clientX - touchStartRef.current.x);
-    const dy = Math.abs(t.clientY - touchStartRef.current.y);
-    // ako je korisnik krenuo da skroluje pre long-pressa, otkaži armiranje
-    if (dx > 12 || dy > 12) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-  }
-  function onTouchEndRow() {
-    clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = null;
-  }
-
-  // Tap na red: ako smo u select modu → premesti "odabrani" ispod cilja
-  async function onRowClickTarget(targetId) {
-    if (!selectMode || !canReorder) return;
-    if (!selectedId) return;
-
-    if (targetId === selectedId) {
-      // tap na isti red → izlaz iz select moda
-      setSelectMode(false);
-      setSelectedId(null);
-      setSelectedIndex(null);
-      return;
-    }
-
-    const fromIdx = selectedIndex;
-    const toIdx = services.findIndex((x) => x.id === targetId);
-    if (fromIdx < 0 || toIdx < 0) {
-      setSelectMode(false);
-      setSelectedId(null);
-      setSelectedIndex(null);
-      return;
-    }
-
-    const newIds = moveAfter(idsFromList(services), fromIdx, toIdx); // ISPOD targeta
-    applyLocalOrderByIds(newIds);
-    await persistOrderIds(newIds);
-
-    setSelectMode(false);
-    setSelectedId(null);
-    setSelectedIndex(null);
-  }
-
   /* ==================== render ==================== */
   return (
     <div style={wrap}>
@@ -420,14 +342,6 @@ export default function AdminCategory() {
               <button className="btn-danger" style={dangerBtn} onClick={deleteCategory}>Obriši kategoriju</button>
             )}
           </div>
-
-          {selectMode && (
-            <div style={hintBox}>
-              <strong>Ređanje na telefonu:</strong> Odabrana usluga je označena. Dodirni uslugu <em>ispod koje</em> želiš da je premestiš,
-              ili ponovo dodirni odabranu da otkažeš.
-              <button onClick={()=>{setSelectMode(false); setSelectedId(null); setSelectedIndex(null);}} style={hintCancel}>Otkaži</button>
-            </div>
-          )}
         </div>
 
         {/* FORMA ZA USLUGU */}
@@ -470,9 +384,9 @@ export default function AdminCategory() {
           )}
         </form>
 
-        {/* LISTA */}
-        <div ref={listRef} className="admincat-list" style={list}>
-          {services.map((s, idx) => {
+        {/* LISTA (globalni skrol) */}
+        <div className="admincat-list" style={list}>
+          {services.map((s) => {
             const isEditing = editing === s.id;
             const currentPrice = isEditing ? Number(price) || 0 : s.basePrice;
             const currentDiscount = isEditing ? Number(discount) || 0 : s.discountPercent || 0;
@@ -480,35 +394,26 @@ export default function AdminCategory() {
               ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
               : s.finalPrice;
 
-            const isSelected = selectMode && selectedId === s.id;
+            const isSelected = isMobile && selectedId === s.id;
 
             return (
               <div
                 key={s.id}
                 data-id={s.id}
-                className={`admincat-row srv-row ${isSelected ? "row-selected" : ""}`}
+                className="admincat-row srv-row"
                 style={{
                   ...row,
-                  border: isSelected ? "2px solid #ff5fa2" : "1px solid #f1f1f1",
-                  boxShadow: isSelected ? "0 14px 30px rgba(255,95,162,.25)" : row.boxShadow,
-                  cursor: canReorder ? (selectMode ? "pointer" : "grab") : "default",
-                  touchAction: "manipulation",
+                  cursor: canReorder ? (isMobile ? "pointer" : "grab") : "default",
+                  border: isSelected ? "2px solid #ff5fa2" : row.border,
+                  background: isSelected ? "rgba(255,95,162,0.08)" : row.background,
+                  transform: isSelected ? "scale(1.01)" : "none",
                 }}
-
-                // Desktop DnD:
-                draggable={false}
+                draggable={canReorder && !isMobile}
                 onDragStart={(e) => onDragStart(e, s.id)}
                 onDragOver={(e) => onDragOver(e, s.id)}
                 onDrop={(e) => onDrop(e, s.id)}
                 onDragEnd={onDragEnd}
-
-                // Mobile long-press select:
-                onTouchStart={(e) => onTouchStartRow(e, s.id)}
-                onTouchMove={onTouchMoveRow}
-                onTouchEnd={onTouchEndRow}
-
-                // Tap target (radi i na mobile i na desktopu)
-                onClick={() => onRowClickTarget(s.id)}
+                onClick={() => isMobile && onMobileRowTap(s.id)}
               >
                 <div style={{ userSelect: "none", WebkitUserSelect: "none" }}>
                   <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
@@ -517,14 +422,18 @@ export default function AdminCategory() {
                     {currentDiscount ? `· popust ${currentDiscount}% → ${currentFinal || 0} RSD` : ""}
                   </div>
                 </div>
-
-                <div style={{ display: "flex", gap: 8, pointerEvents: selectMode ? "none" : "auto", opacity: selectMode ? .5 : 1 }}>
-                  <button className="btn-primary" style={smBtn} disabled={selectMode} onClick={() => startEdit(s)}>Izmeni</button>
-                  <button className="btn-danger" style={smDel} disabled={selectMode} onClick={() => removeService(s.id)}>Obriši</button>
+                <div
+                  style={{ display: "flex", gap: 8 }}
+                  onClick={(e) => e.stopPropagation()} // da tap na dugmad ne okida selekciju
+                >
+                  <button className="btn-primary" style={smBtn} onClick={() => startEdit(s)}>Izmeni</button>
+                  <button className="btn-danger" style={smDel} onClick={() => removeService(s.id)}>Obriši</button>
                 </div>
               </div>
             );
           })}
+
+          {!services.length && !loading && <div style={{ color: "#fff" }}>Nema usluga.</div>}
         </div>
       </div>
     </div>
@@ -554,7 +463,8 @@ const formBase = {
   marginBottom: 14,
   alignItems: "center",
 };
-const list = { display: "grid", gap: 10, maxHeight: "60vh", overflowY: "auto", paddingBottom: 2 };
+/* GLOBALNI SKROL: nema maxHeight/overflow na listi */
+const list = { display: "grid", gap: 10, paddingBottom: 2 };
 const row = {
   display: "flex",
   justifyContent: "space-between",
@@ -573,28 +483,6 @@ const row = {
 };
 const smBtn = { height: 34, padding: "0 12px", border: "none", borderRadius: 10, background: "#696666ff", cursor: "pointer", fontWeight: 800, color: "#fff" };
 const smDel = { ...smBtn, background: "#ffe1e1", color: "#7a1b1b" };
-const hintBox = {
-  background: "rgba(255,255,255,.85)",
-  border: "1px solid rgba(0,0,0,.08)",
-  borderRadius: 12,
-  padding: "10px 12px",
-  fontSize: 14,
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  justifyContent: "space-between",
-  marginTop: 8
-};
-const hintCancel = {
-  border: "1px solid #ff5fa2",
-  background: "transparent",
-  color: "#ff5fa2",
-  borderRadius: 10,
-  height: 34,
-  padding: "0 10px",
-  fontWeight: 800,
-  cursor: "pointer"
-};
 
 const css = `
   .admincat-top {
@@ -626,27 +514,6 @@ const css = `
     font-weight: 800;
     padding: 0 6px;
   }
-
-  .srv-row, .srv-row * {
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-  }
-
-  .row-selected::after {
-    content: "ODABRANO";
-    position: absolute;
-    top: -10px;
-    right: 12px;
-    font-size: 10px;
-    font-weight: 900;
-    padding: 2px 6px;
-    border-radius: 8px;
-    background: #ff5fa2;
-    color: #fff;
-    letter-spacing: .4px;
-  }
-
   @media (max-width: 1100px) {
     .admincat-form {
       grid-template-columns:

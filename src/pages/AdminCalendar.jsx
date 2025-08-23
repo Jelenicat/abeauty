@@ -475,6 +475,44 @@ const [showBlockDaysUI, setShowBlockDaysUI] = useState(false);
   const [services, setServices] = useState([]);
   // DESKTOP multi-select
 const [selectedEmpIds, setSelectedEmpIds] = useState([]);
+// ---- Ređanje radnica (desktop drag + mobilni long-press) ----
+const [empDragId, setEmpDragId] = useState(null);
+const [empDragIndex, setEmpDragIndex] = useState(null);
+const [empOverIndex, setEmpOverIndex] = useState(null);
+
+const [empSelectMode, setEmpSelectMode] = useState(false); // mobilni: long-press pa tap
+const [empSelectedId, setEmpSelectedId] = useState(null);
+const [empSelectedIndex, setEmpSelectedIndex] = useState(null);
+const empHoldTimerRef = useRef(null);
+const empTouchStartRef = useRef({ x: 0, y: 0 });
+
+const empIds = useMemo(() => employees.map(e => e.id), [employees]);
+
+function moveAfterIdx(list, fromIndex, targetIndex) {
+  if (fromIndex == null || targetIndex == null) return list;
+  const arr = list.slice();
+  const [item] = arr.splice(fromIndex, 1);
+  const insertIndex = fromIndex < targetIndex ? targetIndex : targetIndex + 1;
+  arr.splice(insertIndex, 0, item);
+  return arr;
+}
+
+async function persistEmployeesOrder(newOrderIds) {
+  const batch = writeBatch(db);
+  let pos = 1;
+  for (const id of newOrderIds) {
+    batch.update(doc(db, "employees", id), { order: pos++, updatedAt: serverTimestamp() });
+  }
+  await batch.commit();
+}
+
+function applyLocalEmployeesOrder(newIds) {
+  setEmployees(prev => {
+    const byId = new Map(prev.map(x => [x.id, x]));
+    return newIds.map((id, idx) => ({ ...(byId.get(id) || {}), id, order: idx + 1 }));
+  });
+}
+
 const toggleEmp = (id) =>
   setSelectedEmpIds(prev =>
     prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
@@ -486,6 +524,92 @@ useEffect(() => {
   setSelectedEmpIds(prev => prev.filter(id => valid.has(id)));
 }, [employees]);
   const manyEmployees = employees.length > 10
+function onEmpDragStart(e, id) {
+  setEmpDragId(id);
+  setEmpDragIndex(employees.findIndex(x => x.id === id));
+  e.dataTransfer.effectAllowed = "move";
+}
+function onEmpDragOver(e, id) {
+  e.preventDefault();
+  const idx = employees.findIndex(x => x.id === id);
+  if (idx !== -1 && idx !== empOverIndex) setEmpOverIndex(idx);
+}
+async function onEmpDrop(e, id) {
+  e.preventDefault();
+  const toIdx = employees.findIndex(x => x.id === id);
+  if (empDragIndex == null || toIdx === -1) {
+    setEmpDragId(null); setEmpDragIndex(null); setEmpOverIndex(null);
+    return;
+  }
+  // umetni PRE targeta (klasičan DnD)
+  const arr = employees.map(e => e.id);
+  const [it] = arr.splice(empDragIndex, 1);
+  const adj = empDragIndex < toIdx ? toIdx - 1 : toIdx;
+  arr.splice(adj, 0, it);
+
+  setEmpDragId(null); setEmpDragIndex(null); setEmpOverIndex(null);
+  applyLocalEmployeesOrder(arr);
+  await persistEmployeesOrder(arr);
+}
+function onEmpDragEnd() {
+  setEmpDragId(null); setEmpDragIndex(null); setEmpOverIndex(null);
+}
+function onEmpTouchStart(e, id) {
+  const t = e.touches?.[0];
+  empTouchStartRef.current.x = t?.clientX ?? 0;
+  empTouchStartRef.current.y = t?.clientY ?? 0;
+  clearTimeout(empHoldTimerRef.current);
+  empHoldTimerRef.current = setTimeout(() => {
+    const idx = employees.findIndex(x => x.id === id);
+    setEmpSelectMode(true);
+    setEmpSelectedId(id);
+    setEmpSelectedIndex(idx);
+    if (navigator.vibrate) navigator.vibrate(40);
+  }, 300);
+}
+function onEmpTouchMove(e) {
+  const t = e.touches?.[0];
+  if (!t) return;
+  const dx = Math.abs(t.clientX - empTouchStartRef.current.x);
+  const dy = Math.abs(t.clientY - empTouchStartRef.current.y);
+  if (dx > 12 || dy > 12) { // skrol pre long-pressa
+    clearTimeout(empHoldTimerRef.current);
+    empHoldTimerRef.current = null;
+  }
+}
+function onEmpTouchEnd() {
+  clearTimeout(empHoldTimerRef.current);
+  empHoldTimerRef.current = null;
+}
+
+async function onEmpClickTarget(targetId) {
+  if (!empSelectMode) return;          // normalan klik ostaje postojeće ponašanje
+  if (!empSelectedId) return;
+
+  if (targetId === empSelectedId) {
+    // otkaži selekciju
+    setEmpSelectMode(false);
+    setEmpSelectedId(null);
+    setEmpSelectedIndex(null);
+    return;
+  }
+  const fromIdx = empSelectedIndex;
+  const toIdx = employees.findIndex(x => x.id === targetId);
+  if (fromIdx < 0 || toIdx < 0) {
+    setEmpSelectMode(false);
+    setEmpSelectedId(null);
+    setEmpSelectedIndex(null);
+    return;
+  }
+  // premesti ISPOD targeta
+  const newIds = moveAfterIdx(empIds, fromIdx, toIdx);
+  applyLocalEmployeesOrder(newIds);
+  await persistEmployeesOrder(newIds);
+
+  setEmpSelectMode(false);
+  setEmpSelectedId(null);
+  setEmpSelectedIndex(null);
+}
 
   // day view
   const [dayDate, setDayDate] = useState(() => new Date());
@@ -583,7 +707,7 @@ const [pendingPenaltyByPhone, setPendingPenaltyByPhone] = useState(new Map());
 
   useEffect(() => {
     const offEmp = onSnapshot(
-      query(collection(db, "employees"), orderBy("name", "asc")),
+      query(collection(db, "employees"), orderBy("order", "asc"), orderBy("name", "asc")),
       (s) => setEmployees(s.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
     const offSrv = onSnapshot(collection(db, "services"), (s) => {
@@ -1625,18 +1749,23 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                     return (
                       <button
                         key={e.id}
-                        onClick={() => setSelEmpId(e.id)}
+                         onClick={() => {
+    if (empSelectMode) onEmpClickTarget(e.id);
+    else setSelEmpId(e.id);   }}
+     onTouchStart={(ev) => onEmpTouchStart(ev, e.id)}
+   onTouchMove={onEmpTouchMove}
+   onTouchEnd={onEmpTouchEnd}
                         style={{
                           flex: "0 0 auto",
                           padding: "8px 14px",
                           borderRadius: 999,
                           border: "1px solid rgba(255,255,255,.35)",
-                          background: isSelected
-                            ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
-                            : isWorking
-                            ? "linear-gradient(135deg,#ffffff,#ffe3ef)"
-                            : "rgba(255,255,255,.12)",
-                          color: isSelected ? "#fff" : "#000",
+                         background: (empSelectMode && empSelectedId === e.id)
+      ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+     : (isSelected
+         ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)"
+        : (isWorking ? "linear-gradient(135deg,#ffffff,#ffe3ef)" : "rgba(255,255,255,.12)")),
+                          color: (empSelectMode && empSelectedId === e.id) || isSelected ? "#fff" : "#000",
                           fontWeight: 800,
                           cursor: "pointer",
                           whiteSpace: "nowrap",
@@ -1713,6 +1842,11 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
         <button
           key={e.id}
         onClick={() => { toggleEmp(e.id); setSelEmpId(e.id); }}
+         draggable
+ onDragStart={(ev) => onEmpDragStart(ev, e.id)}
+ onDragOver={(ev) => onEmpDragOver(ev, e.id)}
+ onDrop={(ev) => onEmpDrop(ev, e.id)}
+ onDragEnd={onEmpDragEnd}
           style={{
             flex: "0 0 auto",
              padding: manyEmployees ? "6px 10px" : "8px 14px",
@@ -1730,6 +1864,8 @@ background: isSelected
                fontSize: manyEmployees ? 13 : 16,
             cursor: "pointer",
             whiteSpace: "nowrap",
+            cursor: "grab",
+   outline: (empDragId === e.id) ? "2px dashed #ff5fa2" : undefined,
           }}
           title={isWorking ? "Radi danas" : "Nije u smeni danas"}
         >
