@@ -1,11 +1,11 @@
 // src/pages/AdminCategory.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { db } from "../firebase";
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc,
   collection, query, where, onSnapshot, addDoc,
-  serverTimestamp, orderBy
+  serverTimestamp, orderBy, writeBatch
 } from "firebase/firestore";
 
 export default function AdminCategory() {
@@ -23,6 +23,12 @@ export default function AdminCategory() {
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // === Reorder state (bez vizuelnih promena) ===
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+  const [isTouchDrag, setIsTouchDrag] = useState(false);
+  const touchRef = useRef({ startY: 0, activeId: null });
 
   const finalPrice = useMemo(() => {
     const p = Number(price) || 0;
@@ -155,7 +161,7 @@ export default function AdminCategory() {
     e?.preventDefault?.();
     if (saving) return;
 
-    // *** KLJUČNO: ne gubimo originalni categoryId kada editujemo iz "Na popustu" ***
+    // *** ne gubimo originalni categoryId kada editujemo iz "Na popustu" ***
     const prevObj = editing ? services.find((s) => s.id === editing) : null;
     const resolvedCategoryId = editing
       ? (prevObj?.categoryId ?? (catId === "discounts" ? "" : catId))
@@ -175,15 +181,8 @@ export default function AdminCategory() {
     setSaving(true);
     try {
       if (editing) {
-        // Optimistički: prikaži odmah u listi
-        upsertLocalService(editing, {
-          ...payload,
-          updatedAt: new Date(), // samo za UI
-        });
-
+        upsertLocalService(editing, { ...payload, updatedAt: new Date() });
         await updateDoc(doc(db, "services", editing), payload);
-
-        // Ako smo u "discounts" i popust je postao 0, ukloni iz ove liste (ostaje u svojoj kategoriji)
         if (catId === "discounts" && payload.discountPercent <= 0) {
           removeLocalService(editing);
         }
@@ -194,16 +193,12 @@ export default function AdminCategory() {
           order: orderVal,
           createdAt: serverTimestamp(),
         });
-
-        // Optimistički dodaj u listu (sa privremenim order-om)
         upsertLocalService(docRef.id, {
           ...payload,
           order: orderVal,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
-
-        // Ako smo u "discounts" modu i novi popust je 0, ne prikazuj ga (pošto query filtrira > 0)
         if (catId === "discounts" && payload.discountPercent <= 0) {
           removeLocalService(docRef.id);
         }
@@ -219,7 +214,6 @@ export default function AdminCategory() {
 
   const removeService = async (id) => {
     if (!confirm("Obrisati uslugu?")) return;
-    // Optimistički ukloni
     removeLocalService(id);
     try {
       await deleteDoc(doc(db, "services", id));
@@ -230,8 +224,123 @@ export default function AdminCategory() {
     }
   };
 
+  /* ==================== Reorder helpers (desktop + telefon) ==================== */
+  const canReorder = catId !== "discounts"; // u "Na popustu" je sort po imenu
+  const idsFromList = (list) => list.map((x) => x.id);
+  const moveId = (listIds, fromId, toId) => {
+    if (fromId === toId || !fromId || !toId) return listIds;
+    const arr = listIds.slice();
+    const fromIdx = arr.indexOf(fromId);
+    const toIdx = arr.indexOf(toId);
+    if (fromIdx < 0 || toIdx < 0) return arr;
+    const [item] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, item);
+    return arr;
+  };
+  async function persistOrder(newOrderIds) {
+    if (!canReorder) return;
+    const batch = writeBatch(db);
+    let pos = 1;
+    for (const id of newOrderIds) {
+      batch.update(doc(db, "services", id), { order: pos++, updatedAt: serverTimestamp() });
+    }
+    await batch.commit();
+  }
+  function applyLocalOrder(newIds) {
+    setServices((prev) => {
+      const byId = new Map(prev.map((x) => [x.id, x]));
+      return newIds.map((id, idx) => ({ ...(byId.get(id) || {}), id, order: idx + 1 }));
+    });
+  }
+
+  // Desktop DnD
+  function onDragStart(e, id) {
+    if (!canReorder) return e.preventDefault();
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDragOver(e, id) {
+    if (!canReorder) return;
+    e.preventDefault();
+    if (id !== overId) setOverId(id);
+  }
+  async function onDrop(e, id) {
+    if (!canReorder) return;
+    e.preventDefault();
+    const visibleIds = idsFromList(services);
+    const newIds = moveId(visibleIds, dragId, id);
+    setDragId(null);
+    setOverId(null);
+    if (!dragId) return;
+    applyLocalOrder(newIds);
+    await persistOrder(newIds);
+  }
+  function onDragEnd() {
+    setDragId(null);
+    setOverId(null);
+  }
+
+  // Touch (telefon)
+  function onTouchStart(e, id) {
+    if (!canReorder) return;
+    setIsTouchDrag(true);
+    touchRef.current.startY = e.touches[0].clientY;
+    touchRef.current.activeId = id;
+    setDragId(id);
+  }
+  function rowCenterY(el) {
+    const rect = el.getBoundingClientRect();
+    return rect.top + rect.height / 2;
+  }
+  function allRowEls() {
+    return Array.from(document.querySelectorAll(".srv-row"));
+  }
+  function idFromRowEl(el) {
+    return el?.getAttribute("data-id");
+  }
+  function nearestIdByY(y) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const el of allRowEls()) {
+      const id = idFromRowEl(el);
+      if (!id) continue;
+      const cy = rowCenterY(el);
+      const d = Math.abs(cy - y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = id;
+      }
+    }
+    return best;
+  }
+  function onTouchMove(e) {
+    if (!isTouchDrag || !dragId || !canReorder) return;
+    const y = e.touches[0].clientY;
+    const nearest = nearestIdByY(y);
+    if (nearest && nearest !== overId) setOverId(nearest);
+  }
+  async function onTouchEnd() {
+    if (!canReorder) return;
+    if (!isTouchDrag || !dragId || !overId) {
+      setIsTouchDrag(false);
+      setDragId(null);
+      setOverId(null);
+      return;
+    }
+    const visibleIds = idsFromList(services);
+    const newIds = moveId(visibleIds, dragId, overId);
+    setIsTouchDrag(false);
+    const moved = dragId;
+    setDragId(null);
+    setOverId(null);
+    if (moved) {
+      applyLocalOrder(newIds);
+      await persistOrder(newIds);
+    }
+  }
+
   return (
-    <div style={wrap}>
+    <div style={wrap} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
       <div style={panel}>
         <style>{css}</style>
 
@@ -306,8 +415,20 @@ export default function AdminCategory() {
               ? Math.max(0, Math.round((Number(price) || 0) * (1 - (Number(discount) || 0) / 100)))
               : s.finalPrice;
 
+            // Minimalno: dodali smo draggable/touch a da ne menjamo izgled
             return (
-              <div key={s.id} style={row} className="admincat-row">
+              <div
+                key={s.id}
+                data-id={s.id}
+                style={{ ...row, cursor: canReorder ? "grab" : "default" }}
+                className="admincat-row srv-row"
+                draggable={canReorder}
+                onDragStart={(e) => onDragStart(e, s.id)}
+                onDragOver={(e) => onDragOver(e, s.id)}
+                onDrop={(e) => onDrop(e, s.id)}
+                onDragEnd={onDragEnd}
+                onTouchStart={(e) => onTouchStart(e, s.id)}
+              >
                 <div>
                   <div style={{ fontWeight: 900 }}>{isEditing ? (name || s.name) : s.name}</div>
                   <div style={{ opacity: .8, fontSize: 13 }}>
@@ -330,7 +451,7 @@ export default function AdminCategory() {
   );
 }
 
-/* === styles === */
+/* === styles (nepromenjeni vizuelno) === */
 const wrap = { minHeight: "100vh", background: 'url("/slika1.webp") center/cover no-repeat fixed', padding: 24, display: "flex", justifyContent: "center", alignItems: "flex-start" };
 const panel = { width: "min(1250px,100%)", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.35)", backdropFilter: "blur(10px)", borderRadius: 28, boxShadow: "0 24px 60px rgba(0,0,0,.25)", padding: "clamp(18px,4vw,28px)" };
 const title = { margin: 0, color: "#fff", fontWeight: 900, fontSize: "clamp(18px,3vw,28px)" };

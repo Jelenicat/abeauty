@@ -1,5 +1,5 @@
 // src/pages/AdminKatalog.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import {
@@ -14,6 +14,7 @@ import {
   serverTimestamp,
   setDoc,
   getDoc,
+  writeBatch,           // ⬅️ dodato za batch upis
 } from "firebase/firestore";
 import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch, FiArrowLeft } from "react-icons/fi";
 
@@ -35,6 +36,12 @@ export default function AdminKatalog() {
 
   // Custom naslov za "Na popustu"
   const [discountTitle, setDiscountTitle] = useState("Na popustu");
+
+  // === Reorder state (bez vizuelnih promena) ===
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+  const [isTouchDrag, setIsTouchDrag] = useState(false);
+  const touchRef = useRef({ startY: 0, activeId: null });
 
   // Realtime: kategorije, usluge
   useEffect(() => {
@@ -103,6 +110,114 @@ export default function AdminKatalog() {
     }
     return base;
   }, [filtered, discountedServices.length, filter, discountTitle]);
+
+  /* ==================== Reorder helpers (bez UI efekata) ==================== */
+  function idsFromList(list) {
+    return list.map((x) => x.id);
+  }
+  function moveId(listIds, fromId, toId) {
+    if (fromId === toId || !fromId || !toId) return listIds;
+    const arr = listIds.slice();
+    const fromIdx = arr.indexOf(fromId);
+    const toIdx = arr.indexOf(toId);
+    if (fromIdx < 0 || toIdx < 0) return arr;
+    const [item] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, item);
+    return arr;
+  }
+  async function persistOrder(newOrderIds) {
+    const realIds = newOrderIds.filter((id) => id !== "discounts"); // ignoriši virtuelnu
+    const batch = writeBatch(db);
+    let pos = 1;
+    for (const id of realIds) {
+      batch.update(doc(db, "categories", id), {
+        order: pos++,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  /* ===== Desktop DnD ===== */
+  function onDragStart(e, id) {
+    if (id === "discounts") return e.preventDefault();
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDragOver(e, id) {
+    e.preventDefault();
+    if (id !== overId) setOverId(id);
+  }
+  async function onDrop(e, id) {
+    e.preventDefault();
+    const visibleIds = idsFromList(filteredWithDiscounts);
+    const newIds = moveId(visibleIds, dragId, id);
+    setDragId(null);
+    setOverId(null);
+    if (!dragId || dragId === "discounts") return;
+    await persistOrder(newIds);
+  }
+  function onDragEnd() {
+    setDragId(null);
+    setOverId(null);
+  }
+
+  /* ===== Touch DnD (telefon) ===== */
+  function onTouchStart(e, id) {
+    if (id === "discounts") return;
+    setIsTouchDrag(true);
+    touchRef.current.startY = e.touches[0].clientY;
+    touchRef.current.activeId = id;
+    setDragId(id);
+  }
+  function tileCenterY(el) {
+    const rect = el.getBoundingClientRect();
+    return rect.top + rect.height / 2;
+  }
+  function allTileEls() {
+    return Array.from(document.querySelectorAll(".ak-tile"));
+  }
+  function idFromTileEl(el) {
+    return el?.getAttribute("data-id");
+  }
+  function nearestIdByY(y) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const el of allTileEls()) {
+      const id = idFromTileEl(el);
+      if (!id) continue;
+      const cy = tileCenterY(el);
+      const d = Math.abs(cy - y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = id;
+      }
+    }
+    return best;
+  }
+  function onTouchMove(e) {
+    if (!isTouchDrag || !dragId) return;
+    const y = e.touches[0].clientY;
+    const nearest = nearestIdByY(y);
+    if (nearest && nearest !== overId) setOverId(nearest);
+  }
+  async function onTouchEnd() {
+    if (!isTouchDrag || !dragId || !overId) {
+      setIsTouchDrag(false);
+      setDragId(null);
+      setOverId(null);
+      return;
+    }
+    const visibleIds = idsFromList(filteredWithDiscounts);
+    const newIds = moveId(visibleIds, dragId, overId);
+    setIsTouchDrag(false);
+    const moved = dragId;
+    setDragId(null);
+    setOverId(null);
+    if (moved && moved !== "discounts") {
+      await persistOrder(newIds);
+    }
+  }
 
   async function addCategory(e) {
     e.preventDefault();
@@ -192,13 +307,18 @@ export default function AdminKatalog() {
   };
 
   return (
-    <div style={wrap} className="ak-root">
+    <div
+      style={wrap}
+      className="ak-root"
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       <style>{responsiveCSS}</style>
 
       {/* Dugme Nazad */}
       <div style={{ marginBottom: 16 }}>
         <button
-           onClick={() => nav("/admin")}
+          onClick={() => nav("/admin")}
           style={backBtn}
           className="ak-backbtn"
         >
@@ -262,13 +382,24 @@ export default function AdminKatalog() {
             {filteredWithDiscounts.map((cat) => {
               const isDiscounts = cat.id === "discounts";
               const isEditing = editingId === cat.id;
-              const count = isDiscounts
-                ? discountedServices.length
-                : countByCat.get(cat.id) || 0;
+              const count = isDiscounts ? discountedServices.length : countByCat.get(cat.id) || 0;
               const displayName = isDiscounts ? discountTitle : cat.name;
 
               return (
-                <div key={cat.id} style={tile} className="ak-tile">
+                <div
+                  key={cat.id}
+                  data-id={cat.id}
+                  style={tile}
+                  className="ak-tile"
+                  // Desktop drag and drop
+                  draggable={!isDiscounts}
+                  onDragStart={(e) => onDragStart(e, cat.id)}
+                  onDragOver={(e) => onDragOver(e, cat.id)}
+                  onDrop={(e) => onDrop(e, cat.id)}
+                  onDragEnd={onDragEnd}
+                  // Touch drag
+                  onTouchStart={(e) => onTouchStart(e, cat.id)}
+                >
                   <div
                     style={{
                       ...marble,
@@ -379,7 +510,7 @@ export default function AdminKatalog() {
   );
 }
 
-/* ===== STYLES ===== */
+/* ===== STYLES (neizmenjeni) ===== */
 
 const wrap = {
   minHeight: "100vh",
@@ -422,8 +553,6 @@ const topBar = {
   maxWidth: "980px",
   margin: "16px auto 0",
 };
-
-
 
 const addBox = { position: "relative", width: "100%" };
 const addInput = {
@@ -572,7 +701,7 @@ const editBtns = {
   gap: 8,
 };
 
-/* ===== RESPONSIVE + FONT CSS ===== */
+/* ===== RESPONSIVE + FONT CSS (ostavljeno kao u tvom fajlu) ===== */
 const responsiveCSS = `
 .ak-root, .ak-root * {
   font-family: 'Poppins', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
