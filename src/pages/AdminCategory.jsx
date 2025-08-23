@@ -27,7 +27,11 @@ export default function AdminCategory() {
   // === Reorder state ===
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
+
+  // Mobile long-press drag
   const [isTouchDrag, setIsTouchDrag] = useState(false);
+  const [isLongPress, setIsLongPress] = useState(false);
+  const [holdTimer, setHoldTimer] = useState(null);
   const touchRef = useRef({ startY: 0, activeId: null });
 
   const finalPrice = useMemo(() => {
@@ -52,7 +56,7 @@ export default function AdminCategory() {
         setLoading(false);
       })();
 
-      // ✨ RANGE filter -> prvo orderBy na istom polju + index (discountPercent ASC, name ASC)
+      // RANGE filter: prvo orderBy na istom polju (treba indeks: discountPercent ASC, name ASC)
       off = onSnapshot(
         query(
           collection(db, "services"),
@@ -87,17 +91,18 @@ export default function AdminCategory() {
     return () => off();
   }, [catId]);
 
-  // 🔧 Globalni mobilni DnD “patch”: blokiraj skrol dok traje drag
+  // Globalni “patch” dok je LONG-PRESS drag aktivan: blokiraj skrol i slušaj pokret/pustanje
   useEffect(() => {
-    if (!isTouchDrag) return;
+    if (!isLongPress) return;
+
     const handleMove = (e) => {
-      e.preventDefault();           // bitno za mobilni drag
+      e.preventDefault(); // bitno za mobilni drag
       onTouchMove(e);
     };
     const handleEnd = () => onTouchEnd();
 
     const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden"; // nema skrola tela dok prevlačimo
+    document.body.style.overflow = "hidden";
 
     window.addEventListener("touchmove", handleMove, { passive: false });
     window.addEventListener("touchend", handleEnd);
@@ -109,7 +114,7 @@ export default function AdminCategory() {
       window.removeEventListener("touchcancel", handleEnd);
       document.body.style.overflow = prevOverflow;
     };
-  }, [isTouchDrag]);
+  }, [isLongPress]);
 
   const resetForm = () => {
     setEditing(null);
@@ -303,14 +308,23 @@ export default function AdminCategory() {
     setOverId(null);
   }
 
-  // Touch (telefon)
+  // ===== Mobile long-press DnD =====
   function onTouchStart(e, id) {
     if (!canReorder) return;
-    setIsTouchDrag(true);
+
+    // zapamti početnu tačku
     touchRef.current.startY = e.touches[0].clientY;
     touchRef.current.activeId = id;
     setDragId(id);
+
+    // pokreni tajmer za long-press (250ms)
+    const t = setTimeout(() => {
+      setIsLongPress(true);   // prelazimo u "držim stavku"
+      setIsTouchDrag(true);
+    }, 250);
+    setHoldTimer(t);
   }
+
   function rowCenterY(el) {
     const rect = el.getBoundingClientRect();
     return rect.top + rect.height / 2;
@@ -336,16 +350,48 @@ export default function AdminCategory() {
     }
     return best;
   }
+
   function onTouchMove(e) {
-    if (!isTouchDrag || !dragId || !canReorder) return;
-    e.preventDefault(); // ✨ ključno da ne skroluje umesto da prevlači
+    if (!dragId || !canReorder) return;
+
     const y = e.touches[0].clientY;
+
+    // pre long-press: ako je korisnik počeo da skroluje, otkaži long-press
+    if (!isLongPress) {
+      if (Math.abs(y - touchRef.current.startY) > 8) {
+        if (holdTimer) clearTimeout(holdTimer);
+        setHoldTimer(null);
+        setDragId(null);
+        setOverId(null);
+        setIsTouchDrag(false);
+      }
+      return; // dozvoli normalan skrol
+    }
+
+    // long-press je aktivan => ovo je drag
+    e.preventDefault();
     const nearest = nearestIdByY(y);
     if (nearest && nearest !== overId) setOverId(nearest);
   }
+
   async function onTouchEnd() {
-    if (!canReorder) return;
+    // uvek očisti tajmer
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      setHoldTimer(null);
+    }
+
+    // ako long-press nije aktiviran, ovo je bio samo tap
+    if (!isLongPress) {
+      setIsTouchDrag(false);
+      setDragId(null);
+      setOverId(null);
+      return;
+    }
+
+    setIsLongPress(false);
     setIsTouchDrag(false);
+
     if (!dragId || !overId) {
       setDragId(null);
       setOverId(null);
@@ -357,7 +403,8 @@ export default function AdminCategory() {
     const moved = dragId;
     setDragId(null);
     setOverId(null);
-    document.body.style.overflow = ""; // vrati skrol
+    document.body.style.overflow = "";
+
     if (moved) {
       applyLocalOrder(newIds);
       await persistOrder(newIds);
@@ -444,7 +491,16 @@ export default function AdminCategory() {
               <div
                 key={s.id}
                 data-id={s.id}
-                style={{ ...row, cursor: canReorder ? "grab" : "default", touchAction: "none" }} // ✨ dodato
+                style={{
+                  ...row,
+                  cursor: canReorder ? "grab" : "default",
+                  touchAction: "none",
+                  ...(dragId === s.id && isLongPress ? {
+                    transform: "scale(1.05) rotate(1deg)",
+                    boxShadow: "0 12px 24px rgba(0,0,0,.3)",
+                    zIndex: 999,
+                  } : {}),
+                }}
                 className="admincat-row srv-row"
                 draggable={canReorder}
                 onDragStart={(e) => onDragStart(e, s.id)}
