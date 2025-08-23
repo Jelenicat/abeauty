@@ -1,3 +1,4 @@
+// src/components/LoginModal.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import "./LoginModal.css";
@@ -24,23 +25,38 @@ export default function LoginModal({ open, onClose, onSuccess }) {
 
   if (!open) return null;
 
-  // normalizacija u skladu sa AuthContext-om
+  // normalizacija broja u format 0xx...
   const phoneNorm = String(phone || "").replace(/\D/g, "").replace(/^381/, "0");
   const nameOk  = firstName.trim().length >= 2 && lastName.trim().length >= 2;
   const phoneOk = phoneNorm.length >= 8 && phoneNorm.length <= 11;
   const canSubmit = nameOk && phoneOk && !loading;
+
+  const prettyPhone = phoneNorm.replace(/(\d{3})(\d{3})(\d{0,4})/, (m, a, b, c) =>
+    c ? `${a} ${b} ${c}` : `${a} ${b}`
+  );
 
   const submit = async (e) => {
     e.preventDefault();
     setTouched(true);
     if (!canSubmit) return;
 
+    // === SKIP potvrde za admina i abeauty ===
+    const skipConfirm =
+      phoneNorm === "0665511005" || phoneNorm === "0000000000";
+
+    if (!skipConfirm) {
+      const ok = window.confirm(
+        `Potvrdi broj telefona:\n\n${prettyPhone}\n\nAko broj NIJE tačan, klikni “Cancel” i ispravi ga.`
+      );
+      if (!ok) return;
+    }
+
     setLoading(true);
     try {
       const created = await login({
         firstName: firstName.trim(),
         lastName:  lastName.trim(),
-        phone:     phoneNorm, // šaljemo već normalizovano
+        phone:     phoneNorm,
       });
       onClose?.();
       onSuccess?.(created);

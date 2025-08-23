@@ -18,7 +18,7 @@ import {
 } from "firebase/firestore";
 import { FiPlus, FiEdit, FiTrash2, FiX, FiCheck, FiSearch, FiArrowLeft, FiMove } from "react-icons/fi";
 
-/** Da li je touch uređaj */
+/** Detekcija touch uređaja */
 const isTouchDevice = () =>
   typeof window !== "undefined" &&
   ("ontouchstart" in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0);
@@ -38,7 +38,7 @@ export default function AdminKatalog() {
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
 
-  // Popusti
+  // Discount “virtuena” kategorija
   const [discountTitle, setDiscountTitle] = useState("Na popustu");
 
   // Desktop DnD
@@ -46,22 +46,24 @@ export default function AdminKatalog() {
   const [dragOverId, setDragOverId] = useState(null);
   const [previewOrderIds, setPreviewOrderIds] = useState(null);
 
-  // Mobile reorder režim (novo)
+  // Reorder režim na mobilnom (ručni prekidač)
   const [reorderMode, setReorderMode] = useState(false);
 
-  // Mobile long-press
+  // Mobile long-press / touch state
   const [mobileSelectedId, setMobileSelectedId] = useState(null);
   const holdTimerRef = useRef(null);
   const holdStartedRef = useRef(false);
   const touchStartXY = useRef({ x: 0, y: 0 });
-
-  // Osetljivost + zaštite
-  const LONG_PRESS_MS = 600;           // stroži long press
-  const MOVE_CANCEL_PX = 24;           // veći prag pomeranja
-  const TAP_OPEN_COOLDOWN_MS = 380;
   const touchMovedRef = useRef(false);
+  const suppressNextClickRef = useRef(false); // << blokira sledeći click kad treba
   const tapOpenBlockedUntilRef = useRef(0);
 
+  // Pragovi/timeouti
+  const LONG_PRESS_MS = 600;
+  const MOVE_CANCEL_PX = 24;
+  const TAP_OPEN_COOLDOWN_MS = 380;
+
+  // Realtime
   useEffect(() => {
     const offCats = onSnapshot(
       query(collection(db, "categories"), orderBy("order", "asc")),
@@ -76,16 +78,17 @@ export default function AdminKatalog() {
     return () => { offCats(); offSrv(); };
   }, []);
 
+  // Discount naslov
   useEffect(() => {
     let unsub = () => {};
     (async () => {
       try {
         unsub = onSnapshot(doc(db, "meta", "discounts"), (snap) => {
-          setDiscountTitle(snap.exists() ? (snap.data()?.title || "Na popustu") : "Na popustu");
+          setDiscountTitle(snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu");
         });
       } catch {
         const snap = await getDoc(doc(db, "meta", "discounts"));
-        setDiscountTitle(snap.exists() ? (snap.data()?.title || "Na popustu") : "Na popustu");
+        setDiscountTitle(snap.exists() ? snap.data()?.title || "Na popustu" : "Na popustu");
       }
     })();
     return () => unsub && unsub();
@@ -104,8 +107,8 @@ export default function AdminKatalog() {
 
   const filtered = useMemo(() => {
     const t = filter.trim().toLowerCase();
-    const orderedFromDb = [...cats].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    return t ? orderedFromDb.filter((c) => (c.name || "").toLowerCase().includes(t)) : orderedFromDb;
+    const ordered = [...cats].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return t ? ordered.filter((c) => (c.name || "").toLowerCase().includes(t)) : ordered;
   }, [cats, filter]);
 
   const filteredWithDiscounts = useMemo(() => {
@@ -114,9 +117,7 @@ export default function AdminKatalog() {
       discountedServices.length > 0 &&
       (!t || (discountTitle || "Na popustu").toLowerCase().includes(t) || "popust".includes(t));
     const base = [...filtered];
-    if (wants) {
-      base.unshift({ id: "discounts", name: discountTitle || "Na popustu", order: -Infinity, _virtual: true });
-    }
+    if (wants) base.unshift({ id: "discounts", name: discountTitle || "Na popustu", order: -Infinity, _virtual: true });
     return base;
   }, [filtered, discountedServices.length, filter, discountTitle]);
 
@@ -222,20 +223,21 @@ export default function AdminKatalog() {
   }
   function cleanupDrag() { setDragId(null); setDragOverId(null); setPreviewOrderIds(null); }
 
-  /*** Mobile long-press selekcija (radi samo u reorder modu) ***/
+  /*** Mobile long-press (radi SAMO u reorder modu) ***/
   function onTouchStartCat(e, id) {
-    if (!isTouchDevice() || !reorderMode) return; // << samo u Ređaj modu
+    if (!isTouchDevice() || !reorderMode) return;
     const t = e.touches?.[0];
     touchStartXY.current = { x: t?.clientX ?? 0, y: t?.clientY ?? 0 };
     touchMovedRef.current = false;
     holdStartedRef.current = false;
-
     clearTimeout(holdTimerRef.current);
     holdTimerRef.current = setTimeout(() => {
       if (id !== "discounts" && !filter.trim()) {
         setMobileSelectedId(id);
         holdStartedRef.current = true;
         if (navigator.vibrate) navigator.vibrate(40);
+        // long-press je odradio nešto → blokiraj sledeći click
+        suppressNextClickRef.current = true;
       }
     }, LONG_PRESS_MS);
   }
@@ -249,38 +251,49 @@ export default function AdminKatalog() {
       touchMovedRef.current = true;
       clearTimeout(holdTimerRef.current);
       holdStartedRef.current = false;
+      suppressNextClickRef.current = true; // skrol → ne želimo click
     }
+  }
+
+  function onTouchCancelCat() {
+    clearTimeout(holdTimerRef.current);
+    holdStartedRef.current = false;
+    touchMovedRef.current = true;
+    suppressNextClickRef.current = true;
   }
 
   function onTouchEndCat(e, id, isDiscounts) {
     clearTimeout(holdTimerRef.current);
 
-    // Ako nismo u Ređaj modu, ponašaj se normalno (nema selekcije/ move)
+    // Ako nismo u Ređaj modu: standardno ponašanje
     if (!reorderMode) {
-      // zabrani otvaranje ako je aktivan cooldown (npr. posle move)
-      if (Date.now() < tapOpenBlockedUntilRef.current) return;
+      if (Date.now() < tapOpenBlockedUntilRef.current) { suppressNextClickRef.current = true; return; }
+      // normalna navigacija
       if (id === "discounts") nav(`/admin/katalog/discounts`);
       else nav(`/admin/katalog/${id}`);
       return;
     }
 
-    // U Ređaj modu:
-    if (holdStartedRef.current) return;      // upravo long-press, ne otvaraj
-    if (touchMovedRef.current) return;       // bio je skrol, ignoriši
+    // U Ređaj modu nikada ne otvaramo kategoriju “usputnim” tapom
+    // 1) ako je bio long-press → ne otvaraj
+    if (holdStartedRef.current) { suppressNextClickRef.current = true; return; }
+    // 2) ako je bilo pomeranja (skrol) → ne otvaraj
+    if (touchMovedRef.current) { suppressNextClickRef.current = true; return; }
 
-    // Ako je selektovano – tap na cilj => premesti ispod cilja (bez otvaranja)
+    // 3) ako je selektovano → tap na cilj = pomeri ispod cilja
     if (mobileSelectedId) {
       e.preventDefault();
       if (!isDiscounts && !filter.trim()) {
         moveSelectedBelow(id);
         tapOpenBlockedUntilRef.current = Date.now() + TAP_OPEN_COOLDOWN_MS;
+        suppressNextClickRef.current = true;
       }
       return;
     }
 
-    // Ako ništa nije selektovano, a u Ređaj modu smo – nemoj otvarati kategoriju slučajno
-    // (zahtevamo da korisnica prvo long-press selektuje pa onda tapne cilj).
+    // 4) U Ređaj modu bez selekcije → ne otvaraj ničim
     e.preventDefault();
+    suppressNextClickRef.current = true;
   }
 
   async function moveSelectedBelow(targetId) {
@@ -309,7 +322,7 @@ export default function AdminKatalog() {
       className="ak-root"
       onDrop={onDrop}
       onDragOver={(e) => dragId && e.preventDefault()}
-      onContextMenu={(e) => e.preventDefault()}  // bez context menija na long-press
+      onContextMenu={(e) => e.preventDefault()}
     >
       <style>{responsiveCSS}</style>
 
@@ -321,7 +334,7 @@ export default function AdminKatalog() {
       </div>
 
       <div style={panel} className="ak-panel">
-        {/* Dodaj kategoriju */}
+        {/* Dodaj */}
         <form onSubmit={addCategory} style={topBar} className="ak-topbar">
           <div style={addBox}>
             <span style={addIcon}><FiPlus /></span>
@@ -352,8 +365,6 @@ export default function AdminKatalog() {
               inputMode="search"
             />
           </div>
-
-          {/* Ređaj toggle (vidljiv na mobilnom, ali može i na desktopu) */}
           <button
             type="button"
             onClick={() => { setReorderMode((v) => !v); setMobileSelectedId(null); }}
@@ -386,10 +397,7 @@ export default function AdminKatalog() {
                 )}
               </span>
             ) : (
-              <span>
-                <FiMove style={{ marginRight: 6 }} />
-                Na računaru: prevuci (drag & drop) da promeniš redosled.
-              </span>
+              <span><FiMove style={{ marginRight: 6 }} /> Na računaru: prevuci (drag & drop) da promeniš redosled.</span>
             )}
           </div>
         ) : (
@@ -405,7 +413,7 @@ export default function AdminKatalog() {
           <div style={{ color: "#fff", textAlign: "center" }}>Učitavanje…</div>
         ) : (
           <div style={grid} className="ak-grid">
-            {/* Virtuelna "Na popustu" */}
+            {/* Discount pločica */}
             {filteredWithDiscounts.length && filteredWithDiscounts[0]?.id === "discounts" ? (
               <CategoryTile
                 key="discounts"
@@ -449,11 +457,13 @@ export default function AdminKatalog() {
                   onTouchStart={(e) => onTouchStartCat(e, cat.id)}
                   onTouchMove={onTouchMoveCat}
                   onTouchEnd={(e) => onTouchEndCat(e, cat.id, false)}
+                  onTouchCancel={onTouchCancelCat}
                   // UI
                   isDragging={isDragging}
                   isDragOver={isDragOver}
                   selectedMobile={selectedMobile}
                   reorderMode={reorderMode}
+                  suppressNextClickRef={suppressNextClickRef}
                 />
               );
             })}
@@ -486,10 +496,12 @@ function CategoryTile({
   onTouchStart,
   onTouchMove,
   onTouchEnd,
+  onTouchCancel,
   isDragging = false,
   isDragOver = false,
   selectedMobile = false,
   reorderMode = false,
+  suppressNextClickRef,
 }) {
   const displayName = isDiscounts ? (cat.name || "Na popustu") : (cat.name || "");
 
@@ -507,6 +519,7 @@ function CategoryTile({
       onTouchStart={!isDiscounts ? onTouchStart : undefined}
       onTouchMove={!isDiscounts ? onTouchMove : undefined}
       onTouchEnd={!isDiscounts ? onTouchEnd : undefined}
+      onTouchCancel={!isDiscounts ? onTouchCancel : undefined}
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
@@ -547,13 +560,17 @@ function CategoryTile({
             border: selectedMobile ? "2px solid #ff5fa2" : "none",
             boxShadow: selectedMobile ? "0 0 0 4px rgba(255,95,162,.15) inset" : tileButton.boxShadow,
           }}
-          onClick={(e) => {
-            // Ako je uključen Ređaj mod ili je selektovano – ne otvaraj
-            if (reorderMode || selectedMobile) {
+          // NAJVAŽNIJE: blokiraj klik pre nego što React “spusti” do onClick
+          onClickCapture={(e) => {
+            if (reorderMode || selectedMobile || suppressNextClickRef?.current) {
               e.preventDefault();
               e.stopPropagation();
-              return;
+              // reset flag posle okvira event-loopa
+              setTimeout(() => { if (suppressNextClickRef) suppressNextClickRef.current = false; }, 0);
             }
+          }}
+          onClick={(e) => {
+            // Ako nije blokirano gore, ovo je “namerni” klik → navigacija
             onNav();
           }}
           className="ak-tilebtn"
@@ -859,8 +876,10 @@ const responsiveCSS = `
 .ak-root .ak-tilebtn,
 .ak-root .ak-actionbtn { -webkit-tap-highlight-color: transparent; }
 
-/* Bez text-selection i callout na pločicama */
+/* Bez text-selection i touch callout-a na pločicama */
 .ak-tile, .ak-tile * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 /* Dozvoli selekciju u input poljima */
 .ak-root input, .ak-root textarea { -webkit-user-select: auto; user-select: auto; }
+/* Prioritet vertikalnog skrola */
+.ak-tile { touch-action: pan-y; }
 `;

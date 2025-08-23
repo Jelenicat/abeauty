@@ -1669,6 +1669,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                     display: "flex",
                     flexWrap: "nowrap",
                     overflowX: "auto",
+                    touchAction: "pan-x",
                     gap: 8,
                     padding: "6px 0",
                     WebkitOverflowScrolling: "touch",
@@ -1721,7 +1722,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                           whiteSpace: "nowrap",
                             userSelect: "none",
   WebkitUserSelect: "none",
-  touchAction: "none",
+
                         }}
                       >
                         {e.name}
