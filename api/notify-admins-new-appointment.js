@@ -1,10 +1,9 @@
-// api/notify-admins-new-appointment.js  (Vercel Serverless, CommonJS)
-const admin = require("firebase-admin");
+// api/notify-admins-new-appointment.js  (Vercel Serverless, ESM)
+import admin from "firebase-admin";
 
 function initAdmin() {
-  if (admin.apps.length) return;
+  if (admin.apps?.length) return;
 
-  // 1) Najpre pokušaj iz FIREBASE_SERVICE_ACCOUNT_JSON (ceo JSON kao string)
   const svcJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (svcJson) {
     try {
@@ -18,7 +17,6 @@ function initAdmin() {
     }
   }
 
-  // 2) Ili iz tri posebne promenljive
   const projectId   = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey  = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
@@ -27,27 +25,21 @@ function initAdmin() {
     return;
   }
 
-  // 3) Poslednja šansa – default credentials (ako ih ima u okruženju)
   admin.initializeApp();
 }
 initAdmin();
 
 const db = admin.firestore();
-
-// samo ova dva broja dobijaju admin notifikacije
 const ADMIN_PHONES = ["0665511005", "0000000000"];
-
-// opcioni zaštitni token za API
 const REQUIRED_BEARER = process.env.NOTIFY_BEARER || "";
 
-// mali helper za CORS (ako šalješ sa drugog domena)
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
@@ -61,7 +53,6 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Vercel obično već parsira JSON, ali za svaki slučaj:
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const {
       clientName = "",
@@ -71,7 +62,6 @@ module.exports = async (req, res) => {
       screen = "/admin/kalendar",
     } = body;
 
-    // pokupi sve tokene za ova 2 broja
     const snap = await db.collection("fcmTokens").where("phone", "in", ADMIN_PHONES).get();
     const tokens = snap.docs.map(d => d.get("token")).filter(Boolean);
     if (!tokens.length) return res.json({ ok: true, sent: 0, info: "no tokens" });
@@ -91,7 +81,6 @@ module.exports = async (req, res) => {
       },
     });
 
-    // očisti nevažeće tokene (ako postoje)
     const invalid = [];
     resp.responses.forEach((r, i) => {
       if (!r.success) {
@@ -114,4 +103,4 @@ module.exports = async (req, res) => {
     console.error("notify-admins-new-appointment error:", e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
-};
+}
