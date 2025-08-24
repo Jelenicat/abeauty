@@ -42,7 +42,6 @@ async function resolveEmployeeNameById(employeeId) {
     const snap = await db.collection("employees").doc(String(employeeId)).get();
     if (!snap.exists) return "";
     const d = snap.data() || {};
-    // Probaj više shema
     if (d.name) return String(d.name);
     const fn = d.firstName ? String(d.firstName) : "";
     const ln = d.lastName ? String(d.lastName) : "";
@@ -75,12 +74,11 @@ export default async function handler(req, res) {
       screen = "/admin/kalendar",
       dateKey = "",
       employeeId = "",
-      employeeName: employeeNameIn = "",   // ⬅️ novo
+      employeeName: employeeNameIn = "",
       startMin = "",
       apptId = "",
     } = body;
 
-    // Ako ime nije prosleđeno, pokušaj iz baze
     const employeeName =
       (employeeNameIn && String(employeeNameIn)) ||
       (await resolveEmployeeNameById(employeeId)) ||
@@ -93,13 +91,11 @@ export default async function handler(req, res) {
     const tokensNew = snapNew.docs.map(d => d.id);
 
     // --- FALLBACK: STARA ŠEMA ---
-    // (a) doc = broj telefona, polje "tokens" je niz
     const snapOldArray = await db.collection("fcmTokens")
       .where("phone", "in", ADMIN_PHONES)
       .get();
     const tokensOldArr = snapOldArray.docs.flatMap(d => d.get("tokens") || []);
 
-    // (b) doc = bilo šta, polje "phone" + polje "token" (jedan token po dokumentu)
     const snapOldSingle = await db.collection("fcmTokens")
       .where("phone", "in", ADMIN_PHONES)
       .get();
@@ -111,29 +107,26 @@ export default async function handler(req, res) {
       return res.json({ ok: true, sent: 0, info: "no tokens" });
     }
 
-    // ✨ Sastavi title/body, dodaj "kod <ime>" ako imamo ime
+    // ✨ Sastavi title/body i spakuj u DATA
     const title = "🗓️ Novi termin zakazan";
     const bodyTextParts = [
       clientName || "Klijent",
       serviceName || "Usluga",
       startText || ""
     ].filter(Boolean);
-
     if (employeeName) bodyTextParts.push(`kod ${employeeName}`);
-
     const bodyText = bodyTextParts.join(" • ");
 
     const resp = await admin.messaging().sendEachForMulticast({
       tokens,
-      notification: {
-        title,
-        body: bodyText,
-      },
+      // ❌ Bez 'notification' da ne bude duplo — prikaz radi SW
       data: {
+        title: String(title),
+        body: String(bodyText),
         screen,
         dateKey: String(dateKey || ""),
         employeeId: String(employeeId || ""),
-        employeeName: String(employeeName || ""),         // ⬅️ novo
+        employeeName: String(employeeName || ""),
         startMin: String(startMin ?? ""),
         apptId: String(apptId || ""),
         clientName: String(clientName || ""),
