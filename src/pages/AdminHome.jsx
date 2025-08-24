@@ -11,14 +11,18 @@ export default function AdminHome() {
 
   // zaštita da klijent ne uđe na /admin
   useEffect(() => {
-    if (!user?.isAdmin) navigate("/usluge", { replace: true });
+    // ako korisnik postoji i nije admin, vodi ga na /usluge
+    if (user && !user.isAdmin) {
+      navigate("/usluge", { replace: true });
+    }
   }, [user, navigate]);
 
   const handleLogout = async () => {
     try {
       await (logout?.() ?? Promise.resolve());
     } finally {
-      navigate("/login", { replace: true });
+      // nakon logout-a uvek vodi na home
+      navigate("/", { replace: true });
     }
   };
 
@@ -27,32 +31,51 @@ export default function AdminHome() {
       <div className="admin-panel">
         {/* GRID */}
         <div className="admin-grid">
-          <button className="admin-card" onClick={() => navigate("/admin/katalog")}>
+          <button
+            className="admin-card"
+            onClick={() => navigate("/admin/katalog")}
+          >
             Katalog usluga
           </button>
 
-          <button className="admin-card" onClick={() => navigate("/admin/kalendar")}>
+          <button
+            className="admin-card"
+            onClick={() => navigate("/admin/kalendar")}
+          >
             Kalendar
           </button>
 
           {/* Troškovi i zarada — prikaži samo ako korisnik ima pravo na finansije */}
           {user?.isFinance !== false && (
-            <button className="admin-card" onClick={() => navigate("/admin/finansije")}>
+            <button
+              className="admin-card"
+              onClick={() => navigate("/admin/finansije")}
+            >
               Troškovi i zarada
             </button>
           )}
 
-          <button className="admin-card" onClick={() => navigate("/admin/zaposleni")}>
+          <button
+            className="admin-card"
+            onClick={() => navigate("/admin/zaposleni")}
+          >
             Zaposleni
           </button>
 
-          <button className="admin-card" onClick={() => navigate("/admin/klijenti")}>
+          <button
+            className="admin-card"
+            onClick={() => navigate("/admin/klijenti")}
+          >
             Klijenti
           </button>
         </div>
 
         {/* Dugme za odjavu NA DNU SADRŽAJA */}
-        <button className="admin-logout" onClick={handleLogout} title="Odjavi se">
+        <button
+          className="admin-logout"
+          onClick={handleLogout}
+          title="Odjavi se"
+        >
           <FiLogOut style={{ marginRight: 8 }} />
           Odjavi se
         </button>
