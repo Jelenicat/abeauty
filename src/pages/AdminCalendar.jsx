@@ -422,6 +422,7 @@ export default function AdminCalendar() {
  const [pendingApptId, setPendingApptId] = useState(null);     // čeka da se termini učitaju
  const [initialScrollMin, setInitialScrollMin] = useState(null);
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
+  
 useEffect(() => {
   const sp = new URLSearchParams(location.search || "");
   const date = sp.get("date");   // npr. "2025-08-24"
@@ -460,6 +461,8 @@ useEffect(() => {
 // 2. useEffect koji reaguje na pendingDeepLink i postavlja schedDate, selEmpId, initialScrollMin i pendingApptId
 
 // 3. ⬇️ OVAJ useEffect koji ti je bitan
+const openApptModal = (a) => setActiveAppt(a);
+const closeApptModal = () => setActiveAppt(null);
 useEffect(() => {
   if (!pendingApptId || !Array.isArray(schedAppts) || !schedAppts.length) return;
   const appt = schedAppts.find(a => a.id === pendingApptId);
@@ -1487,8 +1490,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
 
   /* ------------ modal open on click ------------ */
 
-  const openApptModal = (a) => setActiveAppt(a);
-  const closeApptModal = () => setActiveAppt(null);
+ 
 
   /* ------------ create block from drag ------------ */
 

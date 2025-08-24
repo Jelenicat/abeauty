@@ -12,16 +12,22 @@ firebase.initializeApp({
 });
 
 const messaging = firebase.messaging();
-
 messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification || {};
   const data = payload.data || {};
+
   self.registration.showNotification(title || "Nova notifikacija", {
     body: body || "",
     icon: icon || "/icons/icon-192.png",
-    data: { click_action: data.click_action || data.screen || "/" },
+    // ⬇️ ubaci SVE što stiže iz payload.data
+    data: {
+      ...data,
+      // i dalje obezbedi fallback za destinaciju
+      click_action: data.click_action || data.screen || "/admin/kalendar",
+    },
   });
 });
+
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
