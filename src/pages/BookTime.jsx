@@ -256,21 +256,23 @@ if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))
           ? "https://abeauty.im/api/notify-admins-new-appointment"
           : "/api/notify-admins-new-appointment";
 
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
-            clientPhone: user?.phone || "",
-            serviceName: activeService?.name || "",
-            startText: `${dateText} ${timeText}`,
-            screen: "/admin/kalendar",
-              dateKey: dk,                // npr. "2025-08-24"
-            employeeId: emp.id,         // kome je dodeljen termin
-           startMin: slot.startMin,    // 0..1439
-           apptId: docRef.id 
-          }),
-        });
+       const resp = await fetch(url, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+    clientPhone: user?.phone || "",
+    serviceName: activeService?.name || "",
+    startText: `${dateText} ${timeText}`,
+    screen: "/admin/kalendar",
+    dateKey: dk,                 // npr. "2025-08-24"
+    employeeId: emp.id,          // kome je dodeljen termin
+    employeeName: emp.name || "",// ⬅️ DODATO
+    startMin: slot.startMin,     // 0..1439
+    apptId: docRef.id
+  }),
+});
+
         const txt = await resp.text();
         console.log("notify-admins response:", resp.status, txt);
       } catch (e) {
