@@ -451,6 +451,19 @@ useEffect(() => {
 
   // nav("/admin/kalendar", { replace: true });
 }, [pendingDeepLink]);
+// 1. useEffect koji parsira URL (location.search) i puni pendingDeepLink
+
+// 2. useEffect koji reaguje na pendingDeepLink i postavlja schedDate, selEmpId, initialScrollMin i pendingApptId
+
+// 3. ⬇️ OVAJ useEffect koji ti je bitan
+useEffect(() => {
+  if (!pendingApptId || !Array.isArray(schedAppts) || !schedAppts.length) return;
+  const appt = schedAppts.find(a => a.id === pendingApptId);
+  if (appt) {
+    openApptModal(appt);    
+    setPendingApptId(null); 
+  }
+}, [pendingApptId, schedAppts]);
 
 
  const [pendingDeepLink, setPendingDeepLink] = useState(null); // {date,emp,at,aid}
@@ -776,6 +789,14 @@ const q = query(
     );
     return () => off();
   }, [schedDate]);
+useEffect(() => {
+  if (!pendingApptId || !Array.isArray(schedAppts) || !schedAppts.length) return;
+  const appt = schedAppts.find(a => a.id === pendingApptId);
+  if (appt) {
+    openApptModal(appt);     // otvara modal baš za taj termin
+    setPendingApptId(null);  // očisti da se ne ponavlja
+  }
+}, [pendingApptId, schedAppts]);
 
   // Najraniji budući termini po klijentu (globalno preko svih dana)
   useEffect(() => {
