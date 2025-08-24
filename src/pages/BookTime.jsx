@@ -242,29 +242,36 @@ if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))
         updatedAt: serverTimestamp(),
         ...(activeService?.color ? { color: activeService.color } : {}),
       });
-           // === NOVO: pošalji admin push notifikaciju ===
-     try {
-       const dateText = new Intl.DateTimeFormat("sr-RS", {
-         weekday: "short", day: "2-digit", month: "short"
-       }).format(selectedDay);
-       const timeText = minToTime(slot.startMin);
 
-       // u produkciji je najbolje relativno:
-       const url = "/api/notify-admins-new-appointment";
-       await fetch(url, {
-         method: "POST",
-         headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({
-           clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
-           clientPhone: user?.phone || "",
-           serviceName: activeService?.name || "",
-           startText: `${dateText} ${timeText}`,
-           screen: "/admin/kalendar",
-         }),
-       });
-     } catch (e) {
-       console.warn("Slanje admin notifikacije nije uspelo:", e);
-     }
+      // === NOVO: pošalji admin push notifikaciju (DEV/PROD safe + log) ===
+      try {
+        const dateText = new Intl.DateTimeFormat("sr-RS", {
+          weekday: "short", day: "2-digit", month: "short"
+        }).format(selectedDay);
+        const timeText = minToTime(slot.startMin);
+
+        // Ako je lokalni dev -> gađaj vercel domen; u produkciji koristi relativni URL
+        const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(window.location.origin);
+        const url = isLocal
+          ? "https://abeauty.im/api/notify-admins-new-appointment"
+          : "/api/notify-admins-new-appointment";
+
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+            clientPhone: user?.phone || "",
+            serviceName: activeService?.name || "",
+            startText: `${dateText} ${timeText}`,
+            screen: "/admin/kalendar",
+          }),
+        });
+        const txt = await resp.text();
+        console.log("notify-admins response:", resp.status, txt);
+      } catch (e) {
+        console.warn("Slanje admin notifikacije nije uspelo:", e);
+      }
       const nextSelected = selectedServices.filter((x) => x.id !== activeService.id);
       if (typeof setSelectedServices === "function") setSelectedServices(() => nextSelected);
       if (nextSelected.length) { setActiveId(nextSelected[0].id); alert("Termin je uspešno zakazan ❤️"); }
