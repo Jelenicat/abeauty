@@ -11,18 +11,20 @@ export default function AdminHome() {
 
   // zaštita da klijent ne uđe na /admin
   useEffect(() => {
-    // ako korisnik postoji i nije admin, vodi ga na /usluge
     if (user && !user.isAdmin) {
       navigate("/usluge", { replace: true });
     }
   }, [user, navigate]);
 
   const handleLogout = async () => {
+    // prvo izađi iz admin ruta da RequireAdmin ne preusmeri na /usluge
+    navigate("/", { replace: true });
+
+    // zatim odjavi korisnika
     try {
       await (logout?.() ?? Promise.resolve());
-    } finally {
-      // nakon logout-a uvek vodi na home
-      navigate("/", { replace: true });
+    } catch (err) {
+      console.error("Greška pri logout-u:", err);
     }
   };
 
