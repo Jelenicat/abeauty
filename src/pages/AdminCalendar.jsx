@@ -418,6 +418,10 @@ export default function AdminCalendar() {
   const nav = useNavigate();
    const location = useLocation();
    // odmah posle useLocation() i deklaracije state-ova
+    const [pendingDeepLink, setPendingDeepLink] = useState(null); // {date,emp,at,aid}
+ const [pendingApptId, setPendingApptId] = useState(null);     // čeka da se termini učitaju
+ const [initialScrollMin, setInitialScrollMin] = useState(null);
+  const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 useEffect(() => {
   const sp = new URLSearchParams(location.search || "");
   const date = sp.get("date");   // npr. "2025-08-24"
@@ -466,10 +470,7 @@ useEffect(() => {
 }, [pendingApptId, schedAppts]);
 
 
- const [pendingDeepLink, setPendingDeepLink] = useState(null); // {date,emp,at,aid}
- const [pendingApptId, setPendingApptId] = useState(null);     // čeka da se termini učitaju
- const [initialScrollMin, setInitialScrollMin] = useState(null);
-  const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
+
 // --- mobile detect (≤640px) — MORA biti pre prve upotrebe `isMobile`
 // --- mobile detect (≤640px) — inicijalno tačno stanje
 const [isMobile, setIsMobile] = useState(() => {
