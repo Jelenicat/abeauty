@@ -14,7 +14,7 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   const data = payload?.data || {};
-  if (payload.notification && !data.forceShow) return;
+
 
   const url =
     data.url || data.link || data.click_action || data.screen ||
