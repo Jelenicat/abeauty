@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { db } from "../firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
-import { ensureFcmToken, deleteCurrentFcmToken } from "../utils/fcm";
+import { ensureFcmToken, detachFcmOnLogout } from "../utils/fcm";
 
 const AuthContext = createContext(null);
 const ADMIN_PHONE = "0665511005"; // normalizovan oblik
@@ -91,7 +91,7 @@ export function AuthProvider({ children }) {
 
   // JEDINA verzija logout-a (asinhrona): briše FCM token + localStorage
   const logout = async () => {
-    try { await deleteCurrentFcmToken(); } catch {}
+    try { await detachFcmOnLogout({ deleteFromServer: true }); } catch {}
     try { localStorage.removeItem("abeauty:user"); } catch {}
     setUser(null);
   };
