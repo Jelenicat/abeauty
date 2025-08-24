@@ -25,12 +25,27 @@ messaging.onBackgroundMessage((payload) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = (event.notification.data && (event.notification.data.click_action || event.notification.data.screen)) || "/";
-  event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      const url = new URL(target, self.location.origin).toString();
-      for (const c of list) if (c.url === url && "focus" in c) return c.focus();
-      if (clients.openWindow) return clients.openWindow(url);
-    })
-  );
+const d = event.notification.data || {};
+  const base = d.click_action || d.screen || "/admin/kalendar";
+  const url = new URL(base, self.location.origin);
+  // dodaj query parametre za kalendar
+  if (d.dateKey)   url.searchParams.set("date", d.dateKey);
+  if (d.employeeId) url.searchParams.set("emp", d.employeeId);
+  if (d.startMin)  url.searchParams.set("at", d.startMin);
+  if (d.apptId)    url.searchParams.set("aid", d.apptId);
+
+  event.waitUntil((async () => {
+    const all = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    // Ako postoji prozor naše app, fokusiraj i navigiraj
+    for (const c of all) {
+      try {
+       await c.focus();
+        if ("navigate" in c) {
+          await c.navigate(url.toString());
+         return;
+        }
+     } catch {}
+    }
+    // Inače otvori novi tab
+    await clients.openWindow(url.toString());  })());
 });

@@ -46,9 +46,18 @@ export async function ensureFcmToken(phone) {
     try { localStorage.setItem(TOKEN_STORE_KEY, token); } catch {}
 
     // Foreground handler (po želji prikaži toast)
-    onMessage(messaging, (payload) => {
-      console.log("FCM foreground:", payload);
-    });
+ onMessage(messaging, (payload) => {
+  console.log("FCM foreground:", payload);
+  const d = payload?.data || {};
+  const base = d.click_action || d.screen || "/admin/kalendar";
+  const url = new URL(base, window.location.origin);
+  if (d.dateKey)     url.searchParams.set("date", d.dateKey);      // npr. "2025-08-24"
+  if (d.employeeId)  url.searchParams.set("emp", d.employeeId);    // id radnice
+  if (d.startMin)    url.searchParams.set("at", d.startMin);       // minuti u danu
+  if (d.apptId)      url.searchParams.set("aid", d.apptId);        // id termina
+  // odmah idi na kalendar (foreground nema "click" na sistemsku notifikaciju)
+  window.location.assign(url.toString());
+});
 
     // Napomena: u modularnom SDK-u nema onTokenChanged.
     // Ako Google rotira token, ponovni poziv ensureFcmToken (npr. posle logina ili reload-a)

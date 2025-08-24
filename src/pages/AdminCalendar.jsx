@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { db } from "../firebase";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   collection,
   doc,
@@ -416,6 +416,46 @@ function WeekStrip({ anchorDate, onPick, isMobile }) {
 export default function AdminCalendar() {
   
   const nav = useNavigate();
+   const location = useLocation();
+   // odmah posle useLocation() i deklaracije state-ova
+useEffect(() => {
+  const sp = new URLSearchParams(location.search || "");
+  const date = sp.get("date");   // npr. "2025-08-24"
+  const emp  = sp.get("emp");    // employeeId
+  const at   = sp.get("at");     // minuti u danu (string -> broj)
+  const aid  = sp.get("aid");    // appointment id
+  if (date || emp || at || aid) {
+    setPendingDeepLink({
+      date,
+      emp,
+      at: at != null ? Number(at) : null,
+      aid
+    });
+  }
+}, [location.search]);
+useEffect(() => {
+  if (!pendingDeepLink) return;
+
+  if (typeof setTab === "function") setTab("schedule");
+  if (pendingDeepLink.date) {
+    const d = new Date(pendingDeepLink.date + "T00:00:00");
+    setSchedDate(d);
+  }
+
+  if (pendingDeepLink.emp) setSelEmpId?.(pendingDeepLink.emp);
+  if (pendingDeepLink.at != null) setInitialScrollMin?.(pendingDeepLink.at);
+
+  if (pendingDeepLink.aid) setPendingApptId(pendingDeepLink.aid);
+
+  setPendingDeepLink(null);
+
+  // nav("/admin/kalendar", { replace: true });
+}, [pendingDeepLink]);
+
+
+ const [pendingDeepLink, setPendingDeepLink] = useState(null); // {date,emp,at,aid}
+ const [pendingApptId, setPendingApptId] = useState(null);     // čeka da se termini učitaju
+ const [initialScrollMin, setInitialScrollMin] = useState(null);
   const [tab, setTab] = useState("day"); // 'day' | 'month' | 'schedule'
 // --- mobile detect (≤640px) — MORA biti pre prve upotrebe `isMobile`
 // --- mobile detect (≤640px) — inicijalno tačno stanje
@@ -1854,6 +1894,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
               openMin={openMin}
               closeMin={closeMin}
               colorForServiceId={colorForServiceId}
+               servicesById={servicesById}
               setHoverApptId={setHoverApptId}
               hoverApptId={hoverApptId}
               onApptClick={openApptModal}
@@ -1866,7 +1907,9 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                 pendingPenaltyByPhone={pendingPenaltyByPhone}
                 
               earliestApptIdByPhone={firstUpcomingApptIdByPhone}
+              
               isMobile={isMobile}
+              initialScrollMin={initialScrollMin}  
               onCreateBlock={handleCreateBlock}
             />
           </>
@@ -2118,6 +2161,8 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
               pendingPenaltyByPhone={pendingPenaltyByPhone}
               earliestApptIdByPhone={firstUpcomingApptIdByPhone}
               colorForServiceId={colorForServiceId}
+              
+  initialScrollMin={initialScrollMin}
               onSave={async (patch) => {
                 const srv = servicesById.get(activeAppt.serviceId);
                 const duration = activeAppt.durationMin || srv?.durationMin || 0;
@@ -2242,6 +2287,8 @@ function DayGrid({
   openMin,
   closeMin,
   colorForServiceId,
+    servicesById,
+  initialScrollMin,
   setHoverApptId,
   hoverApptId,
   onApptClick,
@@ -2680,6 +2727,8 @@ const blockDayBtn = {
                   const top = pxFromMin(a.startMin - openMin);
                   const height = pxFromMin(a.endMin - a.startMin);
                   const bg = apptBgFor(a, colorForServiceId);
+                   const srvDef = servicesById.get(a.serviceId);
+ const price = Number(a.price ?? srvDef?.price ?? 0);
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -2700,6 +2749,7 @@ const blockDayBtn = {
                   return (
                     <button
                       key={a.id}
+                      id={`appt-${a.id}`}
                       draggable={!isBreak && !isBlock && !isVacation}
                       onDragStart={onApptDragStart(a)}
                       onMouseEnter={() => setHoverApptId(a.id)}
@@ -2708,18 +2758,12 @@ const blockDayBtn = {
                         !isBreak && !isBlock && !isVacation && onApptClick(a)
                       }
                       style={apptCard(top, height, bg, isBreak || isBlock || isVacation)}
-                      title={
-                        isVacation
-                          ? "Odmor"
-                          : isBreak
-                          ? "Pauza"
-                          : isBlock
-                          ? "Blokirano"
-                          : `${a.serviceName || "Usluga"}${
-    price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""
-  }${a.clientName ? " · " + a.clientName : ""}`
-
-                      }
+                    title={
+       isVacation ? "Odmor" :
+       isBreak ? "Pauza" :
+       isBlock ? "Blokirano" :
+       `${a.serviceName || "Usluga"}${price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""}${a.clientName ? " · " + a.clientName : ""}`
+    }
                       onDragOver={(e) => e.preventDefault()}
                       onTouchStart={stopTouchPropagation}
                       onTouchEnd={stopTouchPropagation}
@@ -3093,8 +3137,7 @@ const price = Number(a.price ?? srvDef?.price ?? 0);     // NOVO
                   left: `calc(${leftPct}% + 6px)`,
                   width: `calc(${widthPct}% - 12px)`,
                 }}
-               title={`${srv} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}${
-  price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""
+               title={`${srv} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}${ price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""
 }`}
 
               >

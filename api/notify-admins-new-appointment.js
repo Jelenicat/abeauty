@@ -54,13 +54,17 @@ export default async function handler(req, res) {
     }
 
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const {
-      clientName = "",
+   const {
+     clientName = "",
       clientPhone = "",
-      serviceName = "",
+     serviceName = "",
       startText = "",
-      screen = "/admin/kalendar",
-    } = body;
+     screen = "/admin/kalendar",
+     dateKey = "",
+      employeeId = "",
+      startMin = "",
+     apptId = "",
+   } = body;
 
     const snap = await db.collection("fcmTokens").where("phone", "in", ADMIN_PHONES).get();
     const tokens = snap.docs.map(d => d.get("token")).filter(Boolean);
@@ -74,6 +78,10 @@ export default async function handler(req, res) {
       },
       data: {
         screen,
+               dateKey: String(dateKey || ""),
+       employeeId: String(employeeId || ""),
+       startMin: String(startMin ?? ""),
+       apptId: String(apptId || ""),
         clientName: String(clientName || ""),
         clientPhone: String(clientPhone || ""),
         serviceName: String(serviceName || ""),

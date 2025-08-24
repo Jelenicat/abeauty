@@ -222,7 +222,7 @@ if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))
   return;
 }
 
-      await addDoc(collection(db, "appointments"), {
+      const docRef = await addDoc(collection(db, "appointments"), {
         type: "booking",
         status: "booked",
         employeeId: emp.id,
@@ -265,6 +265,10 @@ if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))
             serviceName: activeService?.name || "",
             startText: `${dateText} ${timeText}`,
             screen: "/admin/kalendar",
+              dateKey: dk,                // npr. "2025-08-24"
+            employeeId: emp.id,         // kome je dodeljen termin
+           startMin: slot.startMin,    // 0..1439
+           apptId: docRef.id 
           }),
         });
         const txt = await resp.text();
