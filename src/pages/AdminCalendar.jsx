@@ -463,14 +463,7 @@ useEffect(() => {
 // 3. ⬇️ OVAJ useEffect koji ti je bitan
 const openApptModal = (a) => setActiveAppt(a);
 const closeApptModal = () => setActiveAppt(null);
-useEffect(() => {
-  if (!pendingApptId || !Array.isArray(schedAppts) || !schedAppts.length) return;
-  const appt = schedAppts.find(a => a.id === pendingApptId);
-  if (appt) {
-    openApptModal(appt);    
-    setPendingApptId(null); 
-  }
-}, [pendingApptId, schedAppts]);
+
 
 
 
