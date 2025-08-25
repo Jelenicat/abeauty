@@ -21,6 +21,7 @@ import {
 } from "firebase/firestore";
 import { runTransaction, writeBatch, increment, getDocs } from "firebase/firestore";
 
+
 import {
   FiCalendar,
   FiUser,
@@ -143,6 +144,7 @@ async function applyPendingToEarliestAppt(db, phone, amount) {
   });
 }
 
+
 // ⬇⬇⬇ DODAJ OVDE, van komponente
 const apptBgFor = (a, colorForServiceId) => {
   return a.type === "vacation"
@@ -164,6 +166,7 @@ function BlockDaysBar({ visible, anchorDate, onCancel, onConfirm, isMobile }) {
   if (!visible) return null;
 
   const [selected, setSelected] = React.useState(new Set());
+
 
   // pomoćne
   const dayNames = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
@@ -577,6 +580,74 @@ const empTouchStartRef = useRef({ x: 0, y: 0 });
 
 const autoPickedRef = useRef(false);
   const [selSrvId, setSelSrvId] = useState("");
+  // 1) NOVO: više usluga
+const [selSrvIds, setSelSrvIds] = useState([]);
+// --- SERVICES DROPDOWN STATE & HANDLERS ---
+const [srvOpen, setSrvOpen] = useState(false);
+const buttonRef = useRef(null);
+const panelRef = useRef(null);
+
+// koristiš li već isNarrow negde? Ako ne, dodaj:
+const isNarrow = typeof window !== "undefined" ? window.innerWidth < 720 : false;
+
+
+
+
+React.useEffect(() => {
+  function onDocClick(e) {
+    if (!srvOpen) return;
+    const p = panelRef.current, b = buttonRef.current;
+    if (p && p.contains(e.target)) return; // klik u panelu
+    if (b && b.contains(e.target)) return; // klik na dugme
+    setSrvOpen(false);
+  }
+  function onKey(e) {
+    if (e.key === "Escape") setSrvOpen(false);
+  }
+  document.addEventListener("mousedown", onDocClick);
+  document.addEventListener("touchstart", onDocClick, { passive: true });
+  document.addEventListener("keydown", onKey);
+  return () => {
+    document.removeEventListener("mousedown", onDocClick);
+    document.removeEventListener("touchstart", onDocClick);
+    document.removeEventListener("keydown", onKey);
+  };
+}, [srvOpen]);
+// --- /SERVICES DROPDOWN ---
+
+ const detailsRef = React.useRef(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(e) {
+      if (detailsRef.current && !detailsRef.current.contains(e.target)) {
+        detailsRef.current.removeAttribute("open"); // zatvara dropdown
+      }
+    }
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
+
+
+  React.useEffect(() => {
+    let mq;
+    try { mq = window.matchMedia("(max-width: 640px)"); } catch { return; }
+    const h = (e) => setIsNarrow(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", h);
+    else mq.addListener(h);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", h);
+      else mq.removeListener(h);
+    };
+  }, []);
+// helper za čekiranje/odčekiranje jedne usluge
+const toggleSrv = (id) =>
+  setSelSrvIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+// kada promeniš radnicu, počisti izbor usluga (ostaviš postojeći reset selSrvId)
+useEffect(() => {
+  setSelSrvIds([]);
+}, [selEmpId]);
+
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
 /* === [STEP 1] clients state (autocomplete + free text) === */
@@ -1021,11 +1092,29 @@ useEffect(() => {
     return m;
   }, [services]);
 
-  const colorForCategoryId = (cid) =>
-    categoryColors.get(cid) || hashToColor(`cat:${cid || "misc"}`);
 
-  const dayDow = DOW[dayDate.getDay()];
-  const dayHours = salonHours[dayDow] || DEFAULT_SALON_HOURS[dayDow];
+  const colorForCategoryId = (cid) =>
+  categoryColors.get(cid) || hashToColor(`cat:${cid || "misc"}`);
+
+// ⬇️ OVDE UBACI
+// derivati za sabiranje
+const selServices = selSrvIds
+  .map(id => servicesById.get(id))
+  .filter(Boolean);
+
+const totalDuration = selServices.reduce((a, s) => a + Number(s?.durationMin || 0), 0);
+const totalPrice    = selServices.reduce((a, s) => a + Number(getServicePrice(s) || 0), 0);
+
+// boja termina = boja kategorije prve izabrane usluge
+const primaryService = selServices[0] || null;
+const primaryColor   = primaryService ? colorForCategoryId(primaryService.categoryId) : undefined;
+
+// ⬆️ kraj mog dodatka
+
+const dayDow = DOW[dayDate.getDay()];
+const dayHours = salonHours[dayDow] || DEFAULT_SALON_HOURS[dayDow];
+
+
   const openMin = timeToMin(dayHours.open);
   const closeMin = timeToMin(dayHours.close);
 
@@ -1232,17 +1321,16 @@ async function blockWholeDaysRange({ employeeId, fromDate, toDate }) {
   if (!empId) return alert("Odaberi radnicu.");
 
   // --- BOOKING ---
-  if (mode === "booking") {
-    const srv = servicesById.get(selSrvId);
-    if (!srv) return alert("Odaberi uslugu.");
+if (mode === "booking") {
+  if (!selServices.length) return alert("Odaberi bar jednu uslugu.");
 
-    const start = timeToMin(startTime);
-    const end   = start + Number(srv.durationMin || 0);
+  const start = timeToMin(startTime);
+  const end   = start + Number(totalDuration || 0);
 
-   // Validacije
-if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
-if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
-if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+  // Validacije (ostaju iste)
+  if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+  if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+  if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
 
 /* === [STEP 5A] validate + upsert client (free-text OR postojeći) === */
 const nameToSave  = (clientName  || "").trim();
@@ -1285,38 +1373,53 @@ const newRef = doc(collection(db, "appointments"));
   }
 
   const apptDoc = {
-    type: "booking",
-    status: "booked",
-    employeeId: empId,
-    employeeName: employeesById.get(empId)?.name || "",
-    dateKey: dk,
-    startHHMM: minToTime(start),
-    endHHMM: minToTime(end),
-    startMin: start,
-    endMin: end,
-    serviceId: srv.id,
-    serviceName: srv.name,
-    durationMin: Number(srv.durationMin || 0),
-    color: colorForCategoryId(srv.categoryId),
+      type: "booking",
+      status: "booked",
+      employeeId: empId,
+      employeeName: employeesById.get(empId)?.name || "",
+      dateKey: dk,
+      startHHMM: minToTime(start),
+      endHHMM: minToTime(end),
+      startMin: start,
+      endMin: end,
 
-    // ⬇️ upiši ono što je korisnik uneo / izabrao
-    clientName:  nameToSave,
-    clientPhone: phoneToSave,
+      // BACK-COMPAT polja (ostavljamo ih zbog prikaza/boje):
+      serviceId: primaryService?.id || selServices[0]?.id,
+      serviceName: primaryService?.name || selServices[0]?.name,
 
-    price: getServicePrice(srv),
-    penaltyApplied,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  };
+      // NOVO: kompletan spisak usluga
+      servicesInfo: selServices.map(s => ({
+        id: s.id,
+        name: s.name,
+        durationMin: Number(s.durationMin || 0),
+        price: getServicePrice(s),
+      })),
+      serviceIds: selServices.map(s => s.id), // opciono
 
-  tx.set(newRef, apptDoc);
-});
+      durationMin: Number(totalDuration || 0),
+      price: Number(totalPrice || 0),
+      color: primaryColor, // boja od prve izabrane
+
+      // klijent (kao i do sada)
+      clientName:  nameToSave,
+      clientPhone: phoneToSave,
+
+      penaltyApplied, // ako ti ta logika već postoji
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    tx.set(newRef, apptDoc);
+  });
+
+  // počisti polja kao i ranije
+  setClientName("");
+  setClientPhone("");
+  return;
+}
 
 
-    setClientName("");
-    setClientPhone("");
-    return;
-  }
+ 
 
   // --- BLOCK ---
   const start = timeToMin(startTime);
@@ -1853,24 +1956,215 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
       ))}
     </div>
   </div>
+{mode === "booking" ? (
+  showModeFields && (
+    <div style={ctlItem}>
+      <label style={lbl}>Usluge</label>
 
- {mode === "booking" ? (
-   showModeFields && <div style={ctlItem}>
-      <label style={lbl}>Usluga</label>
-      <select
-        value={selSrvId}
-        onChange={(e) => setSelSrvId(e.target.value)}
-        style={inp}
+      {/* Dugme koje otvara/zatvara panel */}
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setSrvOpen(v => !v)}
+        style={{
+          ...inp,
+          width: "100%",
+          textAlign: "left",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: "pointer",
+          fontWeight: 600,
+        }}
       >
-        <option value="">— Odaberi —</option>
-        {allowedServicesForSelectedEmp.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name} ({s.durationMin} min)
-          </option>
-        ))}
-      </select>
+        <span style={{ flex: 1 }}>
+          {selSrvIds.length
+            ? `Izabrano: ${selSrvIds.length}`
+            : "Izaberi jednu ili više usluga"}
+        </span>
+        <span style={{ opacity: 0.6 }}>{srvOpen ? "▲" : "▼"}</span>
+      </button>
+
+      {/* PANEL */}
+      {srvOpen && (
+        <div
+          ref={panelRef}
+          style={{
+            position: isNarrow ? "fixed" : "absolute",
+            zIndex: 50,
+            boxSizing: "border-box",
+            marginTop: isNarrow ? 0 : 8,
+
+            // mobilni: centriran bottom-sheet; desktop: desno uz polje
+            ...(isNarrow
+              ? {
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  top: "12vh",
+                  width: "94vw",
+                  maxHeight: "76vh",
+                }
+              : {
+                  right: 0,
+                  left: "auto",
+                  width: "min(520px, calc(100vw - 32px))",
+                  maxHeight: "min(68vh, 520px)",
+                }),
+
+            overflow: "auto",
+            borderRadius: 16,
+            border: "1px solid rgba(0,0,0,.08)",
+            background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
+            boxShadow: "0 16px 44px rgba(0,0,0,.28)",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
+          {/* Sticky header */}
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 14px",
+              borderBottom: "1px solid rgba(0,0,0,.06)",
+              background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 16 }}>Usluge</div>
+            <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>
+              {selSrvIds.length ? `Izabrano: ${selSrvIds.length}` : "Nije izabrano"}
+            </div>
+          </div>
+
+          {/* Lista usluga */}
+          <div style={{ padding: 12, display: "grid", gap: 10 }}>
+            {allowedServicesForSelectedEmp.map((s) => {
+              const checked = selSrvIds.includes(s.id);
+              const price = Number(getServicePrice(s) || 0);
+              return (
+                <label
+                  key={s.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "28px 1fr auto",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 14px",
+                    minHeight: 64,
+                    borderRadius: 14,
+                    background: "#fff",
+                    border: checked
+                      ? "1px solid rgba(255,105,180,.35)"
+                      : "1px solid #e9ecf4",
+                    boxShadow: checked
+                      ? "0 4px 14px rgba(255,105,180,.15)"
+                      : "0 1px 4px rgba(0,0,0,.05)",
+                    cursor: "pointer",
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleSrv(s.id)}
+                    style={{
+                      width: 20,
+                      height: 20,
+                      accentColor: "#ff6aa8",
+                      cursor: "pointer",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+
+                  <div style={{ overflow: "hidden" }}>
+                    <div style={{ fontWeight: 800, lineHeight: 1.2, wordBreak: "break-word" }}>
+                      {s.name}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>
+                      {s.durationMin} min
+                    </div>
+                  </div>
+
+                  <div style={{ fontWeight: 900, textAlign: "right", whiteSpace: "nowrap" }}>
+                    {price.toLocaleString("sr-RS")} RSD
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+
+          {/* Sticky footer sa totalom */}
+          <div
+            style={{
+              position: "sticky",
+              bottom: 0,
+              zIndex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              padding: "12px 14px",
+              borderTop: "1px solid rgba(0,0,0,.06)",
+              background: "linear-gradient(180deg,#ffffff,#f2f4ff)",
+              borderBottomLeftRadius: 16,
+              borderBottomRightRadius: 16,
+            }}
+          >
+            {(() => {
+              const sel = selSrvIds.map((id) => servicesById.get(id)).filter(Boolean);
+              const totalPrice = sel.reduce((a, s) => a + (getServicePrice(s) || 0), 0);
+              const totalDur = sel.reduce((a, s) => a + Number(s.durationMin || 0), 0);
+              return (
+                <>
+                  <div style={{ fontWeight: 900 }}>
+                    Ukupno: {totalPrice.toLocaleString("sr-RS")} RSD
+                    <span style={{ opacity: 0.7, fontWeight: 700 }}> · {totalDur} min</span>
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>Stavki: {selSrvIds.length}</div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Preview ispod dugmeta (kada panel nije otvoren) */}
+      {selSrvIds.length > 0 && !srvOpen && (
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 14,
+            fontWeight: 600,
+            background: "rgba(0,0,0,.04)",
+            padding: "6px 10px",
+            borderRadius: 8,
+          }}
+        >
+          {(() => {
+            const sel = selSrvIds.map((id) => servicesById.get(id)).filter(Boolean);
+            const totalPrice = sel.reduce((a, s) => a + (getServicePrice(s) || 0), 0);
+            const totalDur = sel.reduce((a, s) => a + Number(s.durationMin || 0), 0);
+            return (
+              <>
+                Ukupno: <b>{totalPrice.toLocaleString("sr-RS")} RSD</b> · <b>{totalDur} min</b>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>
-  ) : (
+  )
+) : (
+
+  
+
     // Kraj — SAKRIJ kad je block + panel sa danima
     showModeFields && !(mode === "block" && showBlockDaysUI) && (
       <div style={ctlItem}>
@@ -3018,6 +3312,33 @@ function DayGrid({
                   const bg = apptBgFor(a, colorForServiceId);
                   const srvDef = servicesById.get(a.serviceId);
                   const price = Number(a.price ?? srvDef?.price ?? 0);
+// --- multi-service derivati za PRIKAZ ---
+const apptServices = Array.isArray(a?.servicesInfo) && a.servicesInfo.length
+  ? a.servicesInfo
+  : (Array.isArray(a?.serviceIds) && a.serviceIds.length
+      ? a.serviceIds
+          .map(id => servicesById.get(id))
+          .filter(Boolean)
+          .map(s => ({
+            id: s.id,
+            name: s.name,
+            durationMin: s.durationMin,
+            price: getServicePrice(s),
+          }))
+      : (() => {
+          const one = servicesById.get(a.serviceId);
+          return one ? [{
+            id: one.id,
+            name: one.name,
+            durationMin: one.durationMin,
+            price: getServicePrice(one),
+          }] : [];
+        })());
+
+const apptNames = apptServices.map(s => s.name).join(", ");
+const priceTotal = (a?.price != null)
+  ? Number(a.price)
+  : apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0);
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -3055,17 +3376,18 @@ style={{
 }}
 
 
-                      title={
-                        isVacation
-                          ? "Odmor"
-                          : isBreak
-                          ? "Pauza"
-                          : isBlock
-                          ? "Blokirano"
-                          : `${a.serviceName || "Usluga"}${
-                              price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""
-                            }${a.clientName ? " · " + a.clientName : ""}`
-                      }
+                    title={
+  isVacation
+    ? "Odmor"
+    : isBreak
+    ? "Pauza"
+    : isBlock
+    ? "Blokirano"
+    : `${apptNames || a.serviceName || "Usluga"}${
+        priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
+      }${a.clientName ? " · " + a.clientName : ""}`
+}
+
                       onDragOver={(e) => e.preventDefault()}
                       onTouchStart={stopTouchPropagation}
                       onTouchEnd={stopTouchPropagation}
@@ -3079,8 +3401,9 @@ style={{
     ? "Blokirano"
     : isShift
     ? "Smena"
-    : a.serviceName || "Usluga"}
+    : (apptNames || a.serviceName || "Usluga")}
 </div>
+
 
 
                       {/* Vreme na BLOKADI */}
@@ -3093,20 +3416,28 @@ style={{
                         </div>
                       )}
 
-                     {!isBreak && !isBlock && !isVacation && !isShift && (
-                        <div style={metaRow}>
-                          <span style={pill}>
-                            <FiClock style={{ marginRight: 6 }} />
-                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
-                          </span>
-                          {a.clientName && (
-                            <span style={pillLight(isMobile)}>
-                              <FiUser style={{ marginRight: 6 }} />
-                              {a.clientName}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                {!isBreak && !isBlock && !isVacation && !isShift && (
+  <div style={metaRow}>
+    <span style={pill}>
+      <FiClock style={{ marginRight: 6 }} />
+      {minToTime(a.startMin)}–{minToTime(a.endMin)}
+    </span>
+
+    {priceTotal > 0 && (
+      <span style={pill}>
+        {priceTotal.toLocaleString("sr-RS")} RSD
+      </span>
+    )}
+
+    {a.clientName && (
+      <span style={pillLight(isMobile)}>
+        <FiUser style={{ marginRight: 6 }} />
+        {a.clientName}
+      </span>
+    )}
+  </div>
+)}
+
 
                       {isBreak && (
                         <div style={metaRow}>
@@ -3425,12 +3756,34 @@ function ScheduleGrid({
             const leftPct = (a.lane || 0) * widthPct;
 
             const empName = employeesById.get(a.employeeId)?.name || "—";
-            const srv =
-              servicesById.get(a.serviceId)?.name ||
-              a.serviceName ||
-              "Usluga";
-              const srvDef = servicesById.get(a.serviceId);            // NOVO
-const price = Number(a.price ?? srvDef?.price ?? 0);     // NOVO
+           const srvDef = servicesById.get(a.serviceId);
+
+ // --- multi-service derivati (radi i sa legacy zapisima) ---
+ const apptServices = Array.isArray(a?.servicesInfo) && a.servicesInfo.length
+   ? a.servicesInfo
+   : (Array.isArray(a?.serviceIds) && a.serviceIds.length
+       ? a.serviceIds
+           .map(id => servicesById.get(id))
+           .filter(Boolean)
+          .map(s => ({
+            id: s.id,
+             name: s.name,
+             durationMin: s.durationMin,
+            price: getServicePrice(s),
+           }))
+       : (() => {
+          const one = servicesById.get(a.serviceId);
+           return one ? [{
+              id: one.id,
+             name: one.name,
+             durationMin: one.durationMin,
+             price: getServicePrice(one),
+           }] : [];
+       })());
+ const apptNames = apptServices.map(s => s.name).join(", ");
+ const priceTotal = (a?.price != null)
+  ? Number(a.price)
+  : apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0);
 
             const phone = normPhone(a.clientPhone);
             const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -3451,11 +3804,12 @@ const price = Number(a.price ?? srvDef?.price ?? 0);     // NOVO
                   left: `calc(${leftPct}% + 6px)`,
                   width: `calc(${widthPct}% - 12px)`,
                 }}
-               title={`${srv} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}${ price > 0 ? ` • ${price.toLocaleString("sr-RS")} RSD` : ""
-}`}
+   title={`${apptNames || a.serviceName || "Usluga"} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}${
+ priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
+ }`}
 
               >
-                <div style={cardTitle(isMobile)}>{srv}</div>
+                <div style={cardTitle(isMobile)}>{apptNames || a.serviceName || "Usluga"}</div>
 
             <div style={metaRow}>
   <span style={pill}>
@@ -3464,11 +3818,11 @@ const price = Number(a.price ?? srvDef?.price ?? 0);     // NOVO
   </span>
 
   {/* NOVO: cena usluge na kartici */}
-  {price > 0 && (
-    <span style={pillLight(isMobile)}>
-      {price.toLocaleString("sr-RS")} RSD
-    </span>
-  )}
+ {priceTotal > 0 && (
+   <span style={pillLight(isMobile)}>
+     {priceTotal.toLocaleString("sr-RS")} RSD
+  </span>
+ )}
 
   <span style={pillLight(isMobile)}>
     <FiUser style={{ marginRight: 6 }} />
@@ -3693,6 +4047,12 @@ function ApptModal({
     if (mq.addEventListener) mq.addEventListener("change", h); else mq.addListener(h);
     return () => { if (mq.removeEventListener) mq.removeEventListener("change", h); else mq.removeListener(h); };
   }, []);
+React.useEffect(() => {
+  if (!isMobile) return;
+  const prev = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  return () => { document.body.style.overflow = prev; };
+}, [isMobile]);
 
   // --------- lokalni state ---------
   const [empId, setEmpId] = React.useState(appt.employeeId);
@@ -3703,9 +4063,9 @@ function ApptModal({
   const [endHHMM, setEndHHMM] = React.useState(initialEnd);
 
   // cena (EDIT)
-  const [editPrice, setEditPrice] = React.useState(appt?.price ?? 0);
+ const [editPrice, setEditPrice] = React.useState(appt?.price ?? apptTotalPrice ?? 0);
   React.useEffect(() => {
-    setEditPrice(appt?.price ?? 0);
+    setEditPrice(appt?.price ?? apptTotalPrice ?? 0);
     setEmpId(appt.employeeId);
     setStart(appt.startHHMM);
     setEndHHMM(appt.endHHMM || (appt.endMin != null ? minToTime(appt.endMin) : initialEnd));
@@ -3713,6 +4073,34 @@ function ApptModal({
 
   // izvedeno trajanje iz start/end
   const durationMin = Math.max(0, timeToMin(endHHMM) - timeToMin(start));
+   // --- multi-service derivati (radi i za legacy zapise) ---
+ const apptServices = Array.isArray(appt?.servicesInfo) && appt.servicesInfo.length
+   ? appt.servicesInfo
+   : (Array.isArray(appt?.serviceIds) && appt.serviceIds.length
+       ? appt.serviceIds
+           .map(id => servicesById.get(id))
+           .filter(Boolean)
+           .map(s => ({
+             id: s.id,
+             name: s.name,
+             durationMin: s.durationMin,
+             price: (s.price ?? s.basePrice ?? 0),
+           }))
+       : (() => {
+           const one = servicesById.get(appt.serviceId);
+          return one ? [{
+             id: one.id,
+             name: one.name,
+             durationMin: one.durationMin,
+             price: (one.price ?? one.basePrice ?? 0),
+           }] : [];
+         })());
+
+ const apptNames = apptServices.map(s => s.name).join(", ");
+ const apptTotalDuration = apptServices.reduce((a, s) => a + Number(s.durationMin || 0), 0);
+ const apptTotalPrice = (appt?.price != null)
+   ? Number(appt.price)
+  : apptServices.reduce((a, s) => a + Number(s.price || 0), 0);
 
   // --- klijent / istorija / kazna
   const phoneN = normPhone(appt.clientPhone);
@@ -3734,64 +4122,201 @@ function ApptModal({
 
   // --- mini stilovi (sa mobilnim prilagođavanjem)
   const styles = {
-    backdrop: {
-      position: "fixed", inset: 0, background: "rgba(0,0,0,.45)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999,
-      padding: isMobile ? "8px" : "16px",
-    },
-    card: {
-      width: isMobile ? "100%" : 520,
-      maxWidth: "100%",
-      background: "linear-gradient(180deg,#ffffff,#f6f7fb)",
-      borderRadius: isMobile ? 14 : 16,
-      boxShadow: "0 16px 40px rgba(0,0,0,.35)",
-      padding: isMobile ? 14 : 18,
-    },
-    header: {
-      display: "flex", alignItems: "center", gap: 10, marginBottom: isMobile ? 8 : 12,
-    },
-    close: {
-      marginLeft: "auto", border: "none", background: "transparent",
-      fontSize: isMobile ? 22 : 24, cursor: "pointer", lineHeight: 1,
-    },
+backdrop: {
+  position: "fixed", inset: 0,
+  background: "rgba(0,0,0,.45)",
+  zIndex: 9999,
+  display: "flex",
+  alignItems: isMobile ? "stretch" : "center",
+  justifyContent: isMobile ? "stretch" : "center",
+  padding: isMobile ? 0 : 12,
+},
+
+card: {
+  width: isMobile ? "100vw" : "min(560px, 90vw)", // šire na desktopu
+  maxWidth: "100%",
+  height: isMobile ? "100dvh" : "auto",
+  maxHeight: isMobile ? "100dvh" : "92vh",
+  background: "linear-gradient(180deg,#ffffff,#f7f8fc)",
+  borderRadius: isMobile ? 0 : 20,                // lepše na desktopu
+  boxShadow: "0 14px 36px rgba(0,0,0,.32)",
+  display: "flex", flexDirection: "column",
+  overflowY: isMobile ? "auto" : "hidden",
+},
+
+
+body: {
+  padding: isMobile ? 8 : 14,     // zbijenije
+  flex: 1,
+  overflowY: isMobile ? "visible" : "auto", // bez ugnježdenog skrola na tel
+  display: "grid",
+  gap: isMobile ? 6 : 12,
+},
+
+
+
+
+
+header: {
+  position: "sticky", top: 0, zIndex: 2,
+  display: "flex", alignItems: "center", gap: 10,
+  padding: isMobile ? "12px 16px" : "16px 20px",
+  background: "linear-gradient(135deg,#fff,#ffe3ef)",
+  borderBottom: "1px solid #ffd5e3",
+  boxShadow: "0 2px 8px rgba(0,0,0,.08)",
+},
+
+close: {
+  marginLeft: "auto", border: "none", background: "transparent",
+  fontSize: 24, cursor: "pointer", lineHeight: 1,
+  width: isMobile ? 44 : 28, height: isMobile ? 44 : 28,
+  display: "flex", alignItems: "center", justifyContent: "center",
+},
+
     colorDot: (cl) => ({
       width: 12, height: 12, borderRadius: 999, background: cl, boxShadow: "0 0 0 2px rgba(0,0,0,.06) inset",
     }),
-    body: { display: "grid", gap: isMobile ? 10 : 12 },
-    field: { display: "grid", gap: 6 },
-    fieldRow: {
-      display: "grid",
-      gap: 8,
-      gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))",
-      alignItems: "stretch",
-    },
-    lbl: { fontWeight: 700, fontSize: isMobile ? 12 : 13, opacity: 0.9 },
-    inp: { width: "100%", padding: isMobile ? "9px 10px" : "10px 12px", borderRadius: 10, border: "1px solid #d8dbe5" },
-    badge: {
-      display: "flex", alignItems: "center", gap: 6,
-      padding: "8px 10px", borderRadius: 10, fontWeight: 700, fontSize: 13,
-    },
-    infoBox: {
-      display: "flex", alignItems: "center", gap: 8,
-      background: "#f3f7ff", color: "#0b3d7a",
-      border: "1px solid #e4ecff", padding: "8px 10px", borderRadius: 10,
-    },
-    actions: {
-      display: "flex", gap: 8, marginTop: isMobile ? 10 : 12, flexWrap: "wrap", alignItems: "stretch",
-    },
-    actionBtn: {
-      padding: isMobile ? "10px 12px" : "10px 14px",
-      borderRadius: 10, border: "1px solid rgba(0,0,0,.08)", cursor: "pointer", fontWeight: 800,
-    },
-    grow: { flex: 1, minWidth: isMobile ? "100%" : 160, margin: isMobile ? "8px 0" : "0 12px" },
-    smallRow: { display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" },
-    pill: {
-      padding: "8px 10px", borderRadius: 999, border: "1px solid #d8dbe5", background: "#fff", cursor: "pointer",
-    },
-    save: {
-      padding: "10px 14px", borderRadius: 10, border: "none",
-      background: "linear-gradient(135deg,#ff5fa2,#ff7fb5)", color: "#fff", fontWeight: 900, cursor: "pointer",
-    },
+
+
+
+fieldRow: {
+  display: "grid",
+  gap: 6,
+  gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0,1fr))",
+  alignItems: "center",
+},
+
+
+
+
+inp: {
+  width: "100%",
+  height: isMobile ? 44 : 40,
+  padding: "0 12px",
+  fontSize: 14,
+  borderRadius: 12,
+  border: "1px solid #ddd",
+  background: "#fff",
+  color: "#000",
+  boxShadow: "inset 0 1px 2px rgba(0,0,0,.04)",
+},
+
+lbl: { fontWeight: 800, fontSize: isMobile ? 13 : 13, opacity: .9 },
+
+
+badge: {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  padding: isMobile ? "2px 6px" : "3px 7px",
+  borderRadius: 999, fontSize: isMobile ? 10 : 11, fontWeight: 700,
+},
+infoBox: {
+  display: "flex", alignItems: "center", gap: 8,
+  background: "#f3f7ff", color: "#0b3d7a",
+  border: "1px solid #e4ecff", padding: isMobile ? "6px 8px" : "8px 10px",
+  borderRadius: 10, fontSize: isMobile ? 12 : 13,
+},
+
+
+// +/- 5 min – mali i u liniji sa inputom
+smallRow: { display: "flex", gap: 6, marginTop: 0, flexWrap: "nowrap" },
+pill: {
+  padding: "6px 8px",
+  fontSize: 12,
+  borderRadius: 8,
+  border: "1px solid #d8dbe5",
+  background: "#fff",
+  cursor: "pointer",
+},
+actions: {
+  position: "sticky", bottom: 0, zIndex: 2,
+  background: "#fff",
+  borderTop: "1px solid #eee",
+  boxShadow: "0 -6px 16px rgba(0,0,0,.06)",
+  padding: isMobile
+    ? "12px calc(env(safe-area-inset-right,0) + 12px) calc(env(safe-area-inset-bottom,0) + 12px) calc(env(safe-area-inset-left,0) + 12px)"
+    : "14px 16px",
+  borderBottomLeftRadius: isMobile ? 0 : 20,
+  borderBottomRightRadius: isMobile ? 0 : 20,
+
+  /* Dva reda: gore (Obriši + Cena), dole (dugmad) */
+  display: "grid",
+  gap: 14,              // razmak između redova
+},
+
+rowTop: {
+  display: "grid",
+  gridTemplateColumns: "140px 1fr",  // Obriši | Cena
+  alignItems: "center",
+  gap: 12,
+},
+
+rowBottom: {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+  flexWrap: "wrap",
+},
+
+deleteBtn: {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  justifyContent: "center",
+  padding: "10px 14px",
+  borderRadius: 12,
+  border: "1px solid #ffd3d8",
+  background: "#fff5f6",
+  color: "#7a1b1b",
+  fontWeight: 900,
+  cursor: "pointer",
+  minHeight: 44,
+},
+
+priceGroup: {
+  display: "grid",
+  gap: 6,
+},
+
+
+actionBtn: {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  padding: "10px 14px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,.06)",
+  background: "#fff",
+  color: "#111",
+  fontWeight: 700,
+  cursor: "pointer",
+  minHeight: 44,
+},
+save: {
+  padding: "12px 16px",
+  borderRadius: 12,
+  border: "none",
+  background: "linear-gradient(135deg,#ff3f92,#ff5fa2)",
+  color: "#fff",
+  fontWeight: 700,
+  cursor: "pointer",
+  minHeight: 46,
+},
+
+buttonsRow: {
+  display: "flex",
+  gap: 6,
+  flexWrap: "wrap",
+  justifyContent: isMobile ? "stretch" : "flex-end",
+},
+grow: {
+  flex: 1,
+  minWidth: isMobile ? "100%" : 180,
+  margin: isMobile ? "6px 0" : "0 10px",
+  display: "flex",
+  flexDirection: "column",
+},
+
+
+
+
+
+
   };
 
   // brzi +/- za kraj
@@ -3809,15 +4334,15 @@ function ApptModal({
     <div style={styles.backdrop} onClick={onClose}>
       <div style={styles.card} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div style={styles.header}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={styles.colorDot(appt.color || colorForServiceId(appt.serviceId))} />
-            <div style={{ fontWeight: 900, fontSize: isMobile ? 16 : 18 }}>
-              {appt.serviceName || servicesById.get(appt.serviceId)?.name || "Usluga"}
-            </div>
-          </div>
-          <button style={styles.close} onClick={onClose} title="Zatvori">×</button>
-        </div>
+  <div style={styles.header}>
+  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+    <div style={styles.colorDot(appt.color || colorForServiceId(appt.serviceId))} />
+    <div style={{ fontWeight: 900, fontSize: isMobile ? 16 : 17, lineHeight: 1.25, wordBreak: "break-word" }}>
+      {apptNames || appt.serviceName || servicesById.get(appt.serviceId)?.name || "Usluga"}
+    </div>
+  </div>
+  <button style={styles.close} onClick={onClose} title="Zatvori">×</button>
+</div>
 
         {/* Body */}
         <div style={styles.body}>
@@ -3873,14 +4398,33 @@ function ApptModal({
             </div>
             <div style={{ ...styles.field }}>
               <label style={styles.lbl}>Trajanje</label>
-              <input
-                type="text"
-                value={`${durationMin} min`}
-                disabled
-                style={{ ...styles.inp, background: "#fafbff" }}
-              />
+             <input
+  type="text"
+  value={`${durationMin} min`}
+  disabled
+  style={{ ...styles.inp, background: "#fafbff", opacity: 0.9 }}
+/>
+
             </div>
           </div>
+{apptServices.length > 0 && (
+  <div style={{ display: "grid", gap: 6 }}>
+    <div style={{ fontWeight: 700, opacity: .9 }}>Usluge</div>
+    {apptServices.map(s => (
+      <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+        <span style={{ opacity: .6 }}>•</span>
+        <div style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
+        <span style={{ opacity: .7 }}>{Number(s.price||0).toLocaleString("sr-RS")} RSD</span>
+        <span style={{ opacity: .6 }}>· {s.durationMin} min</span>
+      </div>
+    ))}
+    <div style={{ marginTop: 2, fontWeight: 800 }}>
+      Ukupno: {Number(apptTotalPrice).toLocaleString("sr-RS")} RSD · {appt.durationMin ?? apptTotalDuration} min
+    </div>
+  </div>
+)}
+
+
 
           {/* Bedževi */}
           <div style={styles.fieldRow}>
@@ -3890,9 +4434,9 @@ function ApptModal({
             <div style={{ ...styles.badge, background: "#fff3e0", color: "#7a3d0b" }}>
               <FiClock /> {start} → {endForBadge}
             </div>
-            <div style={{ ...styles.badge, background: "#e8fff0", color: "#0b7a3d" }}>
-              Cena: <b>{Number(editPrice).toLocaleString("sr-RS")} RSD</b>
-            </div>
+         <div style={{ ...styles.badge, background: "#e8fff0", color: "#0b7a3d" }}>
+   Cena: <b>{Number(editPrice ?? apptTotalPrice).toLocaleString("sr-RS")} RSD</b>
+ </div>
             {showNoShowHere && (
               <div style={{ ...styles.badge, background: "#ffe8ea", color: "#7a1b1b" }}>
                 <FiAlertTriangle /> No-show istorija
@@ -3923,60 +4467,68 @@ function ApptModal({
         </div>
 
         {/* Donja traka – akcije */}
-        <div style={styles.actions}>
-          {/* Levo: Obriši */}
-          <button
-            style={{ ...styles.actionBtn, background: "#ffe1e1", color: "#7a1b1b" }}
-            onClick={onDelete}
-            title="Obriši termin"
-          >
-            <FiTrash2 /> Obriši
-          </button>
+        {/* Donja traka – akcije */}
+<div style={styles.actions}>
+  {/* Levo: Obriši */}
+  <button
+    style={{
+      ...styles.actionBtn,
+      background: "#ffe1e1",
+      color: "#7a1b1b",
+      flex: "0 0 auto",         // ⬅️ dugme ne raste više
+      minWidth: 70,             // ⬅️ opciono, da ima lepu širinu
+    }}
+    onClick={onDelete}
+    title="Obriši termin"
+  >
+    <FiTrash2 /> Obriši
+  </button>
 
-          {/* Sredina: Cena */}
-          <div style={styles.grow}>
-            <label style={{ display: "block", fontWeight: 700, marginBottom: 4 }}>Cena</label>
-            <input
-              type="number"
-              value={editPrice}
-              onChange={(e) => setEditPrice(e.target.value)}
-              style={{ ...styles.inp }}
-            />
-          </div>
+  {/* Sredina: Cena */}
+  <div style={{ ...styles.grow }}>
+    <label style={{ display: "block", fontWeight: 600, marginBottom: 3 }}>Cena</label>
+    <input
+      type="number"
+      value={editPrice}
+      onChange={(e) => setEditPrice(e.target.value)}
+      style={{ ...styles.inp }}
+    />
+  </div>
 
-          {/* Desno: Otkaži / No-show / Sačuvaj */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              style={{ ...styles.actionBtn, background: "#fff", color: "#222" }}
-              onClick={onCancel}
-              title="Otkaži"
-            >
-              <FiSlash /> Otkaži
-            </button>
-            <button
-              style={{ ...styles.actionBtn, background: "#fff7e6", color: "#7a3d0b" }}
-              onClick={onNoShow}
-              title="No-show"
-            >
-              <FiAlertTriangle /> No-show
-            </button>
-            <button
-              style={styles.save}
-              onClick={() =>
-                onSave({
-                  employeeId: empId,
-                  startHHMM: start,
-                  endHHMM,                               // ⬅️ novo
-                  durationMin,                           // ⬅️ novo
-                  price: Number(editPrice) || 0,
-                })
-              }
-              title="Sačuvaj izmene"
-            >
-              <FiSave /> Sačuvaj
-            </button>
-          </div>
-        </div>
+  {/* Desno: Otkaži / No-show / Sačuvaj */}
+  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <button
+      style={{ ...styles.actionBtn, background: "#fff", color: "#222" }}
+      onClick={onCancel}
+      title="Otkaži"
+    >
+      <FiSlash /> Otkaži
+    </button>
+    <button
+      style={{ ...styles.actionBtn, background: "#fff7e6", color: "#7a3d0b" }}
+      onClick={onNoShow}
+      title="No-show"
+    >
+      <FiAlertTriangle /> No-show
+    </button>
+    <button
+      style={styles.save}
+      onClick={() =>
+        onSave({
+          employeeId: empId,
+          startHHMM: start,
+          endHHMM,
+          durationMin,
+          price: Number(editPrice) || 0,
+        })
+      }
+      title="Sačuvaj izmene"
+    >
+      <FiSave /> Sačuvaj
+    </button>
+  </div>
+</div>
+
       </div>
     </div>
   );
@@ -4392,96 +4944,117 @@ const pillLight = (isMobile) => ({
 });
 
 /* --- Modal --- */
+/* --- Modal (compact) --- */
 const modalBackdrop = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,.5)",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  zIndex: 2147483647,
+   position: "fixed", inset: 0, background: "rgba(0,0,0,.45)",
+  zIndex: 9999,
+
+
+
 };
+
 const modalCard = {
-  width: "min(560px, 96vw)",
+  width: "min(520px, 92vw)",   // bilo 560 → 520
+  maxHeight: "90vh",           // ograniči visinu
   background: "rgba(255,255,255,.98)",
-  borderRadius: 18,
-  boxShadow: "0 20px 60px rgba(0,0,0,.35)",
+  borderRadius: 16,
+  boxShadow: "0 18px 50px rgba(0,0,0,.35)",
   overflow: "hidden",
   color: "#000",
+  display: "flex",
+  flexDirection: "column",
 };
+
 const modalHeader = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  gap: 10,
-  padding: "12px 14px",
+  gap: 8,
+  padding: "10px 12px",        // manje paddinga
   background: "linear-gradient(135deg,#ffffff,#ffe3ef)",
   borderBottom: "1px solid #ffd5e3",
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
 };
+
 const colorDot = (bg) => ({
-  width: 14,
-  height: 14,
+  width: 12,
+  height: 12,
   borderRadius: 999,
   background: bg || "#ff7fb5",
-  boxShadow: "0 0 0 3px rgba(0,0,0,.08)",
+  boxShadow: "0 0 0 3px rgba(0,0,0,.06)",
 });
+
 const modalClose = {
   border: "none",
   background: "#fff",
   color: "#000",
   borderRadius: 10,
-  height: 32,
-  width: 32,
+  height: 28,
+  width: 28,
   cursor: "pointer",
   display: "grid",
   placeItems: "center",
-  boxShadow: "0 4px 10px rgba(0,0,0,.12)",
+  boxShadow: "0 3px 8px rgba(0,0,0,.12)",
 };
-const modalBody = { padding: 14 };
-const field = { display: "grid", gap: 6, marginBottom: 10 };
+
+const modalBody = {
+  padding: 12,                 // bilo 14 → 12
+  flex: 1,
+  overflowY: "auto",           // skrol unutar modala
+};
+
+const field = { display: "grid", gap: 6, marginBottom: 8 };  // zbijeno
 const fieldLbl = { fontSize: 12, fontWeight: 900, color: "#333" };
+
 const fieldRow = {
   display: "flex",
-  gap: 8,
+  gap: 6,                      // bilo 8
   flexWrap: "wrap",
   alignItems: "center",
 };
+
 const badge = {
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
-  padding: "4px 8px",
+  padding: "3px 7px",          // manje
   borderRadius: 999,
-  fontSize: 11,
+  fontSize: 10,                // manje
   fontWeight: 700,
 };
+
 const infoBox = {
   display: "flex",
   alignItems: "center",
   gap: 8,
-  padding: 10,
+  padding: 8,                  // manje
   background: "#f7f7f7",
-  borderRadius: 12,
+  borderRadius: 10,
   color: "#222",
   border: "0.5px solid #eee",
 };
+
 const modalActions = {
   display: "flex",
   gap: 8,
-  padding: 12,
+  padding: 10,                 // manje
   background: "#fafafa",
   borderTop: "1px solid #eee",
 };
+
 const actionBtn = {
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
-  padding: "10px 12px",
+  padding: "8px 10px",         // manje
   border: "none",
   borderRadius: 10,
   cursor: "pointer",
   fontWeight: 900,
 };
+
 
 //* --- Responsive fine-tuning --- *//
 const responsiveCSS = `
@@ -4615,6 +5188,13 @@ const responsiveCSS = `
 .grid-day button:hover, .grid-schedule button:hover {
   scrollbar-width: thin;
   scrollbar-color: rgba(0,0,0,.2) transparent;
+}
+
+@media (max-width: 480px) {
+  .admincal .modal-header { padding: 8px 10px !important; }
+  .admincal .modal-body { padding: 8px !important; gap: 6px !important; }
+  .admincal .badge { font-size: 9px !important; padding: 2px 5px !important; }
+  .admincal .color-dot { display: none !important; }
 }
 
 
