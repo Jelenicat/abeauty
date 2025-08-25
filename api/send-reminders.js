@@ -32,28 +32,15 @@ function initAdmin() {
 }
 
 /* ---------- helpers ---------- */
-function formatDateTime(dateISO, timeHHMM, tz) {
-  const [H, M] = (timeHHMM || '00:00').split(':').map(Number);
-  const [y, m, d] = dateISO.split('-').map(Number);
-
-  // Napravi datum u UTC, ne u lokalnoj zoni servera
-  const dt = new Date(Date.UTC(y, m - 1, d, H, M, 0));
-
-  const fmtDate = new Intl.DateTimeFormat('sr-RS', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(dt);
-
-  const fmtTime = new Intl.DateTimeFormat('sr-RS', {
-    timeZone: tz,
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(dt);
-
+function formatDateTimeRAW(dateISO, timeHHMM) {
+  const [y, m, d] = String(dateISO).split("-");
+  const hhmm = String(timeHHMM || "00:00").padStart(5, "0");
+  // 26.08.2025. format:
+  const fmtDate = `${d}.${m}.${y}.`;
+  const fmtTime = hhmm; // bez konverzije
   return { fmtDate, fmtTime };
 }
+
 
 
 function getLocalHour(tz) {
@@ -224,16 +211,15 @@ export default async function handler(req, res) {
     }
 
     // format poruke (čist ASCII potpis, bez srca)
-    const buildMsg = (a) => {
-      const { fmtDate, fmtTime } = formatDateTime(a.dateKey, a.startHHMM, tz);
-      let txt =
-        `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate} u ${fmtTime}h` +
-        ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vas aBeauty`;
-      if (asciiOnly) {
-        txt = toAscii(txt);
-      }
-      return txt;
-    };
+ const buildMsg = (a) => {
+  const { fmtDate, fmtTime } = formatDateTimeRAW(a.dateKey, a.startHHMM);
+  let txt =
+    `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate} u ${fmtTime}h` +
+    ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vas aBeauty`;
+  if (asciiOnly) txt = toAscii(txt);
+  return txt;
+};
+
 
     // Dry-run ili zabranjeno vreme
     if (dryRun || !shouldSendNow || !allowed) {
