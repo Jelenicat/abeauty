@@ -35,7 +35,9 @@ function initAdmin() {
 function formatDateTime(dateISO, timeHHMM, tz) {
   const [H, M] = (timeHHMM || '00:00').split(':').map(Number);
   const [y, m, d] = dateISO.split('-').map(Number);
-  const dt = new Date(y, m - 1, d, H, M, 0); // ← lokalno vreme, bez UTC
+
+  // Napravi datum u UTC, ne u lokalnoj zoni servera
+  const dt = new Date(Date.UTC(y, m - 1, d, H, M, 0));
 
   const fmtDate = new Intl.DateTimeFormat('sr-RS', {
     timeZone: tz,
@@ -43,13 +45,16 @@ function formatDateTime(dateISO, timeHHMM, tz) {
     month: '2-digit',
     day: '2-digit',
   }).format(dt);
+
   const fmtTime = new Intl.DateTimeFormat('sr-RS', {
     timeZone: tz,
     hour: '2-digit',
     minute: '2-digit',
   }).format(dt);
+
   return { fmtDate, fmtTime };
 }
+
 
 function getLocalHour(tz) {
   const s = new Intl.DateTimeFormat('en-GB', {
