@@ -588,7 +588,7 @@ const buttonRef = useRef(null);
 const panelRef = useRef(null);
 
 // koristiš li već isNarrow negde? Ako ne, dodaj:
-const isNarrow = typeof window !== "undefined" ? window.innerWidth < 720 : false;
+
 
 
 
@@ -1985,59 +1985,59 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
         <span style={{ opacity: 0.6 }}>{srvOpen ? "▲" : "▼"}</span>
       </button>
 
-      {/* PANEL */}
-      {srvOpen && (
-        <div
-          ref={panelRef}
-          style={{
-            position: isNarrow ? "fixed" : "absolute",
-            zIndex: 50,
-            boxSizing: "border-box",
-            marginTop: isNarrow ? 0 : 8,
+     {/* PANEL */}
+{srvOpen && (
+  <div
+    ref={panelRef}
+    style={{
+      position: isMobile ? "fixed" : "absolute",
+      zIndex: 50,
+      boxSizing: "border-box",
 
-            // mobilni: centriran bottom-sheet; desktop: desno uz polje
-            ...(isNarrow
-              ? {
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  top: "12vh",
-                  width: "94vw",
-                  maxHeight: "76vh",
-                }
-              : {
-                  right: 0,
-                  left: "auto",
-                  width: "min(520px, calc(100vw - 32px))",
-                  maxHeight: "min(68vh, 520px)",
-                }),
-
-            overflow: "auto",
+      // 📱 mobilni: bottom-sheet; 💻 desktop: dropdown desno
+      ...(isMobile
+        ? {
+            left: 0,
+            right: 0,
+            bottom: 0,
+            top: "auto",
+            width: "100vw",
+            maxHeight: "80vh",
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+          }
+        : {
+            right: 0,
+            left: "auto",
+            width: "min(520px, calc(100vw - 32px))",
+            maxHeight: "min(68vh, 520px)",
             borderRadius: 16,
-            border: "1px solid rgba(0,0,0,.08)",
-            background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
-            boxShadow: "0 16px 44px rgba(0,0,0,.28)",
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          {/* Sticky header */}
-          <div
-            style={{
-              position: "sticky",
-              top: 0,
-              zIndex: 1,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "12px 14px",
-              borderBottom: "1px solid rgba(0,0,0,.06)",
-              background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-            }}
-          >
-            <div style={{ fontWeight: 900, fontSize: 16 }}>Usluge</div>
-            <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>
+          }),
+
+      overflow: "auto",
+      border: "1px solid rgba(0,0,0,.08)",
+      background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
+      boxShadow: "0 16px 44px rgba(0,0,0,.28)",
+    }}
+    onMouseDown={(e) => e.stopPropagation()}
+    onTouchStart={(e) => e.stopPropagation()}
+  >
+    {/* Sticky header */}
+    <div
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 1,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "12px 14px",
+        borderBottom: "1px solid rgba(0,0,0,.06)",
+        background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
+      }}
+    >
+      <div style={{ fontWeight: 900, fontSize: 16 }}>Usluge</div>
+      <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>
               {selSrvIds.length ? `Izabrano: ${selSrvIds.length}` : "Nije izabrano"}
             </div>
           </div>
@@ -4123,59 +4123,63 @@ React.useEffect(() => {
   // --- mini stilovi (sa mobilnim prilagođavanjem)
   const styles = {
 backdrop: {
-  position: "fixed", inset: 0,
-  background: "rgba(0,0,0,.45)",
-  zIndex: 9999,
-  display: "flex",
-  alignItems: isMobile ? "stretch" : "center",
-  justifyContent: isMobile ? "stretch" : "center",
-  padding: isMobile ? 0 : 12,
-},
+    position: "fixed", inset: 0,
+    background: "rgba(0,0,0,.45)",
+    zIndex: 9999,
+    display: "flex",
+    alignItems: isMobile ? "stretch" : "center",
+    justifyContent: isMobile ? "stretch" : "center",
+    padding: isMobile ? 0 : 12,
+  },
 
-card: {
-  width: isMobile ? "100vw" : "min(560px, 90vw)", // šire na desktopu
-  maxWidth: "100%",
-  height: isMobile ? "100dvh" : "auto",
-  maxHeight: isMobile ? "100dvh" : "92vh",
-  background: "linear-gradient(180deg,#ffffff,#f7f8fc)",
-  borderRadius: isMobile ? 0 : 20,                // lepše na desktopu
-  boxShadow: "0 14px 36px rgba(0,0,0,.32)",
-  display: "flex", flexDirection: "column",
-  overflowY: isMobile ? "auto" : "hidden",
-},
+  card: {
+    width: isMobile ? "100vw" : "min(560px, 90vw)",
+    maxWidth: "100%",
+    // iOS safe-vh: kombinuj dveh vrednosti
+    height: isMobile ? "100vh" : "auto",
+    minHeight: isMobile ? "100dvh" : "auto",
+    maxHeight: isMobile ? "100dvh" : "92vh",
+    background: "linear-gradient(180deg,#ffffff,#f7f8fc)",
+    borderRadius: isMobile ? 0 : 20,
+    boxShadow: "0 14px 36px rgba(0,0,0,.32)",
+    display: "flex", flexDirection: "column",
+    overflow: "hidden",
+  },
 
+  header: {
+    position: "sticky", top: 0, zIndex: 2,
+    display: "flex", alignItems: "center", gap: 10,
+    padding: isMobile ? "12px 16px" : "16px 20px",
+    background: "linear-gradient(135deg,#fff,#ffe3ef)",
+    borderBottom: "1px solid #ffd5e3",
+    boxShadow: "0 2px 8px rgba(0,0,0,.08)",
+  },
 
-body: {
-  padding: isMobile ? 8 : 14,     // zbijenije
-  flex: 1,
-  overflowY: isMobile ? "visible" : "auto", // bez ugnježdenog skrola na tel
-  display: "grid",
-  gap: isMobile ? 6 : 12,
-},
+  close: {
+    marginLeft: "auto", border: "none", background: "transparent",
+    fontSize: 24, cursor: "pointer", lineHeight: 1,
+    width: isMobile ? 44 : 28, height: isMobile ? 44 : 28,
+    display: "flex", alignItems: "center", justifyContent: "center",
+  },
 
+  colorDot: (cl) => ({
+    width: 12, height: 12, borderRadius: 999, background: cl,
+    boxShadow: "0 0 0 2px rgba(0,0,0,.06) inset",
+  }),
+   field: {
+    display: "grid",
+    gap: 6,
+    marginBottom: 8,
+  },
+  
 
-
-
-
-header: {
-  position: "sticky", top: 0, zIndex: 2,
-  display: "flex", alignItems: "center", gap: 10,
-  padding: isMobile ? "12px 16px" : "16px 20px",
-  background: "linear-gradient(135deg,#fff,#ffe3ef)",
-  borderBottom: "1px solid #ffd5e3",
-  boxShadow: "0 2px 8px rgba(0,0,0,.08)",
-},
-
-close: {
-  marginLeft: "auto", border: "none", background: "transparent",
-  fontSize: 24, cursor: "pointer", lineHeight: 1,
-  width: isMobile ? 44 : 28, height: isMobile ? 44 : 28,
-  display: "flex", alignItems: "center", justifyContent: "center",
-},
-
-    colorDot: (cl) => ({
-      width: 12, height: 12, borderRadius: 999, background: cl, boxShadow: "0 0 0 2px rgba(0,0,0,.06) inset",
-    }),
+  body: {
+    padding: isMobile ? 8 : 14,
+    flex: 1,
+    overflowY: "auto",                 // auto na svim uredjajima
+    display: "grid",
+    gap: isMobile ? 6 : 12,
+  },
 
 
 
@@ -4189,27 +4193,25 @@ fieldRow: {
 
 
 
-inp: {
-  width: "100%",
-  height: isMobile ? 44 : 40,
-  padding: "0 12px",
-  fontSize: 14,
-  borderRadius: 12,
-  border: "1px solid #ddd",
-  background: "#fff",
-  color: "#000",
-  boxShadow: "inset 0 1px 2px rgba(0,0,0,.04)",
-},
+  inp: {
+    width: "100%",
+    height: isMobile ? 44 : 40,
+    padding: "0 12px",
+    fontSize: 14,
+    borderRadius: 12,
+    border: "1px solid #ddd",
+    background: "#fff",
+    color: "#000",
+    boxShadow: "inset 0 1px 2px rgba(0,0,0,.04)",
+  },
 
-lbl: { fontWeight: 800, fontSize: isMobile ? 13 : 13, opacity: .9 },
+  badge: {
+    display: "inline-flex", alignItems: "center", gap: 6,
+    padding: isMobile ? "2px 6px" : "3px 7px",
+    borderRadius: 999, fontSize: isMobile ? 10 : 11, fontWeight: 700,
+  },
 
-
-badge: {
-  display: "inline-flex", alignItems: "center", gap: 6,
-  padding: isMobile ? "2px 6px" : "3px 7px",
-  borderRadius: 999, fontSize: isMobile ? 10 : 11, fontWeight: 700,
-},
-infoBox: {
+ infoBox: {
   display: "flex", alignItems: "center", gap: 8,
   background: "#f3f7ff", color: "#0b3d7a",
   border: "1px solid #e4ecff", padding: isMobile ? "6px 8px" : "8px 10px",
@@ -4217,32 +4219,29 @@ infoBox: {
 },
 
 
-// +/- 5 min – mali i u liniji sa inputom
-smallRow: { display: "flex", gap: 6, marginTop: 0, flexWrap: "nowrap" },
-pill: {
-  padding: "6px 8px",
-  fontSize: 12,
-  borderRadius: 8,
-  border: "1px solid #d8dbe5",
-  background: "#fff",
-  cursor: "pointer",
-},
-actions: {
-  position: "sticky", bottom: 0, zIndex: 2,
-  background: "#fff",
-  borderTop: "1px solid #eee",
-  boxShadow: "0 -6px 16px rgba(0,0,0,.06)",
-  padding: isMobile
-    ? "12px calc(env(safe-area-inset-right,0) + 12px) calc(env(safe-area-inset-bottom,0) + 12px) calc(env(safe-area-inset-left,0) + 12px)"
-    : "14px 16px",
-  borderBottomLeftRadius: isMobile ? 0 : 20,
-  borderBottomRightRadius: isMobile ? 0 : 20,
 
-  /* Dva reda: gore (Obriši + Cena), dole (dugmad) */
-  display: "grid",
-  gap: 14,              // razmak između redova
-},
+  pill: { padding: "6px 8px", fontSize: 12, borderRadius: 8, border: "1px solid #d8dbe5", background: "#fff", cursor: "pointer" },
+  actions: {
+    position: "sticky", bottom: 0, zIndex: 2,
+    background: "#fff",
+    borderTop: "1px solid #eee",
+    boxShadow: "0 -6px 16px rgba(0,0,0,.06)",
+    padding: isMobile
+      ? "12px calc(env(safe-area-inset-right,0) + 12px) calc(env(safe-area-inset-bottom,0) + 12px) calc(env(safe-area-inset-left,0) + 12px)"
+      : "14px 16px",
+    borderBottomLeftRadius: isMobile ? 0 : 20,
+    borderBottomRightRadius: isMobile ? 0 : 20,
+    display: "grid",
+    gap: 14,
+  },
 
+  grow: {
+    flex: 1,
+    minWidth: isMobile ? "100%" : 180,
+    margin: isMobile ? "6px 0" : "0 10px",
+    display: "flex",
+    flexDirection: "column",
+  },
 rowTop: {
   display: "grid",
   gridTemplateColumns: "140px 1fr",  // Obriši | Cena
@@ -4276,27 +4275,28 @@ priceGroup: {
 },
 
 
-actionBtn: {
-  display: "inline-flex", alignItems: "center", gap: 6,
-  padding: "10px 14px",
-  borderRadius: 12,
-  border: "1px solid rgba(0,0,0,.06)",
-  background: "#fff",
-  color: "#111",
-  fontWeight: 700,
-  cursor: "pointer",
-  minHeight: 44,
-},
-save: {
-  padding: "12px 16px",
-  borderRadius: 12,
-  border: "none",
-  background: "linear-gradient(135deg,#ff3f92,#ff5fa2)",
-  color: "#fff",
-  fontWeight: 700,
-  cursor: "pointer",
-  minHeight: 46,
-},
+  actionBtn: {
+    display: "inline-flex", alignItems: "center", gap: 6,
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(0,0,0,.06)",
+    background: "#fff",
+    color: "#111",
+    fontWeight: 700,
+    cursor: "pointer",
+    minHeight: 44,
+  },
+
+  save: {
+    padding: "12px 16px",
+    borderRadius: 12,
+    border: "none",
+    background: "linear-gradient(135deg,#ff3f92,#ff5fa2)",
+    color: "#fff",
+    fontWeight: 700,
+    cursor: "pointer",
+    minHeight: 46,
+  },
 
 buttonsRow: {
   display: "flex",
@@ -4304,14 +4304,6 @@ buttonsRow: {
   flexWrap: "wrap",
   justifyContent: isMobile ? "stretch" : "flex-end",
 },
-grow: {
-  flex: 1,
-  minWidth: isMobile ? "100%" : 180,
-  margin: isMobile ? "6px 0" : "0 10px",
-  display: "flex",
-  flexDirection: "column",
-},
-
 
 
 
