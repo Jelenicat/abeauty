@@ -127,35 +127,60 @@ export default function AdminFinansije() {
     return () => { offExp(); offA(); offB(); };
   }, [month, startTs, endTs, startKey, nextMonthKey]);
 
+  /* =========================
+     HELPER: iznos jednog termina
+     - podržava više usluga preko servicesInfo
+     - u suprotnom koristi finalPrice/price/basePrice
+     ========================= */
+  function amountForAppt(a) {
+    if (Array.isArray(a.servicesInfo) && a.servicesInfo.length) {
+      return a.servicesInfo.reduce((s, it) => s + Number(it.price || 0), 0);
+    }
+    return Number(a.finalPrice ?? a.price ?? a.basePrice ?? 0);
+  }
+
   // ===== Izračuni =====
   const costsSum = useMemo(
     () => expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0),
     [expenses]
   );
 
-  // izbaci otkazane
+  // samo termini/usluge koji se računaju u prihod/zaradu
   const monthAppointments = useMemo(() => {
+    const NON_REVENUE_TYPES = new Set(["break", "pause", "odmor", "smena", "block", "blokada", "vacation", "shift"]);
+    const EXCLUDED_STATUSES = new Set([
+      "canceled", "cancelled", "otkazano", "otkazan",
+      "no-show", "noshow", "no show"
+    ]);
+
     return appointments.filter(a => {
-      const st = (a.status || "").toString().toLowerCase();
-      return st !== "canceled" && st !== "otkazano";
+      const st = String(a.status || "").toLowerCase().trim();
+      const tp = String(a.type || "").toLowerCase().trim();
+
+      if (EXCLUDED_STATUSES.has(st)) return false;   // otkazani & no-show ne ulaze
+      if (NON_REVENUE_TYPES.has(tp))  return false;  // odmori/smene/blokade van prihoda
+
+      // stariji zapisi bez type-a tretiraju se kao usluga
+      return !tp || tp === "booking" || tp === "termin" || tp === "service";
     });
   }, [appointments]);
 
+  // ukupni prihod (bruto)
   const revenue = useMemo(() => {
     return monthAppointments.reduce((sum, a) => {
-      const v = Number(a.finalPrice ?? a.price ?? a.basePrice ?? 0);
+      const v = amountForAppt(a);
       return sum + (isFinite(v) ? v : 0);
     }, 0);
   }, [monthAppointments]);
 
   const net = useMemo(() => revenue - costsSum, [revenue, costsSum]);
 
-  // --- zarada po radnici
+  // --- zarada po radnici (bruto po radnici)
   const earningsByEmployee = useMemo(() => {
     const m = new Map();
     for (const a of monthAppointments) {
       const eid = a.employeeId || "unknown";
-      const v = Number(a.finalPrice ?? a.price ?? a.basePrice ?? 0);
+      const v = amountForAppt(a);
       m.set(eid, (m.get(eid) || 0) + (isFinite(v) ? v : 0));
     }
     const list = [];
@@ -167,7 +192,7 @@ export default function AdminFinansije() {
     return list;
   }, [monthAppointments, employees]);
 
-  // --- termini grupisani po radnici (+ sortirani)
+  // --- termini grupisani po radnici (+ sortirani) + tačne cene i imena svih usluga
   const apptsByEmployee = useMemo(() => {
     const m = new Map();
     const norm = (a) => {
@@ -178,8 +203,14 @@ export default function AdminFinansije() {
         ? a.startAt.toDate().toTimeString().slice(0,5)
         : "");
       const eh = a.endHHMM || "";
-      const price = Number(a.finalPrice ?? a.price ?? a.basePrice ?? 0);
-      return { ...a, _dateKey: d, _sh: sh, _eh: eh, _amount: price };
+      const price = amountForAppt(a);
+
+      // prikaz naziva više usluga, ako postoje
+      const serviceNames = Array.isArray(a.servicesInfo) && a.servicesInfo.length
+        ? a.servicesInfo.map(s => s.name).join(", ")
+        : (a.serviceName || "Usluga");
+
+      return { ...a, _dateKey: d, _sh: sh, _eh: eh, _amount: price, _serviceNames: serviceNames };
     };
     for (const a of monthAppointments) {
       const eid = a.employeeId || "unknown";
@@ -475,7 +506,7 @@ export default function AdminFinansije() {
                                 <span className="dot" />
                                 <span>{a._sh}{a._eh ? `–${a._eh}` : ""}</span>
                               </div>
-                              <div className="fin-sub-service">{a.serviceName || "Usluga"}</div>
+                              <div className="fin-sub-service">{a._serviceNames}</div>
                             </div>
                             <div className="fin-sub-right">
                               <div className="fin-sub-amount">{Number(a._amount||0).toLocaleString()} RSD</div>
