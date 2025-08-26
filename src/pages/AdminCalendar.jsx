@@ -492,6 +492,7 @@ const openApptModal = (a) => {
   setActiveAppt(a);
   setEditPrice(a?.price ?? "");
    setEditEndHHMM(a?.endHHMM || minToTime(a?.endMin ?? 0));
+   setEditNote(a?.note || ""); 
 };
 const closeApptModal = () => setActiveAppt(null);
 
@@ -762,6 +763,7 @@ const [selectedClientId, setSelectedClientId] = useState(null);
   const [activeAppt, setActiveAppt] = useState(null); 
   const [editPrice, setEditPrice] = useState("");
   const [editEndHHMM, setEditEndHHMM] = useState("");
+  const [editNote, setEditNote] = useState("");
 const topScrollRef = useRef(null);
 const topSpacerRef = useRef(null);
 const colsWrapRef  = useRef(null);
@@ -1573,6 +1575,7 @@ try {
   async function markAppt(id, patch) {
     await updateDoc(doc(db, "appointments", id), {
       ...patch,
+       note: patch.note ?? deleteField(),
       updatedAt: serverTimestamp(),
     });
   }
@@ -4159,7 +4162,9 @@ React.useEffect(() => {
     setEmpId(appt.employeeId);
     setStart(appt.startHHMM);
     setEndHHMM(appt.endHHMM || (appt.endMin != null ? minToTime(appt.endMin) : initialEnd));
+     setEditNote(appt?.note ?? "");
   }, [appt]);
+const [editNote, setEditNote] = useState(appt?.note || "");
 
   // izvedeno trajanje iz start/end
   const durationMin = Math.max(0, timeToMin(endHHMM) - timeToMin(start));
@@ -4552,63 +4557,102 @@ buttonsRow: {
         {/* Donja traka – akcije */}
 <div style={styles.actions}>
   {/* Levo: Obriši */}
-  <button
-    style={{
-      ...styles.actionBtn,
-      background: "#ffe1e1",
-      color: "#7a1b1b",
-      flex: "0 0 auto",         // ⬅️ dugme ne raste više
-      minWidth: 70,             // ⬅️ opciono, da ima lepu širinu
-    }}
-    onClick={onDelete}
-    title="Obriši termin"
-  >
-    <FiTrash2 /> Obriši
-  </button>
+ 
 
-  {/* Sredina: Cena */}
-  <div style={{ ...styles.grow }}>
-    <label style={{ display: "block", fontWeight: 600, marginBottom: 3 }}>Cena</label>
+{/* Cena + Napomena u jednom redu */}
+<div
+  style={{
+    display: "flex",
+    gap: 12,
+    flexWrap: isMobile ? "wrap" : "nowrap",
+    alignItems: "flex-start",
+    margin: "12px 0",
+  }}
+>
+  {/* CENA (levo) */}
+  <div style={{ flex: isMobile ? "1 1 100%" : "1 1 0" }}>
+    <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>
+      Cena
+    </label>
     <input
       type="number"
       value={editPrice}
       onChange={(e) => setEditPrice(e.target.value)}
-      style={{ ...styles.inp }}
+      placeholder="npr. 3200"
+      style={{
+        width: "100%",
+        padding: "10px 14px",
+        borderRadius: 12,
+        border: "1px solid rgba(0,0,0,.12)",
+        fontWeight: 600,
+      }}
     />
   </div>
 
-  {/* Desno: Otkaži / No-show / Sačuvaj */}
-  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-    <button
-      style={{ ...styles.actionBtn, background: "#fff", color: "#222" }}
-      onClick={onCancel}
-      title="Otkaži"
-    >
-      <FiSlash /> Otkaži
-    </button>
-    <button
-      style={{ ...styles.actionBtn, background: "#fff7e6", color: "#7a3d0b" }}
-      onClick={onNoShow}
-      title="No-show"
-    >
-      <FiAlertTriangle /> No-show
-    </button>
-    <button
-      style={styles.save}
-      onClick={() =>
-        onSave({
-          employeeId: empId,
-          startHHMM: start,
-          endHHMM,
-          durationMin,
-          price: Number(editPrice) || 0,
-        })
-      }
-      title="Sačuvaj izmene"
-    >
-      <FiSave /> Sačuvaj
-    </button>
+  {/* NAPOMENA (desno) */}
+  <div style={{ flex: isMobile ? "1 1 100%" : "1 1 0" }}>
+    <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>
+      Napomena
+    </label>
+    <textarea
+      value={editNote}
+      onChange={(e) => setEditNote(e.target.value)}
+      rows={3}
+      placeholder="Unesi napomenu…"
+      style={{
+        width: "100%",
+        minHeight: 44,        // da stane u red pored cene
+        padding: "10px 14px",
+        borderRadius: 12,
+        border: "1px solid rgba(0,0,0,.12)",
+        resize: "vertical",
+      }}
+    />
   </div>
+</div>
+
+  {/* Desno: Otkaži / No-show / Sačuvaj */}
+{/* Desno: Otkaži / No-show / Obriši / Sačuvaj */}
+<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+  <button
+    style={{ ...styles.actionBtn, background: "#fff", color: "#222" }}
+    onClick={onCancel}
+    title="Otkaži"
+  >
+    <FiSlash /> Otkaži
+  </button>
+  <button
+    style={{ ...styles.actionBtn, background: "#fff7e6", color: "#7a3d0b" }}
+    onClick={onNoShow}
+    title="No-show"
+  >
+    <FiAlertTriangle /> No-show
+  </button>
+  <button
+    style={{ ...styles.actionBtn, background: "#ffe6e6", color: "#d9534f" }}
+    onClick={onDelete}
+    title="Obriši"
+  >
+    <FiTrash2 /> Obriši
+  </button>
+  <button
+    style={styles.save}
+    onClick={() =>
+      onSave({
+        employeeId: empId,
+        startHHMM: start,
+        endHHMM,
+        durationMin,
+        price: Number(editPrice) || 0,
+        note: (editNote || "").trim(),
+      })
+    }
+    title="Sačuvaj izmene"
+  >
+    <FiSave /> Sačuvaj
+  </button>
+</div>
+
 </div>
 
       </div>
