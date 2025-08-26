@@ -633,7 +633,8 @@ React.useEffect(() => {
     document.removeEventListener("keydown", onKey);
   };
 }, [srvOpen]);
-const [mobilePos, setMobilePos] = useState({ top: 0, left: 0, width: "100%" });
+const [mobilePos, setMobilePos] = useState({ top: 0, left: 0, width: 0 });
+
 
 useEffect(() => {
   if (!srvOpen || !isMobile) return;
@@ -642,11 +643,11 @@ useEffect(() => {
 
   function place() {
     const r = btn.getBoundingClientRect();
-    setMobilePos({
-      top: r.bottom + 4,
-      left: 8,
-      width: window.innerWidth - 16,
-    });
+    const margin = 8;
+    const width = Math.min(520, window.innerWidth - margin * 2);
+    const left  = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin));
+    const top   = r.bottom + 4; // odmah ispod dugmeta
+    setMobilePos({ top, left, width });
   }
 
   place();
@@ -657,6 +658,7 @@ useEffect(() => {
     window.removeEventListener("scroll", place);
   };
 }, [srvOpen, isMobile]);
+
 
 
 // --- /SERVICES DROPDOWN ---
@@ -2025,12 +2027,12 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
      {/* PANEL */}
 
 {srvOpen && (() => {
-  // zajednički sadržaj (lista + footer)
+  // ZAJEDNIČKI SADRŽAJ (lista + footer) — bez dupliranja
   const content = (
     <>
       {/* LISTA */}
-      <div style={{ padding: 12, display: "grid", gap: 10 }}>
-        {allowedServicesForSelectedEmp.map((s) => {
+      <div style={{ padding: 12, display: "grid", gap: 10, minHeight: 120 }}>
+        {svcList.map((s) => {
           const checked = selSrvIds.includes(s.id);
           const price = Number(getServicePrice(s) || 0);
           return (
@@ -2063,6 +2065,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                 style={{ width: 20, height: 20, accentColor: "#ff6aa8" }}
                 onClick={(e) => e.stopPropagation()}
               />
+
               <div style={{ overflow: "hidden" }}>
                 <div style={{ fontWeight: 800, lineHeight: 1.2, wordBreak: "break-word" }}>
                   {s.name}
@@ -2071,12 +2074,19 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
                   {s.durationMin} min
                 </div>
               </div>
+
               <div style={{ fontWeight: 900, textAlign: "right", whiteSpace: "nowrap" }}>
                 {price.toLocaleString("sr-RS")} RSD
               </div>
             </label>
           );
         })}
+
+        {!allowedServicesForSelectedEmp?.length && (
+          <div style={{ padding: "4px 8px", fontSize: 12, opacity: 0.7 }}>
+            Prikazane su sve usluge (radnici nisu dodeljene specifične usluge).
+          </div>
+        )}
       </div>
 
       {/* FOOTER */}
@@ -2113,7 +2123,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     </>
   );
 
-  // panel za mobilni ili desktop
+  // MOBILNI: render u body (fixed) tačno ispod dugmeta
   if (isMobile) {
     return createPortal(
       <div
@@ -2125,8 +2135,9 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
           left: mobilePos.left,
           width: mobilePos.width,
           zIndex: 9999,
-          maxHeight: "70vh",
+          maxHeight: "75vh",
           overflowY: "auto",
+          overscrollBehavior: "contain",
           border: "1px solid rgba(0,0,0,.08)",
           background: "#fff",
           borderRadius: 16,
@@ -2141,7 +2152,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     );
   }
 
-  // desktop
+  // DESKTOP: klasičan dropdown odmah ispod dugmeta
   return (
     <div
       ref={panelRef}
@@ -2149,7 +2160,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
       style={{
         position: "absolute",
         right: 0,
-        top: panelTop,
+        top: panelTop,               // ovo već imaš iz ranijeg koda
         zIndex: 9999,
         width: "clamp(340px, 48vw, 520px)",
         maxHeight: "300px",
@@ -2166,6 +2177,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     </div>
   );
 })()}
+
 
 
 
