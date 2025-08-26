@@ -2027,10 +2027,14 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
      {/* PANEL */}
 
 {srvOpen && (() => {
-  // ZAJEDNIČKI SADRŽAJ (lista + footer) — bez dupliranja
+  // fallback lista usluga
+  const allServicesArray =
+    Array.isArray(services) ? services : Array.from((servicesById?.values?.() || []));
+  const svcList = (allowedServicesForSelectedEmp?.length ? allowedServicesForSelectedEmp : allServicesArray) || [];
+
+  // ZAJEDNIČKI SADRŽAJ
   const content = (
     <>
-      {/* LISTA */}
       <div style={{ padding: 12, display: "grid", gap: 10, minHeight: 120 }}>
         {svcList.map((s) => {
           const checked = selSrvIds.includes(s.id);
