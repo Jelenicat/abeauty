@@ -586,6 +586,26 @@ const [selSrvIds, setSelSrvIds] = useState([]);
 const [srvOpen, setSrvOpen] = useState(false);
 const buttonRef = useRef(null);
 const panelRef = useRef(null);
+const [panelTop, setPanelTop] = useState(0);
+
+useEffect(() => {
+  if (!srvOpen) return;
+  const b = buttonRef.current;
+  if (!b) return;
+  // koliko je dugme visoko u odnosu na svoj wrapper
+  setPanelTop(b.offsetTop + b.offsetHeight + 4); // +4px kao mali razmak
+}, [srvOpen]);
+
+useEffect(() => {
+  function onResize() {
+    if (!srvOpen) return;
+    const b = buttonRef.current;
+    if (b) setPanelTop(b.offsetTop + b.offsetHeight + 4);
+  }
+  window.addEventListener("resize", onResize);
+  return () => window.removeEventListener("resize", onResize);
+}, [srvOpen]);
+
 
 // koristiš li već isNarrow negde? Ako ne, dodaj:
 
@@ -613,6 +633,32 @@ React.useEffect(() => {
     document.removeEventListener("keydown", onKey);
   };
 }, [srvOpen]);
+const [mobilePos, setMobilePos] = useState({ top: 0, left: 0, width: "100%" });
+
+useEffect(() => {
+  if (!srvOpen || !isMobile) return;
+  const btn = buttonRef.current;
+  if (!btn) return;
+
+  function place() {
+    const r = btn.getBoundingClientRect();
+    setMobilePos({
+      top: r.bottom + 4,
+      left: 8,
+      width: window.innerWidth - 16,
+    });
+  }
+
+  place();
+  window.addEventListener("resize", place);
+  window.addEventListener("scroll", place, { passive: true });
+  return () => {
+    window.removeEventListener("resize", place);
+    window.removeEventListener("scroll", place);
+  };
+}, [srvOpen, isMobile]);
+
+
 // --- /SERVICES DROPDOWN ---
 
  const detailsRef = React.useRef(null);
@@ -628,17 +674,7 @@ React.useEffect(() => {
   }, []);
 
 
-  React.useEffect(() => {
-    let mq;
-    try { mq = window.matchMedia("(max-width: 640px)"); } catch { return; }
-    const h = (e) => setIsNarrow(e.matches);
-    if (mq.addEventListener) mq.addEventListener("change", h);
-    else mq.addListener(h);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener("change", h);
-      else mq.removeListener(h);
-    };
-  }, []);
+
 // helper za čekiranje/odčekiranje jedne usluge
 const toggleSrv = (id) =>
   setSelSrvIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -1958,7 +1994,8 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
   </div>
 {mode === "booking" ? (
   showModeFields && (
-    <div style={ctlItem}>
+   <div style={{ ...ctlItem, position: "relative" }}>
+
       <label style={lbl}>Usluge</label>
 
       {/* Dugme koje otvara/zatvara panel */}
@@ -1986,179 +2023,177 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
       </button>
 
      {/* PANEL */}
-{srvOpen && (
-  <div
-    ref={panelRef}
-    style={{
-      position: isMobile ? "fixed" : "absolute",
-      zIndex: 50,
-      boxSizing: "border-box",
 
-      // 📱 mobilni: bottom-sheet; 💻 desktop: dropdown desno
-      ...(isMobile
-        ? {
-            left: 0,
-            right: 0,
-            bottom: 0,
-            top: "auto",
-            width: "100vw",
-            maxHeight: "80vh",
-            borderTopLeftRadius: 16,
-            borderTopRightRadius: 16,
-          }
-        : {
-            right: 0,
-            left: "auto",
-            width: "min(520px, calc(100vw - 32px))",
-            maxHeight: "min(68vh, 520px)",
-            borderRadius: 16,
-          }),
+{srvOpen && (() => {
+  // zajednički sadržaj (lista + footer)
+  const content = (
+    <>
+      {/* LISTA */}
+      <div style={{ padding: 12, display: "grid", gap: 10 }}>
+        {allowedServicesForSelectedEmp.map((s) => {
+          const checked = selSrvIds.includes(s.id);
+          const price = Number(getServicePrice(s) || 0);
+          return (
+            <label
+              key={s.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "28px 1fr auto",
+                alignItems: "center",
+                gap: 12,
+                padding: "12px 14px",
+                minHeight: 64,
+                borderRadius: 14,
+                background: "#fff",
+                border: checked
+                  ? "1px solid rgba(255,105,180,.35)"
+                  : "1px solid #e9ecf4",
+                boxShadow: checked
+                  ? "0 4px 14px rgba(255,105,180,.15)"
+                  : "0 1px 4px rgba(0,0,0,.05)",
+                cursor: "pointer",
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggleSrv(s.id)}
+                style={{ width: 20, height: 20, accentColor: "#ff6aa8" }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <div style={{ overflow: "hidden" }}>
+                <div style={{ fontWeight: 800, lineHeight: 1.2, wordBreak: "break-word" }}>
+                  {s.name}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>
+                  {s.durationMin} min
+                </div>
+              </div>
+              <div style={{ fontWeight: 900, textAlign: "right", whiteSpace: "nowrap" }}>
+                {price.toLocaleString("sr-RS")} RSD
+              </div>
+            </label>
+          );
+        })}
+      </div>
 
-      overflow: "auto",
-      border: "1px solid rgba(0,0,0,.08)",
-      background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
-      boxShadow: "0 16px 44px rgba(0,0,0,.28)",
-    }}
-    onMouseDown={(e) => e.stopPropagation()}
-    onTouchStart={(e) => e.stopPropagation()}
-  >
-    {/* Sticky header */}
+      {/* FOOTER */}
+      <div
+        style={{
+          position: "sticky",
+          bottom: 0,
+          zIndex: 1,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "12px 14px",
+          borderTop: "1px solid rgba(0,0,0,.06)",
+          background: "#fff",
+          borderBottomLeftRadius: 16,
+          borderBottomRightRadius: 16,
+        }}
+      >
+        {(() => {
+          const sel = selSrvIds.map((id) => servicesById.get(id)).filter(Boolean);
+          const totalPrice = sel.reduce((a, s) => a + (getServicePrice(s) || 0), 0);
+          const totalDur = sel.reduce((a, s) => a + Number(s.durationMin || 0), 0);
+          return (
+            <>
+              <div style={{ fontWeight: 900 }}>
+                Ukupno: {totalPrice.toLocaleString("sr-RS")} RSD
+                <span style={{ opacity: 0.7, fontWeight: 700 }}> · {totalDur} min</span>
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>Stavki: {selSrvIds.length}</div>
+            </>
+          );
+        })()}
+      </div>
+    </>
+  );
+
+  // panel za mobilni ili desktop
+  if (isMobile) {
+    return createPortal(
+      <div
+        ref={panelRef}
+        onKeyDown={(e) => e.key === "Escape" && setSrvOpen(false)}
+        style={{
+          position: "fixed",
+          top: mobilePos.top,
+          left: mobilePos.left,
+          width: mobilePos.width,
+          zIndex: 9999,
+          maxHeight: "70vh",
+          overflowY: "auto",
+          border: "1px solid rgba(0,0,0,.08)",
+          background: "#fff",
+          borderRadius: 16,
+          boxShadow: "0 16px 44px rgba(0,0,0,.28)",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
+        {content}
+      </div>,
+      document.body
+    );
+  }
+
+  // desktop
+  return (
     <div
+      ref={panelRef}
+      onKeyDown={(e) => e.key === "Escape" && setSrvOpen(false)}
       style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 1,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "12px 14px",
-        borderBottom: "1px solid rgba(0,0,0,.06)",
-        background: "linear-gradient(180deg,#ffffff,#f7f8ff)",
+        position: "absolute",
+        right: 0,
+        top: panelTop,
+        zIndex: 9999,
+        width: "clamp(340px, 48vw, 520px)",
+        maxHeight: "300px",
+        overflowY: "auto",
+        border: "1px solid rgba(0,0,0,.08)",
+        background: "#fff",
+        borderRadius: 16,
+        boxShadow: "0 16px 44px rgba(0,0,0,.28)",
       }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
     >
-      <div style={{ fontWeight: 900, fontSize: 16 }}>Usluge</div>
-      <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>
-              {selSrvIds.length ? `Izabrano: ${selSrvIds.length}` : "Nije izabrano"}
-            </div>
-          </div>
+      {content}
+    </div>
+  );
+})()}
 
-          {/* Lista usluga */}
-          <div style={{ padding: 12, display: "grid", gap: 10 }}>
-            {allowedServicesForSelectedEmp.map((s) => {
-              const checked = selSrvIds.includes(s.id);
-              const price = Number(getServicePrice(s) || 0);
-              return (
-                <label
-                  key={s.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "28px 1fr auto",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "12px 14px",
-                    minHeight: 64,
-                    borderRadius: 14,
-                    background: "#fff",
-                    border: checked
-                      ? "1px solid rgba(255,105,180,.35)"
-                      : "1px solid #e9ecf4",
-                    boxShadow: checked
-                      ? "0 4px 14px rgba(255,105,180,.15)"
-                      : "0 1px 4px rgba(0,0,0,.05)",
-                    cursor: "pointer",
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleSrv(s.id)}
-                    style={{
-                      width: 20,
-                      height: 20,
-                      accentColor: "#ff6aa8",
-                      cursor: "pointer",
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
 
-                  <div style={{ overflow: "hidden" }}>
-                    <div style={{ fontWeight: 800, lineHeight: 1.2, wordBreak: "break-word" }}>
-                      {s.name}
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>
-                      {s.durationMin} min
-                    </div>
-                  </div>
 
-                  <div style={{ fontWeight: 900, textAlign: "right", whiteSpace: "nowrap" }}>
-                    {price.toLocaleString("sr-RS")} RSD
-                  </div>
-                </label>
-              );
-            })}
-          </div>
+{/* Preview ispod dugmeta (kada panel nije otvoren) */}
+{selSrvIds.length > 0 && !srvOpen && (
+  <div
+    style={{
+      marginTop: 10,
+      fontSize: 14,
+      fontWeight: 600,
+      background: "rgba(0,0,0,.04)",
+      padding: "6px 10px",
+      borderRadius: 8,
+    }}
+  >
+    {(() => {
+      const sel = selSrvIds.map((id) => servicesById.get(id)).filter(Boolean);
+      const totalPrice = sel.reduce((a, s) => a + (getServicePrice(s) || 0), 0);
+      const totalDur = sel.reduce((a, s) => a + Number(s.durationMin || 0), 0);
+      return (
+        <>
+          Ukupno: <b>{totalPrice.toLocaleString("sr-RS")} RSD</b> · <b>{totalDur} min</b>
+        </>
+      );
+    })()}
+  </div>
+)}
 
-          {/* Sticky footer sa totalom */}
-          <div
-            style={{
-              position: "sticky",
-              bottom: 0,
-              zIndex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              padding: "12px 14px",
-              borderTop: "1px solid rgba(0,0,0,.06)",
-              background: "linear-gradient(180deg,#ffffff,#f2f4ff)",
-              borderBottomLeftRadius: 16,
-              borderBottomRightRadius: 16,
-            }}
-          >
-            {(() => {
-              const sel = selSrvIds.map((id) => servicesById.get(id)).filter(Boolean);
-              const totalPrice = sel.reduce((a, s) => a + (getServicePrice(s) || 0), 0);
-              const totalDur = sel.reduce((a, s) => a + Number(s.durationMin || 0), 0);
-              return (
-                <>
-                  <div style={{ fontWeight: 900 }}>
-                    Ukupno: {totalPrice.toLocaleString("sr-RS")} RSD
-                    <span style={{ opacity: 0.7, fontWeight: 700 }}> · {totalDur} min</span>
-                  </div>
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>Stavki: {selSrvIds.length}</div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* Preview ispod dugmeta (kada panel nije otvoren) */}
-      {selSrvIds.length > 0 && !srvOpen && (
-        <div
-          style={{
-            marginTop: 10,
-            fontSize: 14,
-            fontWeight: 600,
-            background: "rgba(0,0,0,.04)",
-            padding: "6px 10px",
-            borderRadius: 8,
-          }}
-        >
-          {(() => {
-            const sel = selSrvIds.map((id) => servicesById.get(id)).filter(Boolean);
-            const totalPrice = sel.reduce((a, s) => a + (getServicePrice(s) || 0), 0);
-            const totalDur = sel.reduce((a, s) => a + Number(s.durationMin || 0), 0);
-            return (
-              <>
-                Ukupno: <b>{totalPrice.toLocaleString("sr-RS")} RSD</b> · <b>{totalDur} min</b>
-              </>
-            );
-          })()}
-        </div>
-      )}
     </div>
   )
 ) : (
