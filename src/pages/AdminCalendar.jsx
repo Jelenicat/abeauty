@@ -764,6 +764,10 @@ const [selectedClientId, setSelectedClientId] = useState(null);
   const [editPrice, setEditPrice] = useState("");
   const [editEndHHMM, setEditEndHHMM] = useState("");
   const [editNote, setEditNote] = useState("");
+  
+  // lokalan datum za modal (string "YYYY-MM-DD")
+
+
 const topScrollRef = useRef(null);
 const topSpacerRef = useRef(null);
 const colsWrapRef  = useRef(null);
@@ -1175,6 +1179,13 @@ const totalPrice    = selServices.reduce((a, s) => a + Number(getServicePrice(s)
 // boja termina = boja kategorije prve izabrane usluge
 const primaryService = selServices[0] || null;
 const primaryColor   = primaryService ? colorForCategoryId(primaryService.categoryId) : undefined;
+// ručna izmena trajanja
+const [editDuration, setEditDuration] = useState(totalDuration);
+
+// svaki put kad se promeni izbor usluga -> resetuj na sabrano trajanje
+useEffect(() => {
+  setEditDuration(totalDuration);
+}, [totalDuration]);
 
 // ⬆️ kraj mog dodatka
 
@@ -1415,7 +1426,10 @@ async function addItem() {
 
     // vreme i trajanje
     const start = timeToMin(startTime);
-    const totalDur = Number(totalDuration || 0);
+  const totalDur = Number(editDuration || totalDuration || 0);
+
+const durationEdited  = Number(editDuration) !== Number(totalDuration);
+
     const end = start + totalDur;
 
     // Validacije
@@ -2222,7 +2236,17 @@ async function applyVacationRange() {
           return (
             <>
               <div style={{ fontWeight: 900 }}>
-                Ukupno: {totalPrice.toLocaleString("sr-RS")} RSD
+               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+  <span>Ukupno: {totalPrice} RSD – </span>
+  <input
+    type="number"
+    value={editDuration}
+    onChange={(e) => setEditDuration(Number(e.target.value))}
+    style={{ width: 70, padding: 4, borderRadius: 6 }}
+  />
+  <span>min</span>
+</div>
+
                 <span style={{ opacity: 0.7, fontWeight: 700 }}> · {totalDur} min</span>
               </div>
               <div style={{ fontSize: 12, opacity: 0.7 }}>Stavki: {selSrvIds.length}</div>
@@ -4154,6 +4178,14 @@ React.useEffect(() => {
   // kraj termina (EDIT)
   const initialEnd = appt.endHHMM || (appt.endMin != null ? minToTime(appt.endMin) : minToTime(timeToMin(appt.startHHMM) + (appt.durationMin || 0)));
   const [endHHMM, setEndHHMM] = React.useState(initialEnd);
+// ✅ U ApptModal – lokalni datum (YYYY-MM-DD)
+const [editDateStr, setEditDateStr] = React.useState(
+  () => appt?.dateKey || new Date().toISOString().slice(0, 10)
+);
+
+React.useEffect(() => {
+  setEditDateStr(appt?.dateKey || new Date().toISOString().slice(0, 10));
+}, [appt?.dateKey]);
 
   // cena (EDIT)
  const [editPrice, setEditPrice] = React.useState(appt?.price ?? apptTotalPrice ?? 0);
@@ -4443,6 +4475,23 @@ buttonsRow: {
               ))}
             </select>
           </div>
+{/* Datum */}
+<div style={{ flex: 1, minWidth: 140 }}>
+  <label style={{ fontWeight: 600 }}>Datum</label>
+  <input
+    type="date"
+    value={editDateStr}
+    onChange={(e) => setEditDateStr(e.target.value)}
+    style={{
+      width: "100%",
+      padding: "10px 12px",
+      borderRadius: 8,
+      border: "1px solid rgba(0,0,0,.2)",
+      fontSize: 14,
+    }}
+  />
+</div>
+
 
           {/* Početak & Kraj (editable) */}
           <div style={styles.fieldRow}>
@@ -4640,6 +4689,7 @@ buttonsRow: {
     onClick={() =>
       onSave({
         employeeId: empId,
+        dateKey: editDateStr,    
         startHHMM: start,
         endHHMM,
         durationMin,
