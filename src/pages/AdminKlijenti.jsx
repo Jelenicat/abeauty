@@ -1,7 +1,16 @@
 // src/pages/AdminKlijenti.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../firebase";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+  addDoc,
+  doc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 /* mali hook za responsive */
@@ -17,37 +26,124 @@ function useIsMobile(bp = 700) {
   return m;
 }
 
-// helperi za pretragu i normalizaciju
+// helperi
 const normText = (s = "") =>
   s.toString().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 const digits = (s = "") => s.toString().replace(/[^\d]/g, "");
-
-// brojevi koje isključujemo
 const EXCLUDE_PHONES = new Set(["0665511005", "0000000000"]);
 
 export default function AdminKlijenti() {
-  const [users, setUsers] = useState([]);                // korisnici iz 'users'
-  const [lastByPhone, setLastByPhone] = useState({});    // tel -> { lastService, lastDate }
-  const [apptOnlyClients, setApptOnlyClients] = useState({}); // telDigits -> { uid, name, phone, role, createdAt }
+  const [users, setUsers] = useState([]);
+  const [lastByPhone, setLastByPhone] = useState({});
+  const [apptOnlyClients, setApptOnlyClients] = useState({});
   const [search, setSearch] = useState("");
   const isMobile = useIsMobile(700);
   const nav = useNavigate();
 
-  // 1) UČITAJ SVE KORISNIKE IZ 'users' (bez admin/abeauty)
+  // -------- dodavanje/izmena --------
+  const emptyForm = { uid: null, source: null, name: "", phone: "", role: "client" };
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null); // uid ili "new"
+  const [saving, setSaving] = useState(false);
+
+  // ref za auto-fokus u modal-u "Novi klijent"
+  const newNameRef = useRef(null);
+
+  // kad se otvori modal za "new" — skroluj gore i fokusiraj input
+  useEffect(() => {
+    if (editingId === "new") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      // mali delay da se modal prikaže pa fokus
+      setTimeout(() => {
+        try {
+          newNameRef.current?.focus();
+        } catch {}
+      }, 180);
+    }
+  }, [editingId]);
+
+  function splitName(full = "") {
+    const p = full.trim().split(/\s+/);
+    if (!p.length) return { firstName: "", lastName: "" };
+    if (p.length === 1) return { firstName: p[0], lastName: "" };
+    return { firstName: p[0], lastName: p.slice(1).join(" ") };
+  }
+
+  // ➕ Novi klijent → centralni modal
+  function openAdd() {
+    setForm({ ...emptyForm });
+    setEditingId("new");
+  }
+
+  // ✏️ Izmena → inline
+  function openEdit(c) {
+    setForm({
+      uid: c.uid || null,
+      source: c.source || null,
+      name: c.name || "",
+      phone: c.phone || "",
+      role: c.role || "client",
+    });
+    setEditingId(c.uid);
+  }
+
+  function closeEditor() {
+    setEditingId(null);
+    setForm(emptyForm);
+  }
+
+  async function saveClient() {
+    const name = (form.name || "").trim();
+    const ph = digits(form.phone || "");
+    if (!name) return alert("Unesi ime i prezime.");
+    if (!ph) return alert("Unesi ispravan broj telefona (samo cifre).");
+
+    setSaving(true);
+    try {
+      const apptOnly =
+        form.source === "appointments" || String(form.uid || "").startsWith("appt:");
+
+      if (!form.uid || apptOnly) {
+        const { firstName, lastName } = splitName(name);
+        await addDoc(collection(db, "users"), {
+          firstName,
+          lastName,
+          phone: ph,
+          role: form.role || "client",
+          isAdmin: false,
+          isFinance: false,
+          createdAt: serverTimestamp(),
+        });
+      } else {
+        const { firstName, lastName } = splitName(name);
+        await updateDoc(doc(db, "users", form.uid), {
+          firstName,
+          lastName,
+          phone: ph,
+          role: form.role || "client",
+        });
+      }
+      closeEditor();
+    } catch (e) {
+      console.error(e);
+      alert("Greška pri snimanju.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // -------- data: users --------
   useEffect(() => {
     const qUsers = query(collection(db, "users"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(qUsers, (snap) => {
       const list = [];
-      snap.forEach((doc) => {
-        const d = doc.data() || {};
+      snap.forEach((docu) => {
+        const d = docu.data() || {};
         const phoneRaw = d.phone || "";
         const phoneDigits = digits(phoneRaw);
-
-        // isključi ova dva broja
         if (EXCLUDE_PHONES.has(phoneDigits)) return;
-
         list.push({
-          uid: doc.id,
+          uid: docu.id,
           name:
             [d.firstName, d.lastName].filter(Boolean).join(" ").trim() ||
             d.firstName ||
@@ -65,23 +161,19 @@ export default function AdminKlijenti() {
     return unsub;
   }, []);
 
-  // 2) UČITAJ IZ 'appointments':
-  //    - poslednja usluga/datum po telefonu (lastByPhone)
-  //    - "appt-only" klijente (oni koji NISU u users), da ih prikažemo u listi
+  // -------- data: appointments --------
   useEffect(() => {
     const qAppts = query(collection(db, "appointments"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(qAppts, (snap) => {
-      const lastMap = new Map();         // phoneDigits -> { lastService, lastDate }
-      const apptClientsMap = new Map();  // phoneDigits -> { uid, name, phone, role, createdAt }
+      const lastMap = new Map();
+      const apptClientsMap = new Map();
 
-      snap.forEach((doc) => {
-        const a = doc.data() || {};
+      snap.forEach((docu) => {
+        const a = docu.data() || {};
         const phoneRaw = a.clientPhone || "";
         const ph = digits(phoneRaw);
-        if (!ph) return;
-        if (EXCLUDE_PHONES.has(ph)) return;
+        if (!ph || EXCLUDE_PHONES.has(ph)) return;
 
-        // poslednja usluga/datum (prvi put viđen u sortiranom silazno = newest)
         if (!lastMap.has(ph)) {
           lastMap.set(ph, {
             lastService: a.serviceName || "",
@@ -89,12 +181,8 @@ export default function AdminKlijenti() {
           });
         }
 
-        // pripremi "appt-only" klijenta (ako se kasnije ispostavi da je u users, nećemo ga duplirati)
         if (!apptClientsMap.has(ph)) {
-          const guessedName =
-            a.clientName?.toString().trim() ||
-            a.name?.toString().trim() ||
-            "—";
+          const guessedName = a.clientName?.toString().trim() || a.name?.toString().trim() || "—";
           apptClientsMap.set(ph, {
             uid: `appt:${ph}`,
             name: guessedName,
@@ -112,7 +200,7 @@ export default function AdminKlijenti() {
     return unsub;
   }, []);
 
-  // 3) Napravi set brojeva koji su već prisutni u users
+  // -------- unify & search --------
   const userPhonesSet = useMemo(() => {
     const s = new Set();
     users.forEach((u) => {
@@ -122,20 +210,14 @@ export default function AdminKlijenti() {
     return s;
   }, [users]);
 
-  // 4) Sastavi finalnu listu:
-  //    - svi iz users
-  //    - plus svi "appt-only" koji NISU u users (po telefonu)
   const unified = useMemo(() => {
     const base = [...users];
     Object.entries(apptOnlyClients).forEach(([ph, c]) => {
-      if (!userPhonesSet.has(ph)) {
-        base.push(c);
-      }
+      if (!userPhonesSet.has(ph)) base.push(c);
     });
     return base;
   }, [users, apptOnlyClients, userPhonesSet]);
 
-  // 5) Spoji sa poslednjim terminom (ako postoji)
   const merged = useMemo(() => {
     return unified.map((u) => {
       const info = lastByPhone[digits(u.phone)] || { lastService: "", lastDate: "" };
@@ -143,37 +225,83 @@ export default function AdminKlijenti() {
     });
   }, [unified, lastByPhone]);
 
-  // 6) Pretraga po imenu i/ili broju
   const filtered = useMemo(() => {
     const q = normText(search);
     const qPhone = digits(search);
     if (!q && !qPhone) return merged;
-
     return merged.filter((c) => {
       const name = normText(c.name);
       const phone = digits(c.phone);
-      const matchName = q ? name.includes(q) : false;
-      const matchPhone = qPhone ? phone.includes(qPhone) : false;
-      return matchName || matchPhone;
+      const m1 = q ? name.includes(q) : false;
+      const m2 = qPhone ? phone.includes(qPhone) : false;
+      return m1 || m2;
     });
   }, [merged, search]);
 
+  // ---- UI helpers ----
+  const inputStyle = {
+    height: 40,
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    padding: "0 12px",
+    width: "100%",
+    background: "#fff",
+  };
+  const btn = {
+    padding: "8px 12px",
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+  };
+  const btnPrimary = { ...btn, border: "none", background: "#ff69b4", color: "#fff" };
+
+  // ---- editor fields (shared) ----
+  function EditorFields({ focusRef }) {
+    return (
+      <div style={{ display: "grid", gap: 10 }}>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 800 }}>Ime i prezime</span>
+          <input
+            ref={focusRef}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            style={inputStyle}
+            placeholder="npr. Ana Perić"
+          />
+        </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 800 }}>Telefon (samo cifre)</span>
+          <input
+            value={form.phone}
+            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            style={inputStyle}
+            placeholder="0641234567"
+          />
+        </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 800 }}>Uloga</span>
+          <select
+            value={form.role}
+            onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+            style={inputStyle}
+          >
+            <option value="client">client</option>
+            <option value="employee">employee</option>
+          </select>
+        </label>
+      </div>
+    );
+  }
+
   return (
     <div style={wrap}>
-      {/* malo CSS-a samo za kartice i wrap tabele */}
       <style>{css}</style>
 
       <div style={panel}>
-        {/* Dugme Nazad */}
-        <button
-          onClick={() => nav(-1)}
-          style={backBtn}
-          aria-label="Vrati se na prethodnu stranu"
-        >
-          ← Nazad
-        </button>
+        <button onClick={() => nav(-1)} style={backBtn}>← Nazad</button>
 
-        {/* NASLOV + PRETRAGA */}
         <div style={headRow(isMobile)}>
           <h2 style={title}>Klijenti</h2>
           <div style={searchBox}>
@@ -182,10 +310,20 @@ export default function AdminKlijenti() {
               placeholder="Pretraga: ime, prezime ili broj"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              aria-label="Pretraga klijenata"
             />
           </div>
+          {!isMobile && (
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={openAdd} style={backBtn}>➕ Novi klijent</button>
+            </div>
+          )}
         </div>
+
+        {isMobile && (
+          <div style={{ marginBottom: 10 }}>
+            <button onClick={openAdd} style={backBtn}>➕ Novi klijent</button>
+          </div>
+        )}
 
         <div
           style={{
@@ -196,41 +334,8 @@ export default function AdminKlijenti() {
           }}
         >
           {filtered.length === 0 ? (
-            <p style={{ margin: 0, color: "#777" }}>Nema klijenata za zadatu pretragu.</p>
-          ) : isMobile ? (
-            // 📱 MOBILNI PRIKAZ — kartice
-            <div className="clients-cards">
-              {filtered.map((c) => (
-                <div key={c.uid} className="client-card">
-                  <div className="client-name">
-                    {c.name}
-                    {c.source === "appointments" ? (
-                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: "#888" }}>
-                        (kal.)
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="client-row">
-                    <span className="label">Telefon</span>
-                    <span className="value">{c.phone || "—"}</span>
-                  </div>
-                  <div className="client-row">
-                    <span className="label">Uloga</span>
-                    <span className="value">{c.role || "client"}</span>
-                  </div>
-                  <div className="client-row">
-                    <span className="label">Usluga</span>
-                    <span className="value">{c.lastService || "—"}</span>
-                  </div>
-                  <div className="client-row">
-                    <span className="label">Datum</span>
-                    <span className="value">{c.lastDate || "—"}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p style={{ margin: 0, color: "#777" }}>Nema klijenata.</p>
           ) : (
-            // 💻 DESKTOP — tabela
             <div className="clients-table-wrap">
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
                 <thead>
@@ -240,36 +345,95 @@ export default function AdminKlijenti() {
                     <th style={th}>Uloga</th>
                     <th style={th}>Poslednja usluga</th>
                     <th style={th}>Datum</th>
+                    <th style={th}>Akcija</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((c, i) => (
-                    <tr key={c.uid} style={i % 2 ? { background: "#fafafa" } : undefined}>
-                      <td style={tdBold}>
-                        {c.name}
-                        {c.source === "appointments" ? (
-                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: "#888" }}>
-                            (kal.)
-                          </span>
-                        ) : null}
-                      </td>
-                      <td style={td}>{c.phone}</td>
-                      <td style={td}>{c.role || "client"}</td>
-                      <td style={td}>{c.lastService}</td>
-                      <td style={td}>{c.lastDate}</td>
-                    </tr>
+                    <React.Fragment key={c.uid}>
+                      <tr style={i % 2 ? { background: "#fafafa" } : undefined}>
+                        <td style={tdBold}>
+                          {c.name}
+                          {c.source === "appointments" ? (
+                            <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: "#888" }}>
+                              (kal.)
+                            </span>
+                          ) : null}
+                        </td>
+                        <td style={td}>{c.phone}</td>
+                        <td style={td}>{c.role || "client"}</td>
+                        <td style={td}>{c.lastService}</td>
+                        <td style={td}>{c.lastDate}</td>
+                        <td style={td}>
+                          <button onClick={() => openEdit(c)} style={btn}>✏️ Uredi</button>
+                        </td>
+                      </tr>
+
+                      {/* INLINE editor ispod reda (samo za izmenu) */}
+                      {editingId === c.uid && (
+                        <tr>
+                          <td colSpan={6}>
+                            <div style={{ padding: 12, background: "#f9f9f9", borderRadius: 8, display: "grid", gap: 10 }}>
+                              <EditorFields />
+                              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                                <button onClick={closeEditor} style={btn}>Otkaži</button>
+                                <button onClick={saveClient} disabled={saving} style={btnPrimary}>
+                                  {saving ? "Čuvam..." : "Sačuvaj"}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
         </div>
+
+        {/* ===== MODAL ZA NOVOG KLIJENTA (centar) ===== */}
+        {editingId === "new" && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,.35)",
+              display: "grid",
+              placeItems: "center",
+              zIndex: 9999,
+            }}
+            onClick={closeEditor}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "min(520px, 92vw)",
+                background: "#fff",
+                borderRadius: 16,
+                boxShadow: "0 24px 64px rgba(0,0,0,.25)",
+                padding: 16,
+              }}
+            >
+              <h3 style={{ marginTop: 0, marginBottom: 12, fontWeight: 900 }}>Dodaj klijenta</h3>
+              <EditorFields focusRef={newNameRef} />
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+                <button onClick={closeEditor} style={btn}>Otkaži</button>
+                <button onClick={saveClient} style={btnPrimary} disabled={saving}>
+                  {saving ? "Čuvam..." : "Sačuvaj"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* ===== kraj modala ===== */}
       </div>
     </div>
   );
 }
 
-/* ===== STILOVI (inline objekti) ===== */
+/* ===== STILOVI ===== */
 const wrap = {
   minHeight: "100vh",
   background: "url('/slika1.webp') center/cover no-repeat fixed",
@@ -278,7 +442,6 @@ const wrap = {
   justifyContent: "center",
   alignItems: "flex-start",
 };
-
 const panel = {
   width: "min(1000px, 100%)",
   background: "rgba(255,255,255,.14)",
@@ -288,7 +451,6 @@ const panel = {
   boxShadow: "0 24px 60px rgba(0,0,0,.25)",
   padding: "clamp(16px,4vw,28px)",
 };
-
 const backBtn = {
   marginBottom: 16,
   padding: "8px 16px",
@@ -301,15 +463,13 @@ const backBtn = {
   boxShadow: "0 6px 14px rgba(0,0,0,.12)",
   WebkitTapHighlightColor: "transparent",
 };
-
 const headRow = (mobile) => ({
   display: "grid",
-  gridTemplateColumns: mobile ? "1fr" : "1fr 320px",
+  gridTemplateColumns: mobile ? "1fr" : "1fr 320px auto",
   gap: 10,
   marginBottom: 12,
 });
 const title = { margin: 0, color: "#000", fontWeight: 900, fontSize: "clamp(20px,3vw,28px)" };
-
 const searchBox = { display: "grid", alignItems: "center" };
 const searchInput = (mobile) => ({
   height: mobile ? 44 : 40,
@@ -324,8 +484,6 @@ const searchInput = (mobile) => ({
   WebkitAppearance: "none",
   appearance: "none",
 });
-
-/* tabela */
 const th = {
   textAlign: "left",
   padding: "10px 12px",
@@ -336,8 +494,6 @@ const th = {
 };
 const td = { padding: "10px 12px", borderBottom: "1px solid #f1f1f1", color: "#222" };
 const tdBold = { ...td, fontWeight: 800 };
-
-/* malo CSS-a za mobile kartice i wrap tabele */
 const css = `
 .clients-table-wrap { overflow-x: auto; }
 

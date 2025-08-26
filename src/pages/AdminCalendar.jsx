@@ -157,6 +157,16 @@ const apptBgFor = (a, colorForServiceId) => {
     ? "repeating-linear-gradient(-45deg,#cce7ff 0 10px,#b3daff 10px 20px)"
     : colorForServiceId(a.serviceId) || "#ffffff";
 };
+function labelFor(a, servicesById) {
+  if (a.type === "vacation") return "Odmor";
+  if (a.type === "block")    return "Blokirano";
+  if (a.type === "break")    return "Pauza";
+  if (a.type === "shift")    return "Smena";
+   const s = servicesById.get(a.serviceId);
+  const base = a.serviceName || s?.name || "Usluga";
+  return a.manual ? base + " (ručno)" : base;
+}
+
 
 // --- UI za izbor opsega dana (Pon..Ned) ---
 const DOW_SR_SHORT = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
@@ -569,7 +579,7 @@ useEffect(() => {
       // "booking" | "block"
 
 
-const [selEmpId, setSelEmpId] = useState(null);
+const [selEmpId, setSelEmpId] = useState(""); // empty string, ne null
 // --- mobile reordering state ---
 const [empSelectMode, setEmpSelectMode] = useState(false);
 const [empSelectedId, setEmpSelectedId] = useState(null);
@@ -605,6 +615,15 @@ useEffect(() => {
   window.addEventListener("resize", onResize);
   return () => window.removeEventListener("resize", onResize);
 }, [srvOpen]);
+// --- TOAST state ---
+const [toastMsg, setToastMsg] = useState("");
+const toastRef = useRef(null);
+
+function showToast(msg) {
+  setToastMsg(msg);
+  if (toastRef.current) clearTimeout(toastRef.current);
+  toastRef.current = setTimeout(() => setToastMsg(""), 2500);
+}
 
 
 // koristiš li već isNarrow negde? Ako ne, dodaj:
@@ -675,6 +694,9 @@ useEffect(() => {
     return () => document.removeEventListener("click", handleClickOutside);
   }, []);
 
+function removeSrv(id) {
+  setSelSrvIds(prev => prev.filter(x => x !== id));
+}
 
 
 // helper za čekiranje/odčekiranje jedne usluge
@@ -948,9 +970,14 @@ useEffect(() => {
 const offA = onSnapshot(qAppts, (s) => {
   // svi appointmenti za taj dan
   const all = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const visible = all.filter(
-    (a) => a.type !== "booking" || a.status === "booked"
-  );
+const visible = all.filter(
+  (a) =>
+    (a.type === "booking" && a.status === "booked") ||
+    a.type === "block" ||
+    a.type === "vacation" ||
+    a.type === "break"
+);
+
 
   // napravi shift evente iz dayShifts
   const shiftAppts = dayShifts
@@ -1175,13 +1202,14 @@ const workingTodayIds = useMemo(() => {
     if (!hasShift) continue;
 
     // Ima li blokadu celog dana?
-    const fullDayBlocked = appointments.some(
-      a =>
-        a.employeeId === e.id &&
-        a.type === "block" &&
-        a.startMin <= openMin &&
-        a.endMin >= closeMin
-    );
+ const fullDayBlocked = appointments.some(
+  a =>
+    a.employeeId === e.id &&
+    (a.type === "block" || a.type === "vacation") &&
+    a.startMin <= openMin &&
+    a.endMin >= closeMin
+);
+
 
     if (!fullDayBlocked) ids.add(e.id);
   }
@@ -1189,8 +1217,20 @@ const workingTodayIds = useMemo(() => {
   return Array.from(ids);
 }, [employees, dayShifts, appointments, openMin, closeMin]);
 
+// radnice koje su na odmoru danas (full-day vacation event)
+const vacationEmpIds = useMemo(() =>
+  appointments
+    .filter(a =>
+      a.type === "vacation" &&
+      a.dateKey === dateKey(dayDate) &&
+      a.startMin <= openMin && a.endMin >= closeMin
+    )
+    .map(a => a.employeeId),
+  [appointments, dayDate, openMin, closeMin]
+);
 
   // Koje kolone da prikažemo u gridu
+// Koje kolone da prikažemo u gridu
 const idsToRender = useMemo(() => {
   // MOBILNI: jedna izabrana ili ništa dok ne izabereš
   if (isMobile) return selEmpId ? [selEmpId] : [];
@@ -1198,11 +1238,20 @@ const idsToRender = useMemo(() => {
   // DESKTOP: ako je nešto ručno izabrano — prikaži baš to
   if (selectedEmpIds.length) return selectedEmpIds;
 
-  // Fallback ponašanje kao ranije
-  if (onlyWorking) return workingTodayIds;
-  return employees.map(e => e.id);
-}, [isMobile, selEmpId, selectedEmpIds, onlyWorking, workingTodayIds, employees]);
+  // "Samo oni koji rade" ➜ prikaži i one koji su na odmoru (da bi se video 'Odmor')
+  if (onlyWorking) {
+    const all = new Set([...workingTodayIds, ...vacationEmpIds]);
+    return Array.from(all);
+  }
 
+  // inače sve radnice
+  return employees.map(e => e.id);
+}, [isMobile, selEmpId, selectedEmpIds, onlyWorking, workingTodayIds, vacationEmpIds, employees]);
+
+// radnice koje su na odmoru danas
+
+
+const allIdsForRoster = Array.from(new Set([...workingTodayIds, ...vacationEmpIds]));
 
 
   const shiftsByEmp = useMemo(() => {
@@ -1353,111 +1402,149 @@ async function blockWholeDaysRange({ employeeId, fromDate, toDate }) {
   alert("Blokada je upisana za izabrane dane.");
 }
 
-  async function addItem() {
+async function addItem() {
   const dk = dateKey(dayDate);
   const empId = selEmpId;
   if (!empId) return alert("Odaberi radnicu.");
 
-  // --- BOOKING ---
-if (mode === "booking") {
-  if (!selServices.length) return alert("Odaberi bar jednu uslugu.");
+  // Rezim: TERMIN
+  if (mode === "booking") {
+    if (!selServices?.length) return alert("Odaberi bar jednu uslugu.");
 
-  const start = timeToMin(startTime);
-  const end   = start + Number(totalDuration || 0);
+    // vreme i trajanje
+    const start = timeToMin(startTime);
+    const totalDur = Number(totalDuration || 0);
+    const end = start + totalDur;
 
-  // Validacije (ostaju iste)
-  if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
-  if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
-  if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+    // Validacije
+    if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+    if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+    if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
 
-/* === [STEP 5A] validate + upsert client (free-text OR postojeći) === */
-const nameToSave  = (clientName  || "").trim();
-const phoneToSave = (clientPhone || "").trim();
+    // Klijent
+    const nameToSave  = (clientName  || "").trim();
+    const phoneToSave = (clientPhone || "").trim();
+    if (!nameToSave)  return alert("Unesi ime klijenta ili odaberi iz liste.");
+    if (!phoneToSave) return alert("Unesi broj telefona.");
+    const phoneN = normPhone(phoneToSave);
 
-if (!nameToSave)  return alert("Unesi ime klijenta ili odaberi iz liste.");
-if (!phoneToSave) return alert("Unesi broj telefona.");
+    // Servisi / cena / boja
+    const primaryService = selServices[0];
+    const primaryColor   = colorForServiceId(primaryService?.id);
+    const totalPrice     = selServices.reduce((s, x) => s + Number(getServicePrice(x) || 0), 0);
 
-const phoneN = normPhone(phoneToSave);     // ⬅️ koristimo očišćen broj
-const newRef = doc(collection(db, "appointments"));
+    // Firestore transakcija: upis klijenta (po potrebi) + termin
+    const newRef = doc(collection(db, "appointments"));
 
+    try {
+      await runTransaction(db, async (tx) => {
+        let penaltyApplied = null;
 
-  await runTransaction(db, async (tx) => {
-  let penaltyApplied = null;
+        // upsert klijenta + skidanje pending kazne (ako postoji)
+        if (phoneN) {
+          const cRef = doc(db, "clients", phoneN);
+          const cSnap = await tx.get(cRef);
+          const pen = cSnap.exists() ? cSnap.data()?.pendingPenalty : null;
 
-  if (phoneN) {
-    const cRef = doc(db, "clients", phoneN);
-    const cSnap = await tx.get(cRef);
-    const pen = cSnap.exists() ? cSnap.data()?.pendingPenalty : null;
+          if (pen?.amount > 0) {
+            penaltyApplied = {
+              amount: Number(pen.amount || 0),
+              sourceApptId: pen.sourceApptId || "",
+              appliedAt: serverTimestamp(),
+            };
+            tx.set(
+              cRef,
+              { pendingPenalty: deleteField(), updatedAt: serverTimestamp() },
+              { merge: true }
+            );
+          } else if (!cSnap.exists()) {
+            tx.set(
+              cRef,
+              {
+                phone: phoneN,
+                name: nameToSave,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+          } else if (!cSnap.data()?.name && nameToSave) {
+            tx.set(
+              cRef,
+              { name: nameToSave, updatedAt: serverTimestamp() },
+              { merge: true }
+            );
+          }
+        }
 
-    if (pen?.amount > 0) {
-      penaltyApplied = {
-        amount: Number(pen.amount || 0),
-        sourceApptId: pen.sourceApptId || "",
-        appliedAt: serverTimestamp(),
-      };
-      tx.set(cRef, { pendingPenalty: deleteField(), updatedAt: serverTimestamp() }, { merge: true });
-    } else if (!cSnap.exists()) {
-      // NOV klijent → napravi dokument
-      tx.set(cRef, {
-        phone: phoneN,
-        name: nameToSave,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-    } else if (!cSnap.data()?.name && nameToSave) {
-      // postoji, ali bez imena → upiši ime
-      tx.set(cRef, { name: nameToSave, updatedAt: serverTimestamp() }, { merge: true });
+        // Dokument termina (ručno unet)
+        const apptDoc = {
+          type: "booking",
+          status: "booked",
+
+          employeeId: empId,
+          employeeName: employeesById.get(empId)?.name || "",
+
+          dateKey: dk,
+          startHHMM: minToTime(start),
+          endHHMM:   minToTime(end),
+          startMin: start,
+          endMin:   end,
+
+          // back-compat polja
+          serviceId: primaryService?.id,
+          serviceName: primaryService?.name,
+
+          // multi-service detalji
+          servicesInfo: selServices.map((s) => ({
+            id: s.id,
+            name: s.name,
+            durationMin: Number(s.durationMin || 0),
+            price: getServicePrice(s),
+          })),
+          serviceIds: selServices.map((s) => s.id),
+
+          durationMin: totalDur,
+          price: Number(totalPrice || 0),
+          color: primaryColor,
+
+          clientName: nameToSave,
+          clientPhone: phoneToSave,
+
+          penaltyApplied,       // ako je postojala
+          manual: true,         // 👈 oznaka "ručno"
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+
+        tx.set(newRef, apptDoc);
+      });
+    } catch (err) {
+      console.error("Greška pri dodavanju termina:", err);
+      (typeof showToast === "function"
+        ? showToast("❌ Greška! Termin nije dodat.")
+        : alert("❌ Greška! Termin nije dodat."));
+      return; // prekini da ne prikažeš lažnu poruku o uspehu
     }
-  }
 
-  const apptDoc = {
-      type: "booking",
-      status: "booked",
-      employeeId: empId,
-      employeeName: employeesById.get(empId)?.name || "",
-      dateKey: dk,
-      startHHMM: minToTime(start),
-      endHHMM: minToTime(end),
-      startMin: start,
-      endMin: end,
+(typeof showToast === "function"
+  ? showToast("✅ Termin je uspešno dodat")
+  : alert("✅ Termin je uspešno dodat"));
 
-      // BACK-COMPAT polja (ostavljamo ih zbog prikaza/boje):
-      serviceId: primaryService?.id || selServices[0]?.id,
-      serviceName: primaryService?.name || selServices[0]?.name,
-
-      // NOVO: kompletan spisak usluga
-      servicesInfo: selServices.map(s => ({
-        id: s.id,
-        name: s.name,
-        durationMin: Number(s.durationMin || 0),
-        price: getServicePrice(s),
-      })),
-      serviceIds: selServices.map(s => s.id), // opciono
-
-      durationMin: Number(totalDuration || 0),
-      price: Number(totalPrice || 0),
-      color: primaryColor, // boja od prve izabrane
-
-      // klijent (kao i do sada)
-      clientName:  nameToSave,
-      clientPhone: phoneToSave,
-
-      penaltyApplied, // ako ti ta logika već postoji
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    tx.set(newRef, apptDoc);
-  });
-
-  // počisti polja kao i ranije
-  setClientName("");
-  setClientPhone("");
-  return;
+// Pospremi UI
+try {
+  setClientName?.("");
+  setClientPhone?.("");
+  setSelSrvIds?.([]);     // reset multi-select usluga
+  setSelSrvId?.("");      // reset single-select (ako ga koristiš)
+  setSrvOpen?.(false);    // zatvori panel usluga ako je otvoren
+  closeApptModal?.();     // ✅ ispravno ime funkcije (umesto closeModal)
+} catch (uiErr) {
+  console.warn("Termin dodat, ali UI reset je pao:", uiErr);
 }
 
-
- 
+    return;
+  }
 
   // --- BLOCK ---
   const start = timeToMin(startTime);
@@ -1752,57 +1839,73 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
   }
 
   // Vacation: blocks the whole existing shift per day
-  async function applyVacationRange() {
-    const empId = monthEmpId;
-    if (!empId) return alert("Odaberi radnicu.");
-    if (!vacStart) return alert("Odaberi datum početka odmora.");
-    const daysCount = Math.max(1, Number(vacDays || 0));
+// Stavi ovo na vrh fajla (posle import-a) ako već nemaš:
 
-    const base = new Date(vacStart + "T00:00:00");
-    const monthOfAnchor = firstDayOfMonth(monthAnchor).getMonth();
 
-    setBusyVac(true);
-    try {
-      for (let i = 0; i < daysCount; i++) {
-        const d = new Date(
-          base.getFullYear(),
-          base.getMonth(),
-          base.getDate() + i
-        );
-        if (d.getMonth() !== monthOfAnchor) continue;
+async function applyVacationRange() {
+  const empId = monthEmpId;
+  if (!empId) return alert("Odaberi radnicu.");
+  if (!vacStart) return alert("Odaberi datum početka odmora.");
+  const daysCount = Math.max(1, Number(vacDays || 0));
 
-        const key = dateKey(d);
-        const segs = monthShifts
-          .filter((s) => s.employeeId === monthEmpId && s.dateKey === key)
-          .flatMap((s) => s.segments || []);
-        if (!segs.length) continue;
+  const base = new Date(vacStart + "T00:00:00");
+  const monthOfAnchor = firstDayOfMonth(monthAnchor).getMonth();
 
-        for (const s of segs) {
-          const startMin = timeToMin(s.start);
-          const endMin = timeToMin(s.end);
-          if (!(endMin > startMin)) continue;
+  setBusyVac(true);
+  let wrote = 0;
 
-          const id = `vac_${monthEmpId}_${key}_${s.start.replace(":", "")}`;
-          await setDoc(doc(db, "appointments", id), {
-            type: "vacation",
-            status: "vacation",
-            employeeId: monthEmpId,
-            employeeName: employeesById.get(monthEmpId)?.name || "",
-            dateKey: key,
-            startHHMM: minToTime(startMin),
-            endHHMM: minToTime(endMin),
-            startMin,
-            endMin,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
-      alert("Odmor je upisan.");
-    } finally {
-      setBusyVac(false);
+  try {
+    for (let i = 0; i < daysCount; i++) {
+      const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+
+      // Ako NE želiš da opseg prelazi otvoreni mesec, ostavi ovo;
+      // ako želiš da prelazi mesece, obriši naredni if.
+      if (d.getMonth() !== monthOfAnchor) continue;
+
+      const key = dateKey(d);
+
+      // UVEK koristi radno vreme salona za taj dan (full-day vacation)
+      const dowKey = ["sun","mon","tue","wed","thu","fri","sat"][d.getDay()];
+      const sh =
+        (salonHours && salonHours[dowKey]) ||
+        (typeof DEFAULT_SALON_HOURS !== "undefined" && DEFAULT_SALON_HOURS[dowKey]) ||
+        { open: "08:00", close: "22:00" }; // krajnji fallback
+
+      const open = timeToMin(sh.open);
+      const close = timeToMin(sh.close);
+      if (!(close > open)) continue;
+
+      const startMin = open;
+      const endMin   = close;
+
+      // Jedan full-day segment po danu
+      const id = `vac_${empId}_${key}_${sh.open.replace(":", "")}`;
+
+      await setDoc(doc(db, "appointments", id), {
+        type: "vacation",
+        status: "vacation",
+        employeeId: empId,
+        employeeName: employeesById.get(empId)?.name || "",
+        dateKey: key,
+        startHHMM: minToTime(startMin),
+        endHHMM:   minToTime(endMin),
+        startMin,
+        endMin,
+        serviceName: "Odmor",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      wrote++;
     }
+
+    alert(wrote ? "Odmor je upisan." : "Nije upisano ništa (nema dana u opsegu ili radnog vremena).");
+  } finally {
+    setBusyVac(false);
   }
+}
+
+
 
   /* ------------ drag & drop (kolona→kolona) ------------ */
 
@@ -2035,7 +2138,7 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
   // ZAJEDNIČKI SADRŽAJ
   const content = (
     <>
-      <div style={{ padding: 12, display: "grid", gap: 10, minHeight: 120 }}>
+      <div style={{ padding: 10, display: "grid", gap: 6, minHeight: 120 }}>
         {svcList.map((s) => {
           const checked = selSrvIds.includes(s.id);
           const price = Number(getServicePrice(s) || 0);
@@ -2209,6 +2312,55 @@ function computePenaltyAmountFromAppt(appt, servicesById) {
     })()}
   </div>
 )}
+{/* Izabrane usluge (sa brisanjem pojedinačno) */}
+{selSrvIds.length > 0 && (
+  <div style={{ marginTop: 8 }}>
+    <div style={{ fontWeight: 600, marginBottom: 6 }}>Izabrane usluge</div>
+    {selSrvIds.map((id, idx) => {
+      const s = servicesById.get(id);
+      if (!s) return null;
+      const price = Number(getServicePrice(s) || 0);
+      return (
+        <div
+          key={id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "#fff",
+           
+            border: "1px solid rgba(0,0,0,.08)",
+            marginBottom: 6
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600}}>
+            {s.name} — {price.toLocaleString("sr-RS")} RSD
+            {idx === 0 && selSrvIds.length > 1 && (
+              <span style={{ opacity: .7, marginLeft: 8 }}>(primarna boja)</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => removeSrv(id)}
+            title="Ukloni ovu uslugu"
+            style={{
+              border: "none",
+              
+              background: "transparent",
+              fontSize: 16,
+              cursor: "pointer"
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      );
+    })}
+  </div>
+)}
+
 
     </div>
   )
@@ -2915,6 +3067,8 @@ function DayStrip({ monthStr, selectedKey, onPickDay, compact = false, chunkSize
     </div>
   );
 }
+// ---------- naslov kartice po tipu ----------
+
 
 /* -------------------- Day grid -------------------- */
 function DayGrid({
@@ -2942,34 +3096,34 @@ function DayGrid({
   isMobile,
   onCreateBlock,
 }) {
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragEmpId, setDragEmpId] = useState(null);
-  const [dragStartMin, setDragStartMin] = useState(0);
-  const [previewTop, setPreviewTop] = useState(0);
-  const [previewHeight, setPreviewHeight] = useState(0);
-  const [dragCurrentMin, setDragCurrentMin] = useState(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragEmpId, setDragEmpId] = React.useState(null);
+  const [dragStartMin, setDragStartMin] = React.useState(0);
+  const [previewTop, setPreviewTop] = React.useState(0);
+  const [previewHeight, setPreviewHeight] = React.useState(0);
+  const [dragCurrentMin, setDragCurrentMin] = React.useState(null);
 
   // Tap-tap selekcija (telefon)
-  const [tapStartMin, setTapStartMin] = useState(null);
-  const [tapEmpId, setTapEmpId] = useState(null);
+  const [tapStartMin, setTapStartMin] = React.useState(null);
+  const [tapEmpId, setTapEmpId] = React.useState(null);
 
-  // Armiranje draga na mobilnom (dozvoli prirodan scroll dok ne pređe prag)
-  const [isArming, setIsArming] = useState(false);
-  const armStartYRef = useRef(0);
-  const armStartMinRef = useRef(0);
+  // Armiranje draga na mobilnom
+  const [isArming, setIsArming] = React.useState(false);
+  const armStartYRef = React.useRef(0);
+  const armStartMinRef = React.useRef(0);
 
-  // Ref-ovi na tela kolona da bismo skrolovali najbliži scroll container
-  const colRefs = useRef(new Map());
+  // Ref-ovi na tela kolona
+  const colRefs = React.useRef(new Map());
 
   const DRAG_THRESHOLD_PX = 20;
   const EDGE_PX = 60;
   const AUTOSCROLL_STEP = 16;
 
-  // SNAP: grublje na mobilnom (lakše pogoditi), finije na desktopu
+  // SNAP: grublje na mobilnom
   const SNAP_MIN = isMobile ? 30 : 5;
 
-  // ---------- NOVO: layout kolona (desktop: jedan red + h-scroll) ----------
-  const COL_W = isMobile ? "100%" : 220; // po želji spusti na 200/180
+  // ---------- layout kolona (desktop: jedan red + h-scroll) ----------
+  const COL_W = isMobile ? "100%" : 220;
   const colsOuter = {
     display: "flex",
     flexDirection: "row",
@@ -2981,14 +3135,9 @@ function DayGrid({
     WebkitOverflowScrolling: "touch",
     scrollbarWidth: "thin",
   };
-  // Ako već imaš colBox definisan globalno, zadrži ga; ovo je kompatibilno:
 
-  // ------------------------------------------------------------------------
-
-  // touch sa unutrašnjih elemenata ne sme da “procure” do kolone
-  const stopTouchPropagation = (e) => {
-    e.stopPropagation();
-  };
+  // touch sa unutrašnjih elemenata ne sme da “procure”
+  const stopTouchPropagation = (e) => e.stopPropagation();
 
   // “×” dugme za brisanje BLOKA
   const blockDeleteBtn = {
@@ -3041,13 +3190,8 @@ function DayGrid({
     const clientY = getClientY(e);
     const rect = e.currentTarget.getBoundingClientRect();
     const y = clientY - rect.top;
-
-    // 1px ≈ 1min * 3.5 (tvoj scale)
     let min = openMin + Math.floor(y / 3.5);
-
-    // SNAP
     min = Math.round(min / SNAP_MIN) * SNAP_MIN;
-
     return clamp(min, openMin, closeMin);
   };
 
@@ -3074,15 +3218,12 @@ function DayGrid({
       }
     } else {
       const rect = scroller.getBoundingClientRect();
-      if (clientY > rect.bottom - EDGE_PX) {
-        scroller.scrollTop += AUTOSCROLL_STEP;
-      } else if (clientY < rect.top + EDGE_PX) {
-        scroller.scrollTop -= AUTOSCROLL_STEP;
-      }
+      if (clientY > rect.bottom - EDGE_PX) scroller.scrollTop += AUTOSCROLL_STEP;
+      else if (clientY < rect.top + EDGE_PX) scroller.scrollTop -= AUTOSCROLL_STEP;
     }
   };
 
-  // Blokiraj ceo dan
+  // Blokiraj ceo dan (po smenama, ili open–close ako nema smene)
   const blockWholeDay = (empId, segs) => {
     if (segs && segs.length) {
       segs.forEach((s) => {
@@ -3113,7 +3254,6 @@ function DayGrid({
     const clientY = getClientY(e);
     const anchorEl = colRefs.current.get(empId) || e.currentTarget;
     autoScrollOnEdge(clientY, anchorEl);
-
     setDragCurrentMin(currentMin);
     const min1 = Math.min(dragStartMin, currentMin);
     const min2 = Math.max(dragStartMin, currentMin);
@@ -3138,7 +3278,7 @@ function DayGrid({
     }
   };
 
-  /* -------------------- Tap-tap na telefonu -------------------- */
+  /* -------------------- Tap-tap (telefon) -------------------- */
   const commitTapAt = (empId, minute) => {
     if (tapStartMin == null || tapEmpId !== empId) {
       setTapEmpId(empId);
@@ -3164,15 +3304,11 @@ function DayGrid({
     setIsArming(true);
     setDragEmpId(empId);
   };
-
   const handleTouchMove = (e, empId) => {
     if (e.touches.length !== 1) return;
     const clientY = getClientY(e);
     const dy = clientY - armStartYRef.current;
-
-    if (isArming && Math.abs(dy) < DRAG_THRESHOLD_PX) {
-      return;
-    }
+    if (isArming && Math.abs(dy) < DRAG_THRESHOLD_PX) return;
     if (isArming && Math.abs(dy) >= DRAG_THRESHOLD_PX) {
       setIsArming(false);
       setDragEmpId(null);
@@ -3181,7 +3317,6 @@ function DayGrid({
     const anchorEl = colRefs.current.get(empId) || e.currentTarget;
     autoScrollOnEdge(clientY, anchorEl);
   };
-
   const handleTouchEnd = (e, empId) => {
     if (isArming && dragEmpId === empId) {
       const minute = getMinFromEvent(e);
@@ -3202,12 +3337,8 @@ function DayGrid({
           className="time-axis"
           style={{
             ...timeAxis,
-            width: 0,
-            minWidth: 0,
-            padding: 0,
-            border: "none",
-            opacity: 0,
-            pointerEvents: "none",
+            width: 0, minWidth: 0, padding: 0, border: "none",
+            opacity: 0, pointerEvents: "none",
             height: gridHeight(closeMin - openMin),
           }}
         />
@@ -3228,10 +3359,9 @@ function DayGrid({
           const gutterW = isMobile ? 36 : 46;
 
           const isSingle = employeeIdsForDay.length === 1;
-        const colStyle = isSingle
-  ? { ...colBox(isMobile), flex: "1 1 100%", width: "100%", maxWidth: "100%", direction: "ltr" }
-  : { ...colBox(isMobile), direction: "ltr" };
-
+          const colStyle = isSingle
+            ? { ...colBox(isMobile), flex: "1 1 100%", width: "100%", maxWidth: "100%", direction: "ltr" }
+            : { ...colBox(isMobile), direction: "ltr" };
 
           return (
             <div key={empId} style={colStyle}>
@@ -3240,8 +3370,8 @@ function DayGrid({
                   <button
                     type="button"
                     onClick={() => {
-                      const segs = shiftsByEmp.get(empId) || [];
-                      blockWholeDay(empId, segs);
+                      const segsNow = shiftsByEmp.get(empId) || [];
+                      blockWholeDay(empId, segsNow);
                     }}
                     style={blockDayBtn}
                     title="Blokiraj ceo dan"
@@ -3284,13 +3414,8 @@ function DayGrid({
                 <div
                   aria-hidden
                   style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: gutterW,
-                    pointerEvents: "none",
-                    zIndex: 3,
+                    position: "absolute", left: 0, top: 0, bottom: 0,
+                    width: gutterW, pointerEvents: "none", zIndex: 3,
                   }}
                 >
                   {timeMarks(openMin, closeMin).map((t) => {
@@ -3300,30 +3425,19 @@ function DayGrid({
                       <div key={t}>
                         <div
                           style={{
-                            position: "absolute",
-                            left: 0,
-                            right: 0,
-                            top: y,
-                            height: 1,
-                            transform: "translateY(-0.5px)",
+                            position: "absolute", left: 0, right: 0, top: y,
+                            height: 1, transform: "translateY(-0.5px)",
                             borderTop: "1px dashed rgba(255,255,255,.25)",
                           }}
                         />
                         <span
                           style={{
-                            position: "absolute",
-                            left: 6,
-                            top: safeTop,
+                            position: "absolute", left: 6, top: safeTop,
                             transform: "translateY(-50%)",
-                            fontSize: 12,
-                            fontWeight: 700,
-                            lineHeight: 1,
-                            padding: "2px 6px",
-                            borderRadius: 6,
-                            background: "rgba(0,0,0,.35)",
-                            color: "rgba(255,255,255,1)",
-                            textShadow: "0 1px 2px rgba(0,0,0,.35)",
-                            zIndex: 4,
+                            fontSize: 12, fontWeight: 700, lineHeight: 1,
+                            padding: "2px 6px", borderRadius: 6,
+                            background: "rgba(0,0,0,.35)", color: "rgba(255,255,255,1)",
+                            textShadow: "0 1px 2px rgba(0,0,0,.35)", zIndex: 4,
                           }}
                         >
                           {minToTime(t)}
@@ -3338,13 +3452,10 @@ function DayGrid({
                   <div
                     key={i}
                     style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
+                      position: "absolute", left: 0, right: 0,
                       top: pxFromMin(timeToMin(s.start) - openMin),
                       height: pxFromMin(timeToMin(s.end) - timeToMin(s.start)),
-                      background:
-                        "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
+                      background: "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
                       border: "0.5px dashed rgba(255,255,255,.25)",
                       borderRadius: 10,
                     }}
@@ -3352,220 +3463,162 @@ function DayGrid({
                   />
                 ))}
 
-                {/* Termini / blokade */}
+                {/* Termini / pauze / blokade / odmori */}
                 {appts.map((a) => {
                   const isBlock = a.type === "block";
                   const isBreak = a.type === "break";
                   const isVacation = a.type === "vacation";
                   const isShift = a.type === "shift";
+
                   const top = pxFromMin(a.startMin - openMin);
                   const height = pxFromMin(a.endMin - a.startMin);
                   const bg = apptBgFor(a, colorForServiceId);
-                  const srvDef = servicesById.get(a.serviceId);
-                  const price = Number(a.price ?? srvDef?.price ?? 0);
-// --- multi-service derivati za PRIKAZ ---
-const apptServices = Array.isArray(a?.servicesInfo) && a.servicesInfo.length
-  ? a.servicesInfo
-  : (Array.isArray(a?.serviceIds) && a.serviceIds.length
-      ? a.serviceIds
-          .map(id => servicesById.get(id))
-          .filter(Boolean)
-          .map(s => ({
-            id: s.id,
-            name: s.name,
-            durationMin: s.durationMin,
-            price: getServicePrice(s),
-          }))
-      : (() => {
-          const one = servicesById.get(a.serviceId);
-          return one ? [{
-            id: one.id,
-            name: one.name,
-            durationMin: one.durationMin,
-            price: getServicePrice(one),
-          }] : [];
-        })());
 
-const apptNames = apptServices.map(s => s.name).join(", ");
-const priceTotal = (a?.price != null)
-  ? Number(a.price)
-  : apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0);
+                  // --- multi-service derivati za PRIKAZ ---
+                  const apptServices = Array.isArray(a?.servicesInfo) && a.servicesInfo.length
+                    ? a.servicesInfo
+                    : (Array.isArray(a?.serviceIds) && a.serviceIds.length
+                        ? a.serviceIds
+                            .map(id => servicesById.get(id))
+                            .filter(Boolean)
+                            .map(s => ({
+                              id: s.id,
+                              name: s.name,
+                              durationMin: s.durationMin,
+                              price: getServicePrice(s),
+                            }))
+                        : (() => {
+                            const one = servicesById.get(a.serviceId);
+                            return one ? [{
+                              id: one.id,
+                              name: one.name,
+                              durationMin: one.durationMin,
+                              price: getServicePrice(one),
+                            }] : [];
+                          })());
+
+                  const apptNames = apptServices.map(s => s.name).join(", ");
+                  const priceTotal = (a?.price != null)
+                    ? Number(a.price)
+                    : apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0);
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
-                  const pendingPen = a.clientPhone
-                    ? pendingPenaltyByPhone.get(normPhone(a.clientPhone))
-                    : null;
+                  const pendingPen = a.clientPhone ? pendingPenaltyByPhone.get(normPhone(a.clientPhone)) : null;
                   const hasPendingPenalty = !!pendingPen;
                   const penaltyApplied = a?.penaltyApplied?.amount > 0;
+                  const earliestIdForPhone = phone ? earliestApptIdByPhone.get(phone) : null;
+                  const showPendingPenaltyHere = !!(hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id);
+                  const showNoShowHere = !!(hasNoShowHistory && earliestIdForPhone === a.id);
 
-                  const earliestIdForPhone = phone
-                    ? earliestApptIdByPhone.get(phone)
-                    : null;
-                  const showPendingPenaltyHere =
-                    !!(hasPendingPenalty && !penaltyApplied && earliestIdForPhone === a.id);
-                  const showNoShowHere =
-                    !!(hasNoShowHistory && earliestApptIdByPhone.get(phone) === a.id);
+                  const isInfoCard = isBreak || isBlock || isVacation || isShift;
 
                   return (
                     <button
                       key={a.id}
                       id={`appt-${a.id}`}
-                   draggable={a.type !== "shift"}
-onDragStart={a.type !== "shift" ? onApptDragStart(a) : undefined}
+                      draggable={a.type !== "shift"}
+                      onDragStart={a.type !== "shift" ? onApptDragStart(a) : undefined}
                       onMouseEnter={() => setHoverApptId(a.id)}
                       onMouseLeave={() => setHoverApptId(null)}
-                   onClick={
-  !isBreak && !isBlock && !isVacation && !isShift
-    ? () => onApptClick(a)
-    : undefined
-}
-style={{
-  ...apptCard(top, height, bg, isBreak || isBlock || isVacation),
-  ...(isShift ? { pointerEvents: "none", opacity: 0.5, zIndex: -1 } : {}),
-  ...(isBlock ? { zIndex: 5 } : {})
-}}
+                      onClick={!isInfoCard ? () => onApptClick(a) : undefined}
+                      style={{
+                        ...apptCard(top, height, bg, isInfoCard),
+                        ...(isShift ? { pointerEvents: "none", opacity: 0.5, zIndex: -1 } : {}),
+                       ...(isBlock || isVacation ? { zIndex: 5 } : {})
 
-
-                    title={
-  isVacation
-    ? "Odmor"
-    : isBreak
-    ? "Pauza"
-    : isBlock
-    ? "Blokirano"
-    : `${apptNames || a.serviceName || "Usluga"}${
-        priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
-      }${a.clientName ? " · " + a.clientName : ""}`
-}
-
+                      }}
+                      title={
+                        isVacation ? "Odmor" :
+                        isBreak    ? "Pauza" :
+                        isBlock    ? "Blokirano" :
+                        `${apptNames || a.serviceName || "Usluga"}${
+                          priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
+                        }${a.clientName ? " · " + a.clientName : ""}`
+                      }
                       onDragOver={(e) => e.preventDefault()}
                       onTouchStart={stopTouchPropagation}
                       onTouchEnd={stopTouchPropagation}
                     >
-                     <div style={cardTitle(isMobile)}>
-  {isVacation
-    ? "Odmor"
-    : isBreak
-    ? "Pauza"
-    : isBlock
-    ? "Blokirano"
-    : isShift
-    ? "Smena"
-    : (apptNames || a.serviceName || "Usluga")}
-</div>
+                      {/* Naslov kartice */}
+                      <div style={cardTitle(isMobile)}>
+                        {labelFor(a, servicesById)}
+                      </div>
 
-
-
-                      {/* Vreme na BLOKADI */}
-                      {isBlock && (
+                      {/* Info redovi - vreme/cena/klijent */}
+                      {isBlock || isBreak || isVacation ? (
                         <div style={metaRow}>
                           <span style={pill}>
                             <FiClock style={{ marginRight: 6 }} />
                             {minToTime(a.startMin)}–{minToTime(a.endMin)}
                           </span>
                         </div>
-                      )}
+                      ) : !isShift ? (
+                        <div style={metaRow}>
+                          <span style={pill}>
+                            <FiClock style={{ marginRight: 6 }} />
+                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
+                          </span>
+                          {priceTotal > 0 && (
+                            <span style={pill}>
+                              {priceTotal.toLocaleString("sr-RS")} RSD
+                            </span>
+                          )}
+                          {a.clientName && (
+                            <span style={pillLight(isMobile)}>
+                              <FiUser style={{ marginRight: 6 }} />
+                              {a.clientName}
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
 
-                {!isBreak && !isBlock && !isVacation && !isShift && (
-  <div style={metaRow}>
-    <span style={pill}>
-      <FiClock style={{ marginRight: 6 }} />
-      {minToTime(a.startMin)}–{minToTime(a.endMin)}
-    </span>
-
-    {priceTotal > 0 && (
-      <span style={pill}>
-        {priceTotal.toLocaleString("sr-RS")} RSD
-      </span>
-    )}
-
-    {a.clientName && (
-      <span style={pillLight(isMobile)}>
-        <FiUser style={{ marginRight: 6 }} />
-        {a.clientName}
-      </span>
-    )}
-  </div>
+                      {/* × dugme samo na blokadi */}
+                     {/* × dugme za blokadu i odmor */}
+{(isBlock || isVacation) && (
+  <span
+    role="button"
+    aria-label={isBlock ? "Obriši blokadu" : "Obriši odmor"}
+    tabIndex={0}
+    style={blockDeleteBtn}
+    onTouchStart={stopTouchPropagation}
+    onTouchEnd={(e) => {
+      stopTouchPropagation(e);
+      try {
+        deleteAppt?.(a.id ?? a);
+      } catch {
+        if (a?.id) deleteAppt?.(a.id);
+      }
+    }}
+    onClick={(e) => {
+      e.stopPropagation();
+      try {
+        deleteAppt?.(a.id ?? a);
+      } catch {
+        if (a?.id) deleteAppt?.(a.id);
+      }
+    }}
+    onKeyDown={(e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          deleteAppt?.(a.id ?? a);
+        } catch {
+          if (a?.id) deleteAppt?.(a.id);
+        }
+      }
+    }}
+  >
+    ×
+  </span>
 )}
 
-
-                      {isBreak && (
-                        <div style={metaRow}>
-                          <span style={pill}>
-                            <FiClock style={{ marginRight: 6 }} />
-                            {minToTime(a.startMin)}–{minToTime(a.endMin)}
-                          </span>
+                      {hoverApptId === a.id && !isInfoCard && (
+                        <div style={hoverHint}>
+                          <FiEdit3 /> Klikni za detalje
                         </div>
                       )}
-
-                      {!isBreak && !isBlock && !isVacation && showNoShowHere && (
-                        <div style={badgeNoShow}>
-                          <FiAlertTriangle style={{ marginRight: 6 }} />
-                          No-show istorija
-                        </div>
-                      )}
-                      {!isBreak && !isBlock && !isVacation && showPendingPenaltyHere && (
-                        <div style={badgePenalty}>
-                          <FiInfo style={{ marginRight: 6 }} />
-                          Kazna za naplatu
-                        </div>
-                      )}
-                      {!isBreak && !isBlock && !isVacation && penaltyApplied && (
-                        <div style={badgePenalty}>
-                          <FiInfo style={{ marginRight: 6 }} />
-                          Kazna primenjena
-                        </div>
-                      )}
-
-                      {/* × dugme za brisanje BLOKA — span umesto button da ne bude nesting */}
-                      {isBlock && (
-                        <span
-                          role="button"
-                          aria-label="Obriši blokadu"
-                          tabIndex={0}
-                          style={blockDeleteBtn}
-                          onTouchStart={stopTouchPropagation}
-                          onTouchEnd={(e) => {
-                            stopTouchPropagation(e);
-                            try {
-                              deleteAppt?.(a.id ?? a);
-                            } catch {
-                              if (a?.id) deleteAppt?.(a.id);
-                            }
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            try {
-                              deleteAppt?.(a.id ?? a);
-                            } catch {
-                              if (a?.id) deleteAppt?.(a.id);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              try {
-                                deleteAppt?.(a.id ?? a);
-                              } catch {
-                                if (a?.id) deleteAppt?.(a.id);
-                              }
-                            }
-                          }}
-                        >
-                          ×
-                        </span>
-                      )}
-
-                      {hoverApptId === a.id &&
-                        !isBreak &&
-                        !isBlock &&
-                        !isVacation && (
-                          <div style={hoverHint}>
-                            <FiEdit3 /> Klikni za detalje
-                          </div>
-                        )}
                     </button>
                   );
                 })}
@@ -3581,29 +3634,16 @@ style={{
                       <div
                         style={{
                           position: "absolute",
-                          left: 0,
-                          right: 0,
-                          top: previewTop,
-                          height: previewHeight,
-                          background:
-                            "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
-                          opacity: 0.7,
-                          borderRadius: 10,
+                          left: 0, right: 0, top: previewTop, height: previewHeight,
+                          background: "repeating-linear-gradient(-45deg,#cfcfcf 0 8px,#bdbdbd 8px 16px)",
+                          opacity: 0.7, borderRadius: 10,
                         }}
                       />
                       <div
                         style={{
-                          position: "absolute",
-                          left: 8,
-                          top: labelTop,
-                          padding: "2px 8px",
-                          borderRadius: 8,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          background: "rgba(0,0,0,.55)",
-                          color: "#fff",
-                          pointerEvents: "none",
-                          zIndex: 6,
+                          position: "absolute", left: 8, top: labelTop,
+                          padding: "2px 8px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                          background: "rgba(0,0,0,.55)", color: "#fff", pointerEvents: "none", zIndex: 6,
                         }}
                       >
                         {labelText}
@@ -3617,31 +3657,18 @@ style={{
                   <>
                     <div
                       style={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        top: pxFromMin(tapStartMin - openMin),
-                        height: 2,
-                        background: "rgba(255,95,162,.9)",
-                        boxShadow: "0 0 0 1px rgba(255,95,162,.6)",
-                        transform: "translateY(-1px)",
-                        zIndex: 7,
-                        pointerEvents: "none",
+                        position: "absolute", left: 0, right: 0,
+                        top: pxFromMin(tapStartMin - openMin), height: 2,
+                        background: "rgba(255,95,162,.9)", boxShadow: "0 0 0 1px rgba(255,95,162,.6)",
+                        transform: "translateY(-1px)", zIndex: 7, pointerEvents: "none",
                       }}
                     />
                     <div
                       style={{
-                        position: "absolute",
-                        left: 8,
+                        position: "absolute", left: 8,
                         top: Math.max(0, pxFromMin(tapStartMin - openMin) - 22),
-                        padding: "2px 6px",
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        background: "rgba(0,0,0,.55)",
-                        color: "#fff",
-                        pointerEvents: "none",
-                        zIndex: 7,
+                        padding: "2px 6px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                        background: "rgba(0,0,0,.55)", color: "#fff", pointerEvents: "none", zIndex: 7,
                       }}
                     >
                       {minToTime(tapStartMin)}
@@ -3656,6 +3683,7 @@ style={{
     </div>
   );
 }
+
 
 /* -------------------- Schedule grid (bookings of the day) -------------------- */
 
@@ -3849,41 +3877,52 @@ function ScheduleGrid({
             return (
               <button
                 key={a.id}
-                onClick={a.type === "shift" ? undefined : () => onApptClick?.(a)}
+           onClick={(a.type === "shift" || a.type === "break" || a.type === "block" || a.type === "vacation")
+ ? undefined
+  : () => onApptClick?.(a)}
                 style={{
                   ...apptCard(top, height, apptBgFor(a, colorForServiceId)),
                   left: `calc(${leftPct}% + 6px)`,
                   width: `calc(${widthPct}% - 12px)`,
                 }}
-   title={`${apptNames || a.serviceName || "Usluga"} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}${
- priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
- }`}
-
-              >
-                <div style={cardTitle(isMobile)}>{apptNames || a.serviceName || "Usluga"}</div>
-
-            <div style={metaRow}>
-  <span style={pill}>
-    <FiClock style={{ marginRight: 6 }} />
-    {minToTime(a.startMin)}–{minToTime(a.endMin)}
-  </span>
-
-  {/* NOVO: cena usluge na kartici */}
- {priceTotal > 0 && (
-   <span style={pillLight(isMobile)}>
-     {priceTotal.toLocaleString("sr-RS")} RSD
-  </span>
- )}
-
-  <span style={pillLight(isMobile)}>
-    <FiUser style={{ marginRight: 6 }} />
-    {empName}
-  </span>
-
-  {a.clientName && (
-    <span style={pillLight(isMobile)}>{a.clientName}</span>
+   title={
+   a.type === "vacation" ? `Odmor • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}` :
+   a.type === "break"    ? `Pauza • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}` :
+   a.type === "block"    ? `Blokirano • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}` :
+  `${apptNames || a.serviceName || "Usluga"} • ${minToTime(a.startMin)}–${minToTime(a.endMin)} • ${empName}${
+      priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
+   }`
+ }
+>
+                <div style={cardTitle(isMobile)}>{labelFor(a, servicesById)}</div>
+{/* meta: za vacation/break/block prikaži samo vreme (kao blokada) */}
+ {(a.type === "vacation" || a.type === "break" || a.type === "block") ? (
+    <div style={metaRow}>
+      <span style={pill}>
+        <FiClock style={{ marginRight: 6 }} />
+        {minToTime(a.startMin)}–{minToTime(a.endMin)}
+      </span>
+    </div>
+  ) : (
+    <div style={metaRow}>
+      <span style={pill}>
+       <FiClock style={{ marginRight: 6 }} />
+       {minToTime(a.startMin)}–{minToTime(a.endMin)}
+     </span>
+      {priceTotal > 0 && (
+        <span style={pillLight(isMobile)}>
+          {priceTotal.toLocaleString("sr-RS")} RSD
+        </span>
+      )}
+      <span style={pillLight(isMobile)}>
+        <FiUser style={{ marginRight: 6 }} />
+        {empName}
+      </span>
+      {a.clientName && (
+        <span style={pillLight(isMobile)}>{a.clientName}</span>
+      )}
+    </div>
   )}
-</div>
 
 
                 {showNoShowHere && (
