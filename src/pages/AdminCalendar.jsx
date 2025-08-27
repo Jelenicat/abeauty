@@ -575,6 +575,7 @@ useEffect(() => {
   const [onlyWorking, setOnlyWorking] = useState(true);
   const [appointments, setAppointments] = useState([]);
   const [dayShifts, setDayShifts] = useState([]);
+  const [dayApptsVisible, setDayApptsVisible] = useState([]);
 
   // create (day): 'booking' | 'block'
       // "booking" | "block"
@@ -968,56 +969,41 @@ const offClientsPenalty = onSnapshot(
 
   // daily listeners (day tab)
   // 1) ostaje tvoj "daily listeners" efekat – BEZ unutrašnjeg useEffect-a:
+// daily listeners (day tab)
 useEffect(() => {
   const dk = dateKey(dayDate);
   const qShifts = query(collection(db, "shifts"), where("dateKey", "==", dk));
   const qAppts  = query(collection(db, "appointments"), where("dateKey", "==", dk));
 
-const offA = onSnapshot(qAppts, (s) => {
-  // svi appointmenti za taj dan
-  const all = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-const visible = all.filter(
-  (a) =>
-    (a.type === "booking" && a.status === "booked") ||
-    a.type === "block" ||
-    a.type === "vacation" ||
-    a.type === "break"
-);
+  // 1) appointments → sačuvaj SAMO vidljive (booking booked, block, vacation, break)
+  const offA = onSnapshot(qAppts, (s) => {
+    const all = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const visible = all.filter(
+      (a) =>
+        (a.type === "booking" && a.status === "booked") ||
+        a.type === "block" ||
+        a.type === "vacation" ||
+        a.type === "break"
+    );
+    setDayApptsVisible(visible);
+  });
 
-
-  // napravi shift evente iz dayShifts
-  const shiftAppts = dayShifts
-    .map((sh) => {
-      const seg = sh.segments?.[0];
-      if (!seg) return null;
-  return {
-    id: "shift_" + sh.id,
-    type: "shift",
- readonly: true,
-    employeeId: sh.employeeId,
-    dateKey: sh.dateKey,
-    startMin: timeToMin(seg.start),
-    endMin: timeToMin(seg.end),
-    startHHMM: seg.start,
-    endHHMM: seg.end,
-    serviceName: "Smena",
-  };
-
-    })
-    .filter(Boolean);
-
-  // spoji termine + smene
-  setAppointments([...visible, ...shiftAppts]);
-});
-
-
-
+  // 2) shifts → sačuvaj smene za dan
   const offS = onSnapshot(qShifts, (s) =>
     setDayShifts(s.docs.map((d) => ({ id: d.id, ...d.data() })))
   );
 
   return () => { offA(); offS(); };
 }, [dayDate]);
+
+  // napravi shift evente iz dayShifts
+  // napravi shift + blok evente iz dayShifts
+// SMENA + automatski blokovi pre/posle smene u okviru radnog vremena salona
+
+
+
+
+
 
 // 2) NOV, samostalan useEffect za listu klijenata (globalni, ne zavisi od dayDate):
 useEffect(() => {
@@ -1195,7 +1181,67 @@ const dayHours = salonHours[dayDow] || DEFAULT_SALON_HOURS[dayDow];
 
   const openMin = timeToMin(dayHours.open);
   const closeMin = timeToMin(dayHours.close);
+const shiftApptsWithBlocks = useMemo(() => {
+  return dayShifts.flatMap((sh) => {
+    const seg = sh.segments?.[0];
+    if (!seg) return [];
 
+    const start = timeToMin(seg.start);
+    const end   = timeToMin(seg.end);
+    const out = [];
+
+    if (start > openMin) {
+      out.push({
+        id: "block_before_" + sh.id,
+        type: "block",
+        readonly: true,
+        employeeId: sh.employeeId,
+        dateKey: sh.dateKey,
+        startMin: openMin,
+        endMin: start,
+        startHHMM: minToTime(openMin),
+        endHHMM:   minToTime(start),
+        serviceName: "Blokirano",
+      });
+    }
+
+    out.push({
+      id: "shift_" + sh.id,
+      type: "shift",
+      readonly: true,
+      employeeId: sh.employeeId,
+      dateKey: sh.dateKey,
+      startMin: start,
+      endMin: end,
+      startHHMM: seg.start,
+      endHHMM:   seg.end,
+      serviceName: "Smena",
+    });
+
+    if (end < closeMin) {
+      out.push({
+        id: "block_after_" + sh.id,
+        type: "block",
+        readonly: true,
+        employeeId: sh.employeeId,
+        dateKey: sh.dateKey,
+        startMin: end,
+        endMin: closeMin,
+        startHHMM: minToTime(end),
+        endHHMM:   minToTime(closeMin),
+        serviceName: "Blokirano",
+      });
+    }
+
+    return out;
+  });
+}, [dayShifts, openMin, closeMin]);
+useEffect(() => {
+  setAppointments([
+    ...dayApptsVisible,      // booking, block, vacation, break
+    ...shiftApptsWithBlocks, // smena + blokovi
+  ]);
+}, [dayApptsVisible, shiftApptsWithBlocks]);
   const allowedServicesForSelectedEmp = useMemo(() => {
     const emp = employeesById.get(selEmpId);
     if (!emp) return [];
@@ -1597,6 +1643,127 @@ try {
     if (!confirm("Obrisati stavku?")) return;
     await deleteDoc(doc(db, "appointments", id));
   }
+  async function saveApptFromModal(patch) {
+  // patch stiže iz ApptModal.onSave({...})
+  // a = trenutno otvoreni termin u modalu
+  const a = activeAppt;
+  if (!a?.id) return;
+
+  // 1) Izvuci vrednosti (uz fallback na postojeći termin)
+  const employeeId = patch.employeeId ?? a.employeeId;
+  const employeeName = employeesById.get(employeeId)?.name || a.employeeName || "";
+
+  const dateKey = patch.dateKey ?? a.dateKey;
+  const startHHMM = patch.startHHMM ?? a.startHHMM;
+  const endHHMM   = patch.endHHMM   ?? a.endHHMM;
+
+  const startMin = timeToMin(startHHMM);
+  const endMin   = timeToMin(endHHMM);
+  const durationMin = Number(patch.durationMin ?? (endMin - startMin));
+
+  const price = Number(patch.price ?? a.price ?? 0);
+  const note  = (patch.note ?? "").trim();
+
+  // Klijent (može i prazno)
+  const clientName  = (patch.clientName  ?? a.clientName  ?? "").trim();
+  const clientPhone = (patch.clientPhone ?? a.clientPhone ?? "").trim();
+
+  // Multi-usluge (ako dođu iz modala), inače zadrži postojeće
+  const servicesInfo = Array.isArray(patch.servicesInfo) && patch.servicesInfo.length
+    ? patch.servicesInfo.map(s => ({
+        id: s.id,
+        name: s.name,
+        durationMin: Number(s.durationMin || 0),
+        price: Number(s.price ?? 0),
+      }))
+    : (Array.isArray(a.servicesInfo) ? a.servicesInfo : []);
+
+  const serviceIds = Array.isArray(patch.serviceIds) && patch.serviceIds.length
+    ? patch.serviceIds
+    : (Array.isArray(a.serviceIds) ? a.serviceIds : (a.serviceId ? [a.serviceId] : []));
+
+  // Za back-compat polja (serviceId/serviceName/color) uzimamo prvu izabranu
+  const primaryServiceId = serviceIds[0] || a.serviceId || null;
+  const primaryService   = primaryServiceId ? servicesById.get(primaryServiceId) : null;
+  const serviceName      = primaryService?.name || a.serviceName || "Usluga";
+  const color            = colorForServiceId?.(primaryServiceId) ?? a.color;
+
+  // 2) Validacije (koriste tvoje postojeće helpere)
+  if (!(endMin > startMin)) {
+    alert("Kraj mora biti posle početka.");
+    return;
+  }
+  const dow = DOW[new Date(dateKey + "T00:00:00").getDay()];
+  const hours = (salonHours && salonHours[dow]) || DEFAULT_SALON_HOURS[dow];
+  const openMin = timeToMin(hours.open);
+  const closeMin = timeToMin(hours.close);
+
+  const withinSalon = (s, e) => s >= openMin && e <= closeMin && e > s;
+  if (!withinSalon(startMin, endMin)) {
+    alert("Van radnog vremena salona.");
+    return;
+  }
+  if (!withinShift(employeeId, startMin, endMin)) {
+    alert("Van smene radnice.");
+    return;
+  }
+  if (!noOverlap(employeeId, startMin, endMin, a.id)) {
+    alert("Preklapanje sa postojećim terminima/blokovima.");
+    return;
+  }
+
+  // 3) Upis termina
+  await updateDoc(doc(db, "appointments", a.id), {
+    // osnovno
+    employeeId,
+    employeeName,
+
+    dateKey,
+    startHHMM,
+    endHHMM,
+    startMin,
+    endMin,
+    durationMin,
+
+    // cene/napomena
+    price,
+    note: note || deleteField(),       // prazno briše polje
+
+    // klijent
+    clientName,
+    clientPhone,
+
+    // multi-usluge + back-compat
+    servicesInfo,
+    serviceIds,
+    serviceId: primaryServiceId || deleteField(),
+    serviceName,
+
+    // boja
+    color,
+
+    // meta
+    updatedAt: serverTimestamp(),
+  });
+
+  // 4) Upsert klijenta (po telefonu) — opciono ali korisno
+  if (clientPhone) {
+    const phoneNorm = String(clientPhone).replace(/[^\d+]/g, "").replace(/^00/, "+").replace(/^0(6\d+)/, "+381$1");
+    await setDoc(
+      doc(db, "clients", phoneNorm),
+      {
+        name: clientName || "",
+        phone: clientPhone,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
+  // 5) Zatvori modal / poruka
+  if (typeof showToast === "function") showToast("✅ Termin ažuriran");
+  closeApptModal?.();
+}
   async function saveApptDuration() {
   const a = activeAppt;
   if (!a?.id) return;
@@ -4164,282 +4331,220 @@ function ApptModal({
     if (mq.addEventListener) mq.addEventListener("change", h); else mq.addListener(h);
     return () => { if (mq.removeEventListener) mq.removeEventListener("change", h); else mq.removeListener(h); };
   }, []);
-React.useEffect(() => {
-  if (!isMobile) return;
-  const prev = document.body.style.overflow;
-  document.body.style.overflow = "hidden";
-  return () => { document.body.style.overflow = prev; };
-}, [isMobile]);
+  React.useEffect(() => {
+    if (!isMobile) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [isMobile]);
 
   // --------- lokalni state ---------
   const [empId, setEmpId] = React.useState(appt.employeeId);
   const [start, setStart] = React.useState(appt.startHHMM);
 
   // kraj termina (EDIT)
-  const initialEnd = appt.endHHMM || (appt.endMin != null ? minToTime(appt.endMin) : minToTime(timeToMin(appt.startHHMM) + (appt.durationMin || 0)));
+  const initialEnd = appt.endHHMM || (appt.endMin != null
+    ? minToTime(appt.endMin)
+    : minToTime(timeToMin(appt.startHHMM) + (appt.durationMin || 0)));
   const [endHHMM, setEndHHMM] = React.useState(initialEnd);
-// ✅ U ApptModal – lokalni datum (YYYY-MM-DD)
-const [editDateStr, setEditDateStr] = React.useState(
-  () => appt?.dateKey || new Date().toISOString().slice(0, 10)
-);
+  const [endTouched, setEndTouched] = React.useState(false); // korisnik ručno dira kraj?
 
-React.useEffect(() => {
-  setEditDateStr(appt?.dateKey || new Date().toISOString().slice(0, 10));
-}, [appt?.dateKey]);
-
-  // cena (EDIT)
- const [editPrice, setEditPrice] = React.useState(appt?.price ?? apptTotalPrice ?? 0);
+  // ✅ Datum (YYYY-MM-DD)
+  const [editDateStr, setEditDateStr] = React.useState(
+    () => appt?.dateKey || new Date().toISOString().slice(0, 10)
+  );
   React.useEffect(() => {
-    setEditPrice(appt?.price ?? apptTotalPrice ?? 0);
-    setEmpId(appt.employeeId);
-    setStart(appt.startHHMM);
-    setEndHHMM(appt.endHHMM || (appt.endMin != null ? minToTime(appt.endMin) : initialEnd));
-     setEditNote(appt?.note ?? "");
-  }, [appt]);
-const [editNote, setEditNote] = useState(appt?.note || "");
+    setEditDateStr(appt?.dateKey || new Date().toISOString().slice(0, 10));
+  }, [appt?.dateKey]);
 
-  // izvedeno trajanje iz start/end
-  const durationMin = Math.max(0, timeToMin(endHHMM) - timeToMin(start));
-   // --- multi-service derivati (radi i za legacy zapise) ---
- const apptServices = Array.isArray(appt?.servicesInfo) && appt.servicesInfo.length
-   ? appt.servicesInfo
-   : (Array.isArray(appt?.serviceIds) && appt.serviceIds.length
-       ? appt.serviceIds
-           .map(id => servicesById.get(id))
-           .filter(Boolean)
-           .map(s => ({
-             id: s.id,
-             name: s.name,
-             durationMin: s.durationMin,
-             price: (s.price ?? s.basePrice ?? 0),
-           }))
-       : (() => {
-           const one = servicesById.get(appt.serviceId);
-          return one ? [{
-             id: one.id,
-             name: one.name,
-             durationMin: one.durationMin,
-             price: (one.price ?? one.basePrice ?? 0),
-           }] : [];
-         })());
+  // --- multi-service derivati (radi i za legacy zapise) ---
+  const apptServices =
+    (Array.isArray(appt?.servicesInfo) && appt.servicesInfo.length)
+      ? appt.servicesInfo
+      : (Array.isArray(appt?.serviceIds) && appt.serviceIds.length
+          ? appt.serviceIds
+              .map(id => servicesById.get(id))
+              .filter(Boolean)
+              .map(s => ({
+                id: s.id,
+                name: s.name,
+                durationMin: s.durationMin,
+                price: (s.price ?? s.basePrice ?? 0),
+              }))
+          : (() => {
+              const one = servicesById.get(appt.serviceId);
+              return one ? [{
+                id: one.id,
+                name: one.name,
+                durationMin: one.durationMin,
+                price: (one.price ?? one.basePrice ?? 0),
+              }] : [];
+            })());
 
- const apptNames = apptServices.map(s => s.name).join(", ");
- const apptTotalDuration = apptServices.reduce((a, s) => a + Number(s.durationMin || 0), 0);
- const apptTotalPrice = (appt?.price != null)
-   ? Number(appt.price)
-  : apptServices.reduce((a, s) => a + Number(s.price || 0), 0);
+  const apptTotalDuration = apptServices.reduce((a, s) => a + Number(s.durationMin || 0), 0);
+  const fallbackApptPrice = apptServices.reduce((a, s) => a + Number(s.price || 0), 0);
+  const apptTotalPrice    = (appt?.price != null) ? Number(appt.price) : fallbackApptPrice;
+
+  // === EDIT polja ===
+  const [editPrice, setEditPrice] = React.useState(apptTotalPrice);
+  const [editNote,  setEditNote]  = React.useState(appt?.note || "");
+
+  // Klijent
+  const [editClientName,  setEditClientName]  = React.useState(appt?.clientName  || "");
+  const [editClientPhone, setEditClientPhone] = React.useState(appt?.clientPhone || "");
+
+  // Inicijalne izabrane usluge
+  const initialSrvIds =
+    (apptServices?.map(s => s.id)) ||
+    (appt?.serviceIds) ||
+    (appt?.serviceId ? [appt.serviceId] : []);
+  const [editSrvIds, setEditSrvIds] = React.useState(initialSrvIds);
+
+  // ----- HELPERI (podržavaju više šema podataka) -----
+  function svcCatIds(s) {
+    const out = new Set();
+    const single =
+      s?.categoryId ??
+      s?.category_id ??
+      s?.catId ??
+      (typeof s?.category === "string" ? s.category : s?.category?.id) ??
+      s?.categoryRef?.id ?? null;
+    if (single) out.add(String(single));
+    const catsArr =
+      Array.isArray(s?.categories) ? s.categories :
+      Array.isArray(s?.categoryIds) ? s.categoryIds : null;
+    if (catsArr) {
+      for (const c of catsArr) {
+        if (!c) continue;
+        if (typeof c === "string") out.add(c);
+        else if (c?.id) out.add(String(c.id));
+      }
+    }
+    return Array.from(out);
+  }
+  function svcEmpIds(s) {
+    const out = new Set();
+    const arr =
+      Array.isArray(s?.employees) ? s.employees :
+      Array.isArray(s?.employeeIds) ? s.employeeIds : null;
+    if (arr) {
+      for (const x of arr) {
+        if (!x) continue;
+        if (typeof x === "string") out.add(x);
+        else if (x?.id) out.add(String(x.id));
+      }
+    }
+    return Array.from(out);
+  }
+  function isAllowedForEmp(empId, s, employeesById) {
+    const emp = employeesById.get(empId);
+    if (!emp) return true;
+    const empSrv = new Set(
+      Array.isArray(emp.services) ? emp.services :
+      Array.isArray(emp.serviceIds) ? emp.serviceIds : []
+    );
+    const empCats = new Set(
+      Array.isArray(emp.categories) ? emp.categories :
+      Array.isArray(emp.categoryIds) ? emp.categoryIds : []
+    );
+    if (empSrv.size && empSrv.has(s.id)) return true;
+    if (empCats.size) {
+      const sCats = svcCatIds(s);
+      if (sCats.some(cid => empCats.has(cid))) return true;
+    }
+    const sEmp = new Set(svcEmpIds(s));
+    if (sEmp.size && sEmp.has(empId)) return true;
+    if (!empSrv.size && !empCats.size && !sEmp.size) return true;
+    return false;
+  }
+
+  // ✅ Dozvoljene usluge (picker)
+  const allowedServices = React.useMemo(() => {
+    const all = Array.from(servicesById.values() || []);
+    return all.filter(s => isAllowedForEmp(empId, s, employeesById));
+  }, [empId, servicesById, employeesById]);
+
+  // Izborene usluge + sabiranja
+  const selectedServices = React.useMemo(
+    () => editSrvIds.map(id => servicesById.get(id)).filter(Boolean),
+    [editSrvIds, servicesById]
+  );
+  const modalTotalDuration = React.useMemo(
+    () => selectedServices.reduce((a, s) => a + Number(s?.durationMin || 0), 0),
+    [selectedServices]
+  );
+  const modalTotalPrice = React.useMemo(
+    () => selectedServices.reduce((a, s) => a + Number((s?.price ?? s?.basePrice ?? 0)), 0),
+    [selectedServices]
+  );
+
+  // --- radno vreme za dan termina (mora pre auto-end efekta) ---
+  const dow   = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
+  const hours = (salonHours && salonHours[dow]) || DEFAULT_SALON_HOURS[dow];
+
+  // --- AUTO PODEŠAVANJE KRAJA: aktivno dok korisnik nije dirao kraj ---
+  React.useEffect(() => {
+    if (endTouched) return;
+    const dur = selectedServices.length
+      ? modalTotalDuration
+      : (appt.durationMin ?? apptTotalDuration) || 0;
+
+    const nextEndMin = Math.max(
+      timeToMin(start) + 5,
+      Math.min(timeToMin(start) + dur, timeToMin(hours.close))
+    );
+
+    const next = minToTime(nextEndMin);
+    if (next !== endHHMM) setEndHHMM(next);
+  }, [
+    selectedServices.length,
+    modalTotalDuration,
+    start,
+    hours.close,
+    appt.durationMin,
+    apptTotalDuration,
+    endTouched,
+    endHHMM
+  ]);
 
   // --- klijent / istorija / kazna
   const phoneN = normPhone(appt.clientPhone);
-  const hasNoShowHistory = !!(phoneN && noShowByPhone.get(phoneN));
-
-  const earliestId = phoneN ? earliestApptIdByPhone.get(phoneN) : null;
+  const hasNoShowHistory   = !!(phoneN && noShowByPhone.get(phoneN));
+  const earliestId         = phoneN ? earliestApptIdByPhone.get(phoneN) : null;
   const isEarliestForPhone = !!(earliestId && earliestId === appt.id);
+  const pendingPen         = phoneN ? pendingPenaltyByPhone.get(phoneN) : null;
+  const penaltyApplied     = !!(appt?.penaltyApplied && appt.penaltyApplied.amount > 0);
 
-  const pendingPen = phoneN ? pendingPenaltyByPhone.get(phoneN) : null;
-  const penaltyApplied = !!(appt?.penaltyApplied && appt.penaltyApplied.amount > 0);
-
-  const showNoShowHere = !!(hasNoShowHistory && isEarliestForPhone && !penaltyApplied);
-  const showPenaltyHere = !!(pendingPen && isEarliestForPhone && !penaltyApplied);
+  const showNoShowHere         = !!(hasNoShowHistory && isEarliestForPhone && !penaltyApplied);
+  const showPenaltyHere        = !!(pendingPen && isEarliestForPhone && !penaltyApplied);
   const showPenaltyAppliedHere = !!(penaltyApplied && isEarliestForPhone);
 
-  // --- radno vreme za dan termina
-  const dow = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
-  const hours = (salonHours && salonHours[dow]) || DEFAULT_SALON_HOURS[dow];
-
-  // --- mini stilovi (sa mobilnim prilagođavanjem)
-  const styles = {
-backdrop: {
-    position: "fixed", inset: 0,
-    background: "rgba(0,0,0,.45)",
-    zIndex: 9999,
-    display: "flex",
-    alignItems: isMobile ? "stretch" : "center",
-    justifyContent: isMobile ? "stretch" : "center",
-    padding: isMobile ? 0 : 12,
-  },
-
-  card: {
-    width: isMobile ? "100vw" : "min(560px, 90vw)",
-    maxWidth: "100%",
-    // iOS safe-vh: kombinuj dveh vrednosti
-    height: isMobile ? "100vh" : "auto",
-    minHeight: isMobile ? "100dvh" : "auto",
-    maxHeight: isMobile ? "100dvh" : "92vh",
-    background: "linear-gradient(180deg,#ffffff,#f7f8fc)",
-    borderRadius: isMobile ? 0 : 20,
-    boxShadow: "0 14px 36px rgba(0,0,0,.32)",
-    display: "flex", flexDirection: "column",
-    overflow: "hidden",
-  },
-
-  header: {
-    position: "sticky", top: 0, zIndex: 2,
-    display: "flex", alignItems: "center", gap: 10,
-    padding: isMobile ? "12px 16px" : "16px 20px",
-    background: "linear-gradient(135deg,#fff,#ffe3ef)",
-    borderBottom: "1px solid #ffd5e3",
-    boxShadow: "0 2px 8px rgba(0,0,0,.08)",
-  },
-
-  close: {
-    marginLeft: "auto", border: "none", background: "transparent",
-    fontSize: 24, cursor: "pointer", lineHeight: 1,
-    width: isMobile ? 44 : 28, height: isMobile ? 44 : 28,
-    display: "flex", alignItems: "center", justifyContent: "center",
-  },
-
-  colorDot: (cl) => ({
-    width: 12, height: 12, borderRadius: 999, background: cl,
-    boxShadow: "0 0 0 2px rgba(0,0,0,.06) inset",
-  }),
-   field: {
-    display: "grid",
-    gap: 6,
-    marginBottom: 8,
-  },
-  
-
-  body: {
-    padding: isMobile ? 8 : 14,
-    flex: 1,
-    overflowY: "auto",                 // auto na svim uredjajima
-    display: "grid",
-    gap: isMobile ? 6 : 12,
-  },
-
-
-
-fieldRow: {
-  display: "grid",
-  gap: 6,
-  gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0,1fr))",
-  alignItems: "center",
-},
-
-
-
-
-  inp: {
-    width: "100%",
-    height: isMobile ? 44 : 40,
-    padding: "0 12px",
-    fontSize: 14,
-    borderRadius: 12,
-    border: "1px solid #ddd",
-    background: "#fff",
-    color: "#000",
-    boxShadow: "inset 0 1px 2px rgba(0,0,0,.04)",
-  },
-
-  badge: {
-    display: "inline-flex", alignItems: "center", gap: 6,
-    padding: isMobile ? "2px 6px" : "3px 7px",
-    borderRadius: 999, fontSize: isMobile ? 10 : 11, fontWeight: 700,
-  },
-
- infoBox: {
-  display: "flex", alignItems: "center", gap: 8,
-  background: "#f3f7ff", color: "#0b3d7a",
-  border: "1px solid #e4ecff", padding: isMobile ? "6px 8px" : "8px 10px",
-  borderRadius: 10, fontSize: isMobile ? 12 : 13,
-},
-
-
-
-  pill: { padding: "6px 8px", fontSize: 12, borderRadius: 8, border: "1px solid #d8dbe5", background: "#fff", cursor: "pointer" },
-  actions: {
-    position: "sticky", bottom: 0, zIndex: 2,
-    background: "#fff",
-    borderTop: "1px solid #eee",
-    boxShadow: "0 -6px 16px rgba(0,0,0,.06)",
-    padding: isMobile
-      ? "12px calc(env(safe-area-inset-right,0) + 12px) calc(env(safe-area-inset-bottom,0) + 12px) calc(env(safe-area-inset-left,0) + 12px)"
-      : "14px 16px",
-    borderBottomLeftRadius: isMobile ? 0 : 20,
-    borderBottomRightRadius: isMobile ? 0 : 20,
-    display: "grid",
-    gap: 14,
-  },
-
-  grow: {
-    flex: 1,
-    minWidth: isMobile ? "100%" : 180,
-    margin: isMobile ? "6px 0" : "0 10px",
-    display: "flex",
-    flexDirection: "column",
-  },
-rowTop: {
-  display: "grid",
-  gridTemplateColumns: "140px 1fr",  // Obriši | Cena
-  alignItems: "center",
-  gap: 12,
-},
-
-rowBottom: {
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: 10,
-  flexWrap: "wrap",
-},
-
-deleteBtn: {
-  display: "inline-flex", alignItems: "center", gap: 6,
-  justifyContent: "center",
-  padding: "10px 14px",
-  borderRadius: 12,
-  border: "1px solid #ffd3d8",
-  background: "#fff5f6",
-  color: "#7a1b1b",
-  fontWeight: 900,
-  cursor: "pointer",
-  minHeight: 44,
-},
-
-priceGroup: {
-  display: "grid",
-  gap: 6,
-},
-
-
-  actionBtn: {
-    display: "inline-flex", alignItems: "center", gap: 6,
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(0,0,0,.06)",
-    background: "#fff",
-    color: "#111",
-    fontWeight: 700,
-    cursor: "pointer",
-    minHeight: 44,
-  },
-
-  save: {
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "none",
-    background: "linear-gradient(135deg,#ff3f92,#ff5fa2)",
-    color: "#fff",
-    fontWeight: 700,
-    cursor: "pointer",
-    minHeight: 46,
-  },
-
-buttonsRow: {
-  display: "flex",
-  gap: 6,
-  flexWrap: "wrap",
-  justifyContent: isMobile ? "stretch" : "flex-end",
-},
-
-
-
-
-
+  // --- mini stilovi (skraćeno) ---
+  const styles = { /* ... (isti stilovi kao ranije) ... */ 
+    backdrop:{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:9999,display:"flex",alignItems:isMobile?"stretch":"center",justifyContent:isMobile?"stretch":"center",padding:isMobile?0:12},
+    card:{width:isMobile?"100vw":"min(560px,90vw)",maxWidth:"100%",height:isMobile?"100vh":"auto",minHeight:isMobile?"100dvh":"auto",maxHeight:isMobile?"100dvh":"92vh",background:"linear-gradient(180deg,#ffffff,#f7f8fc)",borderRadius:isMobile?0:20,boxShadow:"0 14px 36px rgba(0,0,0,.32)",display:"flex",flexDirection:"column",overflow:"hidden"},
+    header:{position:"sticky",top:0,zIndex:2,display:"flex",alignItems:"center",gap:10,padding:isMobile?"12px 16px":"16px 20px",background:"linear-gradient(135deg,#fff,#ffe3ef)",borderBottom:"1px solid #ffd5e3",boxShadow:"0 2px 8px rgba(0,0,0,.08)"},
+    close:{marginLeft:"auto",border:"none",background:"transparent",fontSize:24,cursor:"pointer",lineHeight:1,width:isMobile?44:28,height:isMobile?44:28,display:"flex",alignItems:"center",justifyContent:"center"},
+    colorDot:(cl)=>({width:12,height:12,borderRadius:999,background:cl,boxShadow:"0 0 0 2px rgba(0,0,0,.06) inset"}),
+    field:{display:"grid",gap:6,marginBottom:8}, lbl:{fontWeight:700},
+    body:{padding:isMobile?8:14,flex:1,overflowY:"auto",display:"grid",gap:isMobile?6:12},
+    fieldRow:{display:"grid",gap:6,gridTemplateColumns:isMobile?"1fr":"repeat(3,minmax(0,1fr))",alignItems:"center"},
+    inp:{width:"100%",height:isMobile?44:40,padding:"0 12px",fontSize:14,borderRadius:12,border:"1px solid #ddd",background:"#fff",color:"#000",boxShadow:"inset 0 1px 2px rgba(0,0,0,.04)"},
+    smallRow:{display:"flex",gap:6,marginTop:6},
+    badge:{display:"inline-flex",alignItems:"center",gap:6,padding:isMobile?"2px 6px":"3px 7px",borderRadius:999,fontSize:isMobile?10:11,fontWeight:700},
+    infoBox:{display:"flex",alignItems:"center",gap:8,background:"#f3f7ff",color:"#0b3d7a",border:"1px solid #e4ecff",padding:isMobile?"6px 8px":"8px 10px",borderRadius:10,fontSize:isMobile?12:13},
+    pill:{padding:"6px 8px",fontSize:12,borderRadius:8,border:"1px solid #d8dbe5",background:"#fff",cursor:"pointer"},
+    actions:{position:"sticky",bottom:0,zIndex:2,background:"#fff",borderTop:"1px solid #eee",boxShadow:"0 -6px 16px rgba(0,0,0,.06)",padding:isMobile?"12px calc(env(safe-area-inset-right,0)+12px) calc(env(safe-area-inset-bottom,0)+12px) calc(env(safe-area-inset-left,0)+12px)":"14px 16px",borderBottomLeftRadius:isMobile?0:20,borderBottomRightRadius:isMobile?0:20,display:"grid",gap:14},
+    actionBtn:{display:"inline-flex",alignItems:"center",gap:6,padding:"10px 14px",borderRadius:12,border:"1px solid rgba(0,0,0,.06)",background:"#fff",color:"#111",fontWeight:700,cursor:"pointer",minHeight:44},
+    save:{padding:"12px 16px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#ff3f92,#ff5fa2)",color:"#fff",fontWeight:700,cursor:"pointer",minHeight:46},
+    pickerWrap:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:14},
+    pickerCard:{width:"min(520px,96vw)",maxHeight:"80vh",overflow:"auto",background:"#fff",borderRadius:14,boxShadow:"0 16px 44px rgba(0,0,0,.35)",padding:14,display:"grid",gap:10},
+    chip:{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:999,background:"#f4f6ff",border:"1px solid #e1e6ff",fontWeight:700}
   };
 
   // brzi +/- za kraj
   const nudgeEnd = (deltaMin) => {
+    setEndTouched(true);
     const base = timeToMin(endHHMM) + deltaMin;
     const minEnd = timeToMin(start) + 5; // barem +5 min iza početka
     const bounded = Math.max(minEnd, Math.min(base, timeToMin(hours.close)));
@@ -4447,53 +4552,62 @@ buttonsRow: {
   };
 
   // preview završnog vremena za bedž
-  const endForBadge = endHHMM || minToTime(timeToMin(start) + durationMin);
+  const effectiveDuration =
+    (Math.max(0, timeToMin(endHHMM) - timeToMin(start))) || modalTotalDuration || apptTotalDuration;
+  const endForBadge = endHHMM || minToTime(timeToMin(start) + effectiveDuration);
+
+  // Header naslov i boja
+  const headerNames = (selectedServices.length ? selectedServices : apptServices)
+    .map(s => s.name).join(", ")
+    || appt.serviceName || servicesById.get(appt.serviceId)?.name || "Usluga";
+  const firstSelectedId = (editSrvIds[0] || allowedServices[0]?.id || appt.serviceId);
+
+  // ---------- Services picker ----------
+  const [svcPickerOpen, setSvcPickerOpen] = React.useState(false);
+  const toggleService = (id) => {
+    setEditSrvIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
 
   return (
     <div style={styles.backdrop} onClick={onClose}>
       <div style={styles.card} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-  <div style={styles.header}>
-  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-    <div style={styles.colorDot(appt.color || colorForServiceId(appt.serviceId))} />
-    <div style={{ fontWeight: 900, fontSize: isMobile ? 16 : 17, lineHeight: 1.25, wordBreak: "break-word" }}>
-      {apptNames || appt.serviceName || servicesById.get(appt.serviceId)?.name || "Usluga"}
-    </div>
-  </div>
-  <button style={styles.close} onClick={onClose} title="Zatvori">×</button>
-</div>
+        <div style={styles.header}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+            <div style={styles.colorDot(appt.color || colorForServiceId(firstSelectedId))} />
+            <div style={{ fontWeight:900, fontSize:isMobile?16:17, lineHeight:1.25, wordBreak:"break-word" }}>
+              {headerNames}
+            </div>
+          </div>
+          <button style={styles.close} onClick={onClose} title="Zatvori">×</button>
+        </div>
 
         {/* Body */}
         <div style={styles.body}>
-
           {/* Radnica */}
           <div style={styles.field}>
             <label style={styles.lbl}>Radnica</label>
-            <select value={empId} onChange={(e) => setEmpId(e.target.value)} style={styles.inp}>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
+            <select
+              value={empId}
+              onChange={(e) => { setEmpId(e.target.value); setEndTouched(false); }}
+              style={styles.inp}
+            >
+              {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
             </select>
           </div>
-{/* Datum */}
-<div style={{ flex: 1, minWidth: 140 }}>
-  <label style={{ fontWeight: 600 }}>Datum</label>
-  <input
-    type="date"
-    value={editDateStr}
-    onChange={(e) => setEditDateStr(e.target.value)}
-    style={{
-      width: "100%",
-      padding: "10px 12px",
-      borderRadius: 8,
-      border: "1px solid rgba(0,0,0,.2)",
-      fontSize: 14,
-    }}
-  />
-</div>
 
+          {/* Datum */}
+          <div style={styles.field}>
+            <label style={styles.lbl}>Datum</label>
+            <input
+              type="date"
+              value={editDateStr}
+              onChange={(e) => { setEditDateStr(e.target.value); setEndTouched(false); }}
+              style={styles.inp}
+            />
+          </div>
 
-          {/* Početak & Kraj (editable) */}
+          {/* Početak & Kraj */}
           <div style={styles.fieldRow}>
             <div style={styles.field}>
               <label style={styles.lbl}>Početak</label>
@@ -4507,8 +4621,8 @@ buttonsRow: {
                 onChange={(e) => {
                   const v = e.target.value;
                   setStart(v);
-                  // osiguraj da kraj ostane posle početka
                   if (timeToMin(endHHMM) <= timeToMin(v)) {
+                    setEndTouched(false);
                     setEndHHMM(minToTime(timeToMin(v) + 5));
                   }
                 }}
@@ -4524,7 +4638,7 @@ buttonsRow: {
                 value={endHHMM}
                 min={hours.open}
                 max={hours.close}
-                onChange={(e) => setEndHHMM(e.target.value)}
+                onChange={(e) => { setEndTouched(true); setEndHHMM(e.target.value); }}
                 style={styles.inp}
               />
               <div style={styles.smallRow}>
@@ -4532,180 +4646,190 @@ buttonsRow: {
                 <button type="button" onClick={() => nudgeEnd(+5)} style={styles.pill}>+ 5 min</button>
               </div>
             </div>
-            <div style={{ ...styles.field }}>
+            <div style={styles.field}>
               <label style={styles.lbl}>Trajanje</label>
-             <input
-  type="text"
-  value={`${durationMin} min`}
-  disabled
-  style={{ ...styles.inp, background: "#fafbff", opacity: 0.9 }}
-/>
-
+              <input type="text" value={`${effectiveDuration} min`} disabled style={{ ...styles.inp, background:"#fafbff", opacity:.9 }} />
             </div>
           </div>
-{apptServices.length > 0 && (
-  <div style={{ display: "grid", gap: 6 }}>
-    <div style={{ fontWeight: 700, opacity: .9 }}>Usluge</div>
-    {apptServices.map(s => (
-      <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-        <span style={{ opacity: .6 }}>•</span>
-        <div style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>
-        <span style={{ opacity: .7 }}>{Number(s.price||0).toLocaleString("sr-RS")} RSD</span>
-        <span style={{ opacity: .6 }}>· {s.durationMin} min</span>
-      </div>
-    ))}
-    <div style={{ marginTop: 2, fontWeight: 800 }}>
-      Ukupno: {Number(apptTotalPrice).toLocaleString("sr-RS")} RSD · {appt.durationMin ?? apptTotalDuration} min
-    </div>
-  </div>
-)}
 
-
-
-          {/* Bedževi */}
-          <div style={styles.fieldRow}>
-            <div style={{ ...styles.badge, background: "#eef6ff", color: "#0b3d7a" }}>
-              <FiCalendar /> {appt.dateKey}
+          {/* Usluge – prikaz izabranih + dugme za uređivanje */}
+          <div style={{ display:"grid", gap:8 }}>
+            <div style={{ fontWeight:700 }}>Usluge</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {selectedServices.length ? selectedServices.map(s => (
+                <span key={s.id} style={styles.chip}>
+                  {s.name}
+                  <span style={{ opacity:.7, fontWeight:600 }}>
+                    · {Number(s.price ?? s.basePrice ?? 0)} RSD · {Number(s.durationMin || 0)} min
+                  </span>
+                  <button onClick={() => toggleService(s.id)} title="Ukloni" style={{ border:"none", background:"transparent", cursor:"pointer", fontWeight:900 }}>×</button>
+                </span>
+              )) : (<span style={{ opacity:.7 }}>Nema izabranih usluga</span>)}
             </div>
-            <div style={{ ...styles.badge, background: "#fff3e0", color: "#7a3d0b" }}>
+            <div>
+              <button type="button" onClick={() => setSvcPickerOpen(true)} style={{ ...styles.pill, fontWeight:800 }}>
+                Uredi usluge
+              </button>
+            </div>
+
+            <div style={{ marginTop:2, fontWeight:800 }}>
+              Ukupno: {Number(selectedServices.length ? modalTotalPrice : apptTotalPrice).toLocaleString("sr-RS")} RSD · {selectedServices.length ? modalTotalDuration : (appt.durationMin ?? apptTotalDuration)} min
+            </div>
+          </div>
+
+          {/* Bedževi (skraćeno) */}
+          <div style={styles.fieldRow}>
+            <div style={{ ...styles.badge, background:"#eef6ff", color:"#0b3d7a" }}>
+              <FiCalendar /> {editDateStr}
+            </div>
+            <div style={{ ...styles.badge, background:"#fff3e0", color:"#7a3d0b" }}>
               <FiClock /> {start} → {endForBadge}
             </div>
-         <div style={{ ...styles.badge, background: "#e8fff0", color: "#0b7a3d" }}>
-   Cena: <b>{Number(editPrice ?? apptTotalPrice).toLocaleString("sr-RS")} RSD</b>
- </div>
-            {showNoShowHere && (
-              <div style={{ ...styles.badge, background: "#ffe8ea", color: "#7a1b1b" }}>
+            <div style={{ ...styles.badge, background:"#e8fff0", color:"#0b7a3d" }}>
+              Cena: <b>{Number(selectedServices.length ? modalTotalPrice : (editPrice ?? apptTotalPrice)).toLocaleString("sr-RS")} RSD</b>
+            </div>
+            {hasNoShowHistory && isEarliestForPhone && !penaltyApplied && (
+              <div style={{ ...styles.badge, background:"#ffe8ea", color:"#7a1b1b" }}>
                 <FiAlertTriangle /> No-show istorija
               </div>
             )}
           </div>
 
-          {showPenaltyHere && (
-            <div style={{ ...styles.badge, background: "#fff7e6", color: "#7a3d0b" }}>
+          {(pendingPen && isEarliestForPhone && !penaltyApplied) && (
+            <div style={{ ...styles.badge, background:"#fff7e6", color:"#7a3d0b" }}>
               <FiInfo /> Kazna za naplatu: <b>{pendingPen.amount} RSD</b>
             </div>
           )}
-          {showPenaltyAppliedHere && (
-            <div style={{ ...styles.badge, background: "#e8fff0", color: "#0b7a3d" }}>
+          {(penaltyApplied && isEarliestForPhone) && (
+            <div style={{ ...styles.badge, background:"#e8fff0", color:"#0b7a3d" }}>
               <FiInfo /> Kazna primenjena: <b>{appt.penaltyApplied.amount} RSD</b>
             </div>
           )}
 
           {(appt.clientName || appt.clientPhone) && (
             <div style={styles.infoBox}>
-              <FiInfo style={{ marginRight: 4 }} />
-              <div>
-                {appt.clientName ? <b>{appt.clientName}</b> : null}
-                {appt.clientPhone ? ` • ${appt.clientPhone}` : null}
-              </div>
+              <FiInfo style={{ marginRight:4 }} />
+              <div>{appt.clientName ? <b>{appt.clientName}</b> : null}{appt.clientPhone ? ` • ${appt.clientPhone}` : null}</div>
             </div>
           )}
+
+          {/* Klijent – izmena */}
+          <div style={{ display:"grid", gap:8 }}>
+            <div style={{ fontWeight:700, fontSize:16 }}>Klijent</div>
+            <input style={styles.inp} placeholder="Ime i prezime" value={editClientName} onChange={(e)=>setEditClientName(e.target.value)} />
+            <input style={styles.inp} placeholder="Telefon" value={editClientPhone} onChange={(e)=>setEditClientPhone(e.target.value)} />
+          </div>
+
+          {/* Cena + Napomena */}
+          <div style={{ display:"flex", gap:12, flexWrap:isMobile?"wrap":"nowrap", alignItems:"flex-start", margin:"12px 0" }}>
+            <div style={{ flex:isMobile?"1 1 100%":"1 1 0" }}>
+              <label style={{ display:"block", fontWeight:700, marginBottom:6 }}>Cena</label>
+              <input type="number" value={editPrice} onChange={(e)=>setEditPrice(e.target.value)} placeholder="npr. 3200" style={styles.inp} />
+            </div>
+            <div style={{ flex:isMobile?"1 1 100%":"1 1 0" }}>
+              <label style={{ display:"block", fontWeight:700, marginBottom:6 }}>Napomena</label>
+              <textarea value={editNote} onChange={(e)=>setEditNote(e.target.value)} rows={3} placeholder="Unesi napomenu…" style={{ ...styles.inp, minHeight:44, padding:"10px 14px", resize:"vertical" }} />
+            </div>
+          </div>
         </div>
 
         {/* Donja traka – akcije */}
-        {/* Donja traka – akcije */}
-<div style={styles.actions}>
-  {/* Levo: Obriši */}
- 
+        <div style={styles.actions}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <button style={{ ...styles.actionBtn, background:"#fff", color:"#222" }} onClick={onCancel} title="Otkaži"><FiSlash /> Otkaži</button>
+            <button style={{ ...styles.actionBtn, background:"#fff7e6", color:"#7a3d0b" }} onClick={onNoShow} title="No-show"><FiAlertTriangle /> No-show</button>
+            <button style={{ ...styles.actionBtn, background:"#ffe6e6", color:"#d9534f" }} onClick={onDelete} title="Obriši"><FiTrash2 /> Obriši</button>
 
-{/* Cena + Napomena u jednom redu */}
-<div
-  style={{
-    display: "flex",
-    gap: 12,
-    flexWrap: isMobile ? "wrap" : "nowrap",
-    alignItems: "flex-start",
-    margin: "12px 0",
-  }}
->
-  {/* CENA (levo) */}
-  <div style={{ flex: isMobile ? "1 1 100%" : "1 1 0" }}>
-    <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>
-      Cena
-    </label>
-    <input
-      type="number"
-      value={editPrice}
-      onChange={(e) => setEditPrice(e.target.value)}
-      placeholder="npr. 3200"
-      style={{
-        width: "100%",
-        padding: "10px 14px",
-        borderRadius: 12,
-        border: "1px solid rgba(0,0,0,.12)",
-        fontWeight: 600,
-      }}
-    />
-  </div>
+            <button
+              style={styles.save}
+              onClick={() => {
+                // 1) efikasna lista usluga
+                const effectiveServices = (selectedServices.length ? selectedServices : apptServices);
 
-  {/* NAPOMENA (desno) */}
-  <div style={{ flex: isMobile ? "1 1 100%" : "1 1 0" }}>
-    <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>
-      Napomena
-    </label>
-    <textarea
-      value={editNote}
-      onChange={(e) => setEditNote(e.target.value)}
-      rows={3}
-      placeholder="Unesi napomenu…"
-      style={{
-        width: "100%",
-        minHeight: 44,        // da stane u red pored cene
-        padding: "10px 14px",
-        borderRadius: 12,
-        border: "1px solid rgba(0,0,0,.12)",
-        resize: "vertical",
-      }}
-    />
-  </div>
-</div>
+                // 2) saberi trajanje i cenu
+                const autoDuration = effectiveServices.reduce((a,s)=>a+Number(s.durationMin||0),0);
+                const totalPrice   = Number(editPrice ?? effectiveServices.reduce((a,s)=>a+Number((s.price ?? s.basePrice ?? 0)),0)) || 0;
 
-  {/* Desno: Otkaži / No-show / Sačuvaj */}
-{/* Desno: Otkaži / No-show / Obriši / Sačuvaj */}
-<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-  <button
-    style={{ ...styles.actionBtn, background: "#fff", color: "#222" }}
-    onClick={onCancel}
-    title="Otkaži"
-  >
-    <FiSlash /> Otkaži
-  </button>
-  <button
-    style={{ ...styles.actionBtn, background: "#fff7e6", color: "#7a3d0b" }}
-    onClick={onNoShow}
-    title="No-show"
-  >
-    <FiAlertTriangle /> No-show
-  </button>
-  <button
-    style={{ ...styles.actionBtn, background: "#ffe6e6", color: "#d9534f" }}
-    onClick={onDelete}
-    title="Obriši"
-  >
-    <FiTrash2 /> Obriši
-  </button>
-  <button
-    style={styles.save}
-    onClick={() =>
-      onSave({
-        employeeId: empId,
-        dateKey: editDateStr,    
-        startHHMM: start,
-        endHHMM,
-        durationMin,
-        price: Number(editPrice) || 0,
-        note: (editNote || "").trim(),
-      })
-    }
-    title="Sačuvaj izmene"
-  >
-    <FiSave /> Sačuvaj
-  </button>
-</div>
+                // 3) izračunaj stabilne vremenske vrednosti
+                const startMin = timeToMin(start);
+                let endMinCalc;
+                if (endTouched) {
+                  endMinCalc = timeToMin(endHHMM);
+                } else {
+                  endMinCalc = Math.max(
+                    startMin + 5,
+                    Math.min(startMin + autoDuration, timeToMin(hours.close))
+                  );
+                }
+                const endHHMMFinal   = minToTime(endMinCalc);
+                const durationFinal  = Math.max(0, endMinCalc - startMin);
 
-</div>
+                // 4) pripremi polja usluga
+                const serviceIds   = effectiveServices.map(s => s.id);
+                const servicesInfo = effectiveServices.map(s => ({
+                  id: s.id,
+                  name: s.name,
+                  durationMin: Number(s.durationMin || 0),
+                  price: Number(s.price ?? s.basePrice ?? 0),
+                }));
 
+                // 5) naslov (za brzi prikaz u kartici)
+                const serviceName = effectiveServices.map(s => s.name).join(", ");
+
+                // 6) SAVE – šaljemo *i* endMin *i* endHHMM *i* durationMin
+                onSave({
+                  employeeId: empId,
+                  dateKey: editDateStr,
+                  startHHMM: start,
+                  startMin,
+                  endHHMM: endHHMMFinal,
+                  endMin: endMinCalc,
+                  durationMin: durationFinal,
+                  price: totalPrice,
+                  note: (editNote || "").trim(),
+                  serviceIds,
+                  servicesInfo,
+                  serviceName,
+                  clientName:  (editClientName  || "").trim(),
+                  clientPhone: (editClientPhone || "").trim(),
+                });
+              }}
+              title="Sačuvaj izmene"
+            >
+              <FiSave /> Sačuvaj
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* ---------- PICKER OVERLAY ---------- */}
+      {svcPickerOpen && (
+        <div style={styles.pickerWrap} onClick={() => setSvcPickerOpen(false)}>
+          <div style={styles.pickerCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display:"flex", alignItems:"center" }}>
+              <div style={{ fontWeight:900, fontSize:16 }}>Usluge radnice: {employeesById.get(empId)?.name}</div>
+              <button onClick={() => setSvcPickerOpen(false)} style={{ marginLeft:"auto", border:"none", background:"transparent", fontSize:22, cursor:"pointer" }}>×</button>
+            </div>
+
+            {allowedServices.map(s => {
+              const checked = editSrvIds.includes(s.id);
+              return (
+                <label key={s.id} style={{ display:"grid", gridTemplateColumns:"28px 1fr auto", alignItems:"center", gap:12, padding:"10px 12px", borderRadius:10, background:"#fff", border:"1px solid #eee" }}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleService(s.id)} />
+                  <div style={{ fontWeight:600 }}>{s.name}</div>
+                  <div style={{ opacity:.7 }}>
+                    {Number(s.price ?? s.basePrice ?? 0)} RSD · {Number(s.durationMin || 0)} min
+                  </div>
+                </label>
+              );
+            })}
+
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button className="btn" onClick={() => setSvcPickerOpen(false)} style={{ ...styles.pill, fontWeight:800 }}>Gotovo</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
