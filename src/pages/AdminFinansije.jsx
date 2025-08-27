@@ -129,14 +129,31 @@ export default function AdminFinansije() {
 
   /* =========================
      HELPER: iznos jednog termina
-     - podržava više usluga preko servicesInfo
-     - u suprotnom koristi finalPrice/price/basePrice
+     - prioritet: finalPrice / price (ručno upisano)
+     - inače: zbir iz servicesInfo
+     - fallback: basePrice
      ========================= */
   function amountForAppt(a) {
-    if (Array.isArray(a.servicesInfo) && a.servicesInfo.length) {
-      return a.servicesInfo.reduce((s, it) => s + Number(it.price || 0), 0);
+    // 1) uvek poštuj ručno ili finalno upisanu cenu sa termina
+    const override = a.finalPrice ?? a.price;
+    if (
+      override != null &&
+      String(override).trim() !== "" &&
+      isFinite(Number(override))
+    ) {
+      return Number(override);
     }
-    return Number(a.finalPrice ?? a.price ?? a.basePrice ?? 0);
+
+    // 2) ako nema override-a, saberi iz servicesInfo
+    if (Array.isArray(a.servicesInfo) && a.servicesInfo.length) {
+      return a.servicesInfo.reduce(
+        (s, it) => s + Number(it.price ?? it.basePrice ?? 0),
+        0
+      );
+    }
+
+    // 3) fallback
+    return Number(a.basePrice ?? 0);
   }
 
   // ===== Izračuni =====
@@ -750,7 +767,6 @@ const css = `
   /* liste i podliste */
   .fin-item{ flex-direction: column; align-items: stretch; gap: 8px; }
   .fin-item-right{ justify-content: space-between; gap: 8px; }
-  .fin-item-right .fin-btn{ width: 100%; }
   .fin-subitem{ flex-direction: column; align-items: stretch; gap: 8px; }
   .fin-sub-right{ text-align: left; }
 }
