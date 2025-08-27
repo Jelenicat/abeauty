@@ -498,7 +498,12 @@ const openApptModal = (a) => {
     const totalPrice = a.servicesInfo.reduce((sum, s) => sum + Number(s.price || 0), 0);
     const totalDur   = a.servicesInfo.reduce((sum, s) => sum + Number(s.durationMin || 0), 0);
 
-    setEditPrice(totalPrice);
+    setEditPrice(
+  (a.price !== undefined && a.price !== null)
+    ? Number(a.price)      // ako dokument već ima ručnu cenu — prikaži nju
+    : Number(totalPrice)   // inače zbir iz servicesInfo
+);
+
 
     if (a.startHHMM) {
       const startM = timeToMin(a.startHHMM);
@@ -1685,7 +1690,8 @@ try {
   const endMin   = timeToMin(endHHMM);
   const durationMin = Number(patch.durationMin ?? (endMin - startMin));
 
-  const price = Number(patch.price ?? a.price ?? 0);
+ const price = (patch.price !== undefined) ? Number(patch.price) : Number(a.price ?? 0);
+
   const note  = (patch.note ?? "").trim();
 
   // Klijent (može i prazno)
@@ -3175,6 +3181,7 @@ async function applyVacationRange() {
      // OVO dodaj ↓↓↓
       selSrvIds={selSrvIds}
       getServicePrice={getServicePrice}
+      
   onSave={async (patch) => {
                // START i END iz patch-a ili iz postojećeg termina
 const startStr = patch.startHHMM ?? activeAppt.startHHMM;
@@ -3735,9 +3742,9 @@ function DayGrid({
 
 // Ako postoji lista usluga → uvek zbir iz usluga.
 // Ako je nema (legacy zapis) → koristi a.price ako je postavljen, inače zbir.
-const priceTotal = (Array.isArray(a?.servicesInfo) && a.servicesInfo.length)
-  ? priceFromServices
-  : (a?.price != null ? Number(a.price) : priceFromServices);
+ const priceTotal = (a?.price != null)
+   ? Number(a.price)   // 👉 uvek koristi ručno upisanu cenu ako postoji
+   : priceFromServices; // 👉 fallback: zbir iz servicesInfo
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -4522,12 +4529,20 @@ function ApptModal({
   ) || 0;
 
   // Ako korisnik nije dirao cenu, osveži je automatski pri promeni usluga/appta
-  React.useEffect(() => {
-    if (!priceDirty && !isBlank(editPrice)) {
-      setEditPrice(String(autoDisplayPrice));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appt?.id, selectedServices.length, modalTotalPrice, apptTotalPrice]);
+ // 1) Kad se appt promeni i korisnik nije kucao, prikaži cenu iz dokumenta
+React.useEffect(() => {
+  if (!priceDirty) {
+    setEditPrice(apptTotalPrice != null ? String(apptTotalPrice) : "");
+  }
+}, [appt?.id, apptTotalPrice, priceDirty]);
+// 2) Ako je polje prazno (auto), ažuriraj ga kad se promene usluge/sume
+React.useEffect(() => {
+  if (isBlank(editPrice)) {
+    setEditPrice(String(autoDisplayPrice));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedServices.length, modalTotalPrice]);
+
 
   // Prikazna cena: prazno -> auto, inače uneseno
   const displayPrice = isBlank(editPrice) ? autoDisplayPrice : (Number(editPrice) || 0);
@@ -4842,24 +4857,25 @@ function ApptModal({
                 const serviceName = effectiveServices.map(s => s.name).join(", ");
 
                 // 6) SAVE (prazno polje -> auto cena)
-                onSave({
-                  employeeId: empId,
-                  dateKey: editDateStr,
-                  startHHMM: start,
-                  startMin,
-                  endHHMM: endHHMMFinal,
-                  endMin: endMinCalc,
+    onSave({
+  employeeId: empId,
+  dateKey: editDateStr,
+  startHHMM: start,
+  startMin,
+  endHHMM: endHHMMFinal,
+  endMin: endMinCalc,
+  durationMin: durationFinal,
 
-                  durationMin: durationFinal,
-                  price: isBlank(editPrice) ? (Number(autoPrice) || 0) : (Number(editPrice) || 0),
+ price: isBlank(editPrice) ? (Number(autoPrice) || 0) : (Number(editPrice) || 0),
 
-                  note: (editNote || "").trim(),
-                  serviceIds,
-                  servicesInfo,
-                  serviceName,
-                  clientName:  (editClientName  || "").trim(),
-                  clientPhone: (editClientPhone || "").trim(),
-                });
+  note: (editNote || "").trim(),
+  serviceIds,
+  servicesInfo,
+  serviceName,
+  clientName:  (editClientName  || "").trim(),
+  clientPhone: (editClientPhone || "").trim(),
+});
+
               }}
               title="Sačuvaj izmene"
             >
