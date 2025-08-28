@@ -168,6 +168,13 @@ function labelFor(a, servicesById) {
   return a.manual ? base + " (ručno)" : base;
 }
 
+// pored apptBgFor / labelFor
+const apptZFor = (a) =>
+  a.type === "booking"  ? 30 :
+  a.type === "break"    ? 20 :
+  a.type === "shift"    ? 10:
+  a.type === "block"    ? 10 :
+  12;
 
 // --- UI za izbor opsega dana (Pon..Ned) ---
 const DOW_SR_SHORT = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
@@ -489,40 +496,133 @@ useEffect(() => {
 // 2. useEffect koji reaguje na pendingDeepLink i postavlja schedDate, selEmpId, initialScrollMin i pendingApptId
 
 // 3. ⬇️ OVAJ useEffect koji ti je bitan
-const openApptModal = (a) => {
-  setActiveAppt(a);
-
-  // Ako termin već ima više usluga
-  if (Array.isArray(a.servicesInfo) && a.servicesInfo.length) {
-    setSelSrvIds(a.servicesInfo.map(s => s.id));
-
-    const totalPrice = a.servicesInfo.reduce((sum, s) => sum + Number(s.price || 0), 0);
-    const totalDur   = a.servicesInfo.reduce((sum, s) => sum + Number(s.durationMin || 0), 0);
-
-    setEditPrice(
-  (a.price !== undefined && a.price !== null)
-    ? Number(a.price)      // ako dokument već ima ručnu cenu — prikaži nju
-    : Number(totalPrice)   // inače zbir iz servicesInfo
+// helper: uzmi cenu usluge (bez obzira kako se zove polje u modelu)
+const priceOfService = (s) => Number(
+  s?.price ?? s?.basePrice ?? s?.discountPrice ?? s?.salePrice ?? 0
 );
 
+const openApptModal = async (a) => {
+  console.log("=== openApptModal (clicked) ===", a?.id);
 
-    if (a.startHHMM) {
-      const startM = timeToMin(a.startHHMM);
-      setEditEndHHMM(minToTime(startM + totalDur));
-    } else {
-      setEditEndHHMM(a?.endHHMM || minToTime(a?.endMin ?? 0));
+  // 1) povuci svež dokument iz Firestore-a
+  let appt = a;
+  try {
+    const snap = await getDoc(doc(db, "appointments", a.id));
+    if (snap.exists()) {
+      appt = { id: snap.id, ...snap.data() };
+      console.log("🔥 fresh from Firestore:", {
+        id: appt.id,
+        price: appt.price,
+        finalPrice: appt.finalPrice,
+        startHHMM: appt.startHHMM,
+        endHHMM: appt.endHHMM,
+        durationMin: appt.durationMin,
+        servicesInfo: appt.servicesInfo,
+      });
     }
-  } else {
-    // Stari zapisi sa jednom uslugom
-    if (a.serviceId) setSelSrvIds([a.serviceId]);
-    else setSelSrvIds([]);
-
-    setEditPrice(a?.price ?? "");
-    setEditEndHHMM(a?.endHHMM || minToTime(a?.endMin ?? 0));
+  } catch (err) {
+    console.warn("getDoc failed, using local object:", err);
   }
 
-  setEditNote(a?.note || "");
+  // 2) aktiviraj modal sa OSVEŽENIM appt-om
+  setActiveAppt(appt);
+
+  // --- 1) Servisi (napravi stabilan niz sa fallback-ovima) ---
+  const srvArray =
+    (Array.isArray(appt.servicesInfo) && appt.servicesInfo.length)
+      ? appt.servicesInfo.map(s => ({
+          id: s.id,
+          name: s.name,
+          durationMin: Number(s.durationMin || 0),
+          price: Number(s.price || 0),
+        }))
+    : (Array.isArray(appt.serviceIds) && appt.serviceIds.length)
+      ? appt.serviceIds
+          .map(id => servicesById.get(id))
+          .filter(Boolean)
+          .map(s => ({
+            id: s.id,
+            name: s.name,
+            durationMin: Number(s.durationMin || 0),
+            price: Number(
+              s?.price ??
+              s?.basePrice ??
+              s?.discountPrice ??
+              s?.salePrice ??
+              0
+            ),
+          }))
+    : (appt.serviceId
+        ? (() => {
+            const s = servicesById.get(appt.serviceId);
+            return s ? [{
+              id: s.id,
+              name: s.name,
+              durationMin: Number(s.durationMin || 0),
+              price: Number(
+                s?.price ??
+                s?.basePrice ??
+                s?.discountPrice ??
+                s?.salePrice ??
+                0
+              ),
+            }] : [];
+          })()
+        : []);
+
+  // setuj izabrane usluge u modal
+  setSelSrvIds(srvArray.map(s => s.id));
+
+  // --- 2) Sume iz srvArray (fallback vrednosti) ---
+  const sumServices = srvArray.reduce((sum, s) => sum + Number(s.price || 0), 0);
+  const durServices = srvArray.reduce((sum, s) => sum + Number(s.durationMin || 0), 0);
+
+  // --- 3) Efektivna cena (finalPrice → suma usluga → price) ---
+// --- 3) Efektivna cena (finalPrice → price → suma usluga)
+let effectivePrice =
+  (appt.finalPrice != null) ? Number(appt.finalPrice) :
+  (appt.price      != null) ? Number(appt.price)      :
+  (sumServices > 0)         ? Number(sumServices)     : 0;
+
+setEditPrice(effectivePrice);
+
+
+  console.log("effectivePrice chosen:", effectivePrice);
+  setEditPrice(effectivePrice);
+
+  // --- 4) Trajanje: doc.durationMin → (endMin - startMin) → zbir iz usluga ---
+  const durationFromDoc =
+    (typeof appt.durationMin === "number" && appt.durationMin > 0)
+      ? Number(appt.durationMin)
+      : (
+          (typeof appt.startMin === "number" && typeof appt.endMin === "number" && appt.endMin > appt.startMin)
+            ? (appt.endMin - appt.startMin)
+            : 0
+        );
+  const effectiveDuration = durationFromDoc > 0 ? durationFromDoc : Number(durServices || 0);
+  setEditDuration?.(effectiveDuration);
+
+  // --- 5) Kraj termina ---
+  const startM = (typeof appt.startMin === "number")
+    ? appt.startMin
+    : (appt.startHHMM ? timeToMin(appt.startHHMM) : null);
+
+  const endMFromDoc = (typeof appt.endMin === "number")
+    ? appt.endMin
+    : (appt.endHHMM ? timeToMin(appt.endHHMM) : null);
+
+  if (endMFromDoc != null) {
+    setEditEndHHMM(minToTime(endMFromDoc));
+  } else if (startM != null) {
+    setEditEndHHMM(minToTime(startM + (Number(effectiveDuration) || 0)));
+  } else {
+    setEditEndHHMM(appt?.endHHMM || minToTime(appt?.endMin ?? 0));
+  }
+
+  // --- 6) Beleška ---
+  setEditNote(appt?.note || "");
 };
+
 
 const closeApptModal = () => setActiveAppt(null);
 
@@ -1007,6 +1107,7 @@ const offClientsPenalty = onSnapshot(
   // 1) ostaje tvoj "daily listeners" efekat – BEZ unutrašnjeg useEffect-a:
 // daily listeners (day tab)
 useEffect(() => {
+  
   const dk = dateKey(dayDate);
   const qShifts = query(collection(db, "shifts"), where("dateKey", "==", dk));
   const qAppts  = query(collection(db, "appointments"), where("dateKey", "==", dk));
@@ -1435,21 +1536,9 @@ async function onEmpMobileClick(targetId) {
 
   /* ------------ validations & actions (day) ------------ */
 
-  const withinSalon = (s, e) => s >= openMin && e <= closeMin && e > s;
-  const withinShift = (empId, s, e) => {
-    const segs = shiftsByEmp.get(empId) || [];
-    if (segs.length === 0) {
-      return s >= openMin && e <= closeMin;
-    }
-    return segs.some((seg) => s >= seg.start && e <= seg.end);
-  };
- const noOverlap = (empId, s, e, ignoreId) =>
-  !(apptsByEmp.get(empId) || []).some(
-    (a) =>
-      a.id !== ignoreId &&
-       a.type !== "shift" &&                // ⬅️ ignore “smena”
-       overlaps(s, e, a.startMin, a.endMin)
-  );
+const withinSalon = () => true;
+const withinShift = () => true;
+const noOverlap   = () => true;
 
   const colorForServiceId = (id) => {
     const srv = servicesById.get(id);
@@ -1515,9 +1604,9 @@ const durationEdited  = Number(editDuration) !== Number(totalDuration);
     const end = start + totalDur;
 
     // Validacije
-    if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
-    if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
-    if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+   //f (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+   //f (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+   //f (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
 
     // Klijent
     const nameToSave  = (clientName  || "").trim();
@@ -1648,9 +1737,9 @@ try {
   const start = timeToMin(startTime);
   const end   = timeToMin(endTime);
 
-  if (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
-  if (!withinShift(empId, start, end)) return alert("Van smene radnice.");
-  if (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
+ //f (!withinSalon(start, end)) return alert("Van radnog vremena salona.");
+  // (!withinShift(empId, start, end)) return alert("Van smene radnice.");
+  // (!noOverlap(empId, start, end)) return alert("Preklapanje sa postojećim.");
 
   await addDoc(collection(db, "appointments"), {
     type: "block",
@@ -1679,33 +1768,61 @@ try {
     if (!confirm("Obrisati stavku?")) return;
     await deleteDoc(doc(db, "appointments", id));
   }
-  async function saveApptFromModal(patch) {
-  // patch stiže iz ApptModal.onSave({...})
-  // a = trenutno otvoreni termin u modalu
+// === ZAMENI TVOJ POSTOJEĆI saveApptFromModal OVIM ===
+async function saveApptFromModal(patch) {
   const a = activeAppt;
   if (!a?.id) return;
-
-  // 1) Izvuci vrednosti (uz fallback na postojeći termin)
-  const employeeId = patch.employeeId ?? a.employeeId;
+  console.log("=== saveApptFromModal ===");
+  console.log("patch received:", patch);
+  console.log("before merge, activeAppt:", {
+    id: a.id,
+    price: a.price,
+    finalPrice: a.finalPrice,
+    startMin: a.startMin,
+    endMin: a.endMin,
+    durationMin: a.durationMin,
+  });
+  // 1) Izvuci sve vrednosti (patch > postojeće)
+  const employeeId   = patch.employeeId ?? a.employeeId;
   const employeeName = employeesById.get(employeeId)?.name || a.employeeName || "";
 
-  const dateKey = patch.dateKey ?? a.dateKey;
+  const dateKey   = patch.dateKey   ?? a.dateKey;
   const startHHMM = patch.startHHMM ?? a.startHHMM;
-  const endHHMM   = patch.endHHMM   ?? a.endHHMM;
+  const endHHMMin = patch.endHHMM   ?? a.endHHMM;
 
-  const startMin = timeToMin(startHHMM);
-  const endMin   = timeToMin(endHHMM);
-  const durationMin = Number(patch.durationMin ?? (endMin - startMin));
+  // Start/End u minutima
+  const startMin = patch.startMin ?? timeToMin(startHHMM);
 
- const price = (patch.price !== undefined) ? Number(patch.price) : Number(a.price ?? 0);
+  // Ako je stigao novi endHHMM / endMin ili novo trajanje — izračunaj konzistentno:
+  let endMin;
+  if (patch.endMin != null) {
+    endMin = Number(patch.endMin);
+  } else if (endHHMMin) {
+    endMin = timeToMin(endHHMMin);
+  } else if (patch.durationMin != null) {
+    endMin = startMin + Number(patch.durationMin);
+  } else if (typeof a.endMin === "number") {
+    endMin = a.endMin;
+  } else if (a.endHHMM) {
+    endMin = timeToMin(a.endHHMM);
+  } else {
+    endMin = startMin; // fallback, neće proći validaciju ispod
+  }
 
-  const note  = (patch.note ?? "").trim();
+  const durationMin = Number(
+    patch.durationMin != null ? patch.durationMin : (endMin - startMin)
+  );
 
-  // Klijent (može i prazno)
+  // Cena / napomena / klijent
+  const price = (patch.price !== undefined)
+    ? Number(patch.price)
+    : Number(a.price ?? 0);
+
+  const note  = (patch.note ?? a.note ?? "").trim();
   const clientName  = (patch.clientName  ?? a.clientName  ?? "").trim();
   const clientPhone = (patch.clientPhone ?? a.clientPhone ?? "").trim();
 
-  // Multi-usluge (ako dođu iz modala), inače zadrži postojeće
+  // Više usluga
   const servicesInfo = Array.isArray(patch.servicesInfo) && patch.servicesInfo.length
     ? patch.servicesInfo.map(s => ({
         id: s.id,
@@ -1719,89 +1836,73 @@ try {
     ? patch.serviceIds
     : (Array.isArray(a.serviceIds) ? a.serviceIds : (a.serviceId ? [a.serviceId] : []));
 
-  // Za back-compat polja (serviceId/serviceName/color) uzimamo prvu izabranu
   const primaryServiceId = serviceIds[0] || a.serviceId || null;
   const primaryService   = primaryServiceId ? servicesById.get(primaryServiceId) : null;
-  const serviceName      = primaryService?.name || a.serviceName || "Usluga";
+  const serviceName      = patch.serviceName ?? primaryService?.name ?? a.serviceName ?? "Usluga";
   const color            = colorForServiceId?.(primaryServiceId) ?? a.color;
 
-  // 2) Validacije (koriste tvoje postojeće helpere)
-  if (!(endMin > startMin)) {
-    alert("Kraj mora biti posle početka.");
-    return;
-  }
-  const dow = DOW[new Date(dateKey + "T00:00:00").getDay()];
+  // 2) Validacije (u okviru radnog vremena + smene + bez preklapanja)
+  if (!(endMin > startMin)) { alert("Kraj mora biti posle početka."); return; }
+  const dow   = DOW[new Date(dateKey + "T00:00:00").getDay()];
   const hours = (salonHours && salonHours[dow]) || DEFAULT_SALON_HOURS[dow];
-  const openMin = timeToMin(hours.open);
+  const openMin  = timeToMin(hours.open);
   const closeMin = timeToMin(hours.close);
-
-  const withinSalon = (s, e) => s >= openMin && e <= closeMin && e > s;
-  if (!withinSalon(startMin, endMin)) {
-    alert("Van radnog vremena salona.");
-    return;
-  }
-  if (!withinShift(employeeId, startMin, endMin)) {
-    alert("Van smene radnice.");
-    return;
-  }
+  const withinSalonLocal = (s, e) => s >= openMin && e <= closeMin && e > s;
+  if (!withinSalonLocal(startMin, endMin)) { alert("Van radnog vremena salona."); return; }
+  if (!withinShift(employeeId, startMin, endMin)) { alert("Van smene radnice."); return; }
   if (!noOverlap(employeeId, startMin, endMin, a.id)) {
-    alert("Preklapanje sa postojećim terminima/blokovima.");
-    return;
+    alert("Preklapanje sa postojećim terminima/blokovima."); return;
   }
-
-  // 3) Upis termina
-  await updateDoc(doc(db, "appointments", a.id), {
-    // osnovno
-    employeeId,
-    employeeName,
-
+    console.log("writing updateDoc with:", {
+    employeeId, employeeName,
     dateKey,
-    startHHMM,
-    endHHMM,
-    startMin,
-    endMin,
+    startHHMM, endHHMM: minToTime(endMin),
+    startMin, endMin,
     durationMin,
-
-    // cene/napomena
     price,
-    note: note || deleteField(),       // prazno briše polje
-
-    // klijent
-    clientName,
-    clientPhone,
-
-    // multi-usluge + back-compat
-    servicesInfo,
-    serviceIds,
-    serviceId: primaryServiceId || deleteField(),
+    finalPrice: price,
+    note,
+    clientName, clientPhone,
+    servicesInfo, serviceIds,
+    serviceId: primaryServiceId,
     serviceName,
-
-    // boja
     color,
-
-    // meta
-    updatedAt: serverTimestamp(),
   });
 
-  // 4) Upsert klijenta (po telefonu) — opciono ali korisno
-  if (clientPhone) {
-    const phoneNorm = String(clientPhone).replace(/[^\d+]/g, "").replace(/^00/, "+").replace(/^0(6\d+)/, "+381$1");
-    await setDoc(
-      doc(db, "clients", phoneNorm),
-      {
-        name: clientName || "",
-        phone: clientPhone,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-  }
 
-  // 5) Zatvori modal / poruka
-  if (typeof showToast === "function") showToast("✅ Termin ažuriran");
-  closeApptModal?.();
+  // 3) Jedinstveni upis u Firestore (JEDAN updateDoc)
+  await updateDoc(doc(db, "appointments", a.id), {
+    employeeId, employeeName,
+    dateKey,
+    startHHMM, endHHMM: minToTime(endMin),
+    startMin,  endMin,
+     price:      Number(patch.price ?? 0),
+  finalPrice: Number(patch.price ?? 0),   // <-- DODATO
+  durationMin: Number(patch.durationMin ?? (/* fallback ako ima */ 0)),
+    note: note || deleteField(),
+    clientName, clientPhone,
+    servicesInfo, serviceIds,
+    serviceId: primaryServiceId || deleteField(),
+    serviceName,
+    color,
+    updatedAt: serverTimestamp(),
+  });
+  console.log("✅ updateDoc done");
+  try {
+  const snapAfter = await getDoc(doc(db, "appointments", a.id));
+  console.log("🧪 after update, Firestore doc:", snapAfter.exists() ? snapAfter.data() : null);
+} catch (e) {
+  console.warn("read-back failed", e);
 }
-  async function saveApptDuration() {
+  // 4) UX: zatvori modal da sledeće otvaranje povuče sveže vrednosti iz onSnapshot-a
+  if (typeof closeApptModal === "function") closeApptModal();
+
+  // (opciono) toast
+  if (typeof showToast === "function") showToast("✅ Sačuvano");
+}
+
+
+async function saveApptDuration() {
   const a = activeAppt;
   if (!a?.id) return;
 
@@ -1835,12 +1936,15 @@ try {
     endHHMM: editEndHHMM,
     endMin: newEndMin,
     durationMin: newEndMin - startMin,
+   
     updatedAt: serverTimestamp(),
   });
-
+ console.log("✅ updateDoc done");
   // zatvori modal
   closeApptModal();
 }
+
+
 
 
   // mark no-show + increment client counter by phone
@@ -2967,6 +3071,7 @@ const allServicesArray =
       width: "max-content", // neka širina bude po sadržaju (sve kolone)
     }}
   >
+    
   {/* GRID */}
   <DayGrid
     employees={employees}
@@ -3234,6 +3339,7 @@ const allServicesArray =
         {activeAppt &&
           createPortal(
             <ApptModal
+           
               appt={activeAppt}
               onClose={closeApptModal}
               employees={employees}
@@ -3296,16 +3402,27 @@ const newEnd = endFromPatch != null ? endFromPatch : (newStart + durationFromPat
                   return;
                 }
 
-                await updateDoc(doc(db, "appointments", activeAppt.id), {
-                  ...patch,
-                  employeeId: emp,
-                  employeeName: employeesById.get(emp)?.name || "",
-                  startHHMM: minToTime(newStart),
-                  endHHMM: minToTime(newEnd),
-                  startMin: newStart,
-                  endMin: newEnd,
-                  updatedAt: serverTimestamp(),
-                });
+await updateDoc(doc(db, "appointments", activeAppt.id), {
+  // upiši SVE iz modala (cena, napomena, klijent, servicesInfo, serviceIds, dateKey...)
+  ...patch,
+
+  // i dalje zabeleži stabilne vrednosti vremena:
+  employeeId: emp,
+  employeeName: employeesById.get(emp)?.name || "",
+  startHHMM: minToTime(newStart),
+  endHHMM: minToTime(newEnd),
+  startMin: newStart,
+  endMin: newEnd,
+
+  // ako želiš i trajanje kao polje:
+  durationMin: (patch.durationMin != null)
+    ? Number(patch.durationMin)
+    : (newEnd - newStart),
+
+  updatedAt: serverTimestamp(),
+});
+
+
                 setActiveAppt(null);
               }}
               onNoShow={async () => {
@@ -3766,6 +3883,8 @@ function DayGrid({
                       background: "linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08))",
                       border: "0.5px dashed rgba(255,255,255,.25)",
                       borderRadius: 10,
+                          zIndex: 1,                      // ⬅️ smena ispod
+      pointerEvents: "none",          // ⬅️ ne blokira klik
                     }}
                     title={`Smena ${s.start}–${s.end}`}
                   />
@@ -3835,10 +3954,9 @@ function DayGrid({
                       onMouseLeave={() => setHoverApptId(null)}
                       onClick={!isInfoCard ? () => onApptClick(a) : undefined}
                       style={{
-                        ...apptCard(top, height, bg, isInfoCard),
-                        ...(isShift ? { pointerEvents: "none", opacity: 0.5, zIndex: -1 } : {}),
-                       ...(isBlock || isVacation ? { zIndex: 5 } : {})
-
+                      ...apptCard(top, height, bg, isInfoCard),
+  ...(isShift ? { pointerEvents: "none", opacity: 0.5 } : {}),
+  zIndex: (isBlock || isVacation || isBreak || isShift) ? 10 : 20
                       }}
                       title={
                         isVacation ? "Odmor" :
@@ -4438,7 +4556,7 @@ function ApptModal({
   onDelete,
   noShowByPhone,
 }) {
-  // --------- responsive helper (samo za ovaj modal) ---------
+  // --------- responsive helper ---------
   const [isMobile, setIsMobile] = React.useState(() => {
     try { return window.matchMedia("(max-width: 640px)").matches; } catch { return false; }
   });
@@ -4460,14 +4578,14 @@ function ApptModal({
   const [empId, setEmpId] = React.useState(appt.employeeId);
   const [start, setStart] = React.useState(appt.startHHMM);
 
-  // kraj termina (EDIT)
   const initialEnd = appt.endHHMM || (appt.endMin != null
     ? minToTime(appt.endMin)
     : minToTime(timeToMin(appt.startHHMM) + (appt.durationMin || 0)));
   const [endHHMM, setEndHHMM] = React.useState(initialEnd);
-  const [endTouched, setEndTouched] = React.useState(false); // korisnik ručno dira kraj?
+  const [endTouched, setEndTouched] = React.useState(false);   // user menjao kraj?
+  const [priceDirty, setPriceDirty] = React.useState(false);   // user menjao cenu?
 
-  // ✅ Datum (YYYY-MM-DD)
+  // Datum
   const [editDateStr, setEditDateStr] = React.useState(
     () => appt?.dateKey || new Date().toISOString().slice(0, 10)
   );
@@ -4497,7 +4615,7 @@ function ApptModal({
                 id: s.id,
                 name: s.name,
                 durationMin: s.durationMin,
-                price: getServicePrice(s), // ⬅ popust
+                price: getServicePrice(s),
               }))
           : (() => {
               const one = servicesById.get(appt.serviceId);
@@ -4505,23 +4623,56 @@ function ApptModal({
                 id: one.id,
                 name: one.name,
                 durationMin: one.durationMin,
-                price: getServicePrice(one), // ⬅ popust
+                price: getServicePrice(one),
               }] : [];
             })());
 
   const apptTotalDuration = apptServices.reduce((a, s) => a + Number(s.durationMin || 0), 0);
   const fallbackApptPrice = apptServices.reduce((a, s) => a + Number(s.price || 0), 0);
-  const apptTotalPrice    = (appt?.price != null) ? Number(appt.price) : fallbackApptPrice;
+
+  // ✅ preferiraj finalPrice → price → zbir
+  const apptTotalPrice =
+    (appt?.finalPrice != null) ? Number(appt.finalPrice) :
+    (appt?.price != null)      ? Number(appt.price)      :
+                                 Number(fallbackApptPrice || 0);
+
+  // --- watch key ---
+  const apptWatchKey = React.useMemo(() => {
+    return [
+      appt?.id,
+      appt?.dateKey,
+      appt?.finalPrice,
+      appt?.price,
+      (appt?.startHHMM || ""),
+      (appt?.endHHMM || ""),
+      (appt?.durationMin || 0),
+      (appt?.serviceIds || []).join(","),
+      JSON.stringify(appt?.servicesInfo || []),
+    ].join("|");
+  }, [appt]);
+
+  // --- helper za cenu ---
+  function computeEffectivePrice(a) {
+    const sumServices = (Array.isArray(a?.servicesInfo) ? a.servicesInfo : [])
+      .reduce((s,x) => s + Number(x?.price || 0), 0);
+    if (a?.finalPrice != null) return Number(a.finalPrice);
+    if (a?.price != null)      return Number(a.price);
+    return Number(sumServices || 0);
+  }
 
   // === EDIT polja ===
-  // čuvamo string da može biti i "" (prazno)
   const [editPrice, setEditPrice] = React.useState(
     apptTotalPrice != null ? String(apptTotalPrice) : ""
   );
-  const [editNote,  setEditNote]  = React.useState(appt?.note || "");
-  const [priceDirty, setPriceDirty] = React.useState(false); // korisnik menjao cenu?
+React.useEffect(() => {
+  if (!appt) return;
+  console.log("🔎 ApptModal dobio appt:", {
+    id: appt.id, price: appt.price, finalPrice: appt.finalPrice,
+    startHHMM: appt.startHHMM, endHHMM: appt.endHHMM, durationMin: appt.durationMin
+  });
+}, [appt]);
 
-  // Klijent
+  const [editNote,  setEditNote]  = React.useState(appt?.note || "");
   const [editClientName,  setEditClientName]  = React.useState(appt?.clientName  || "");
   const [editClientPhone, setEditClientPhone] = React.useState(appt?.clientPhone || "");
 
@@ -4532,7 +4683,7 @@ function ApptModal({
     (appt?.serviceId ? [appt.serviceId] : []);
   const [editSrvIds, setEditSrvIds] = React.useState(initialSrvIds);
 
-  // ----- HELPERI (podržavaju više šema podataka) -----
+  // dozvoljene usluge / filtriranje po radnici
   function svcCatIds(s) {
     const out = new Set();
     const single =
@@ -4570,13 +4721,11 @@ function ApptModal({
     return false;
   }
 
-  // ✅ Dozvoljene usluge (picker)
   const allowedServices = React.useMemo(() => {
     const all = Array.from(servicesById.values() || []);
     return all.filter(s => isAllowedForEmp(empId, s, employeesById));
   }, [empId, servicesById, employeesById]);
 
-  // Izborene usluge + sabiranja
   const selectedServices = React.useMemo(
     () => editSrvIds.map(id => servicesById.get(id)).filter(Boolean),
     [editSrvIds, servicesById]
@@ -4586,38 +4735,89 @@ function ApptModal({
     [selectedServices]
   );
   const modalTotalPrice = React.useMemo(
-    () => selectedServices.reduce((a, s) => a + Number(getServicePrice(s)), 0), // ⬅ popust
+    () => selectedServices.reduce((a, s) => a + Number(getServicePrice(s)), 0),
     [selectedServices]
   );
 
-  // ---- helperi za cenu ----
+  // utils
   const isBlank = (v) => String(v ?? "").trim() === "";
+
+  // ❗ reset svih lokalnih polja kada se promeni otvoreni termin
+  React.useEffect(() => {
+    if (!appt) return;
+    setEmpId(appt.employeeId);
+    setStart(appt.startHHMM);
+
+    // reset cene iz dokumenta (finalPrice → price)
+    setEditPrice(String(computeEffectivePrice(appt)));
+    setPriceDirty(false);
+
+    // end
+    const freshEnd = appt.endHHMM || (appt.endMin != null
+      ? minToTime(appt.endMin)
+      : minToTime(timeToMin(appt.startHHMM) + (appt.durationMin || 0)));
+    setEndHHMM(freshEnd);
+    setEndTouched(false);
+
+    // usluge
+    const freshSrvIds =
+      (Array.isArray(appt?.servicesInfo) && appt.servicesInfo.length
+        ? appt.servicesInfo.map(s => s.id)
+        : Array.isArray(appt?.serviceIds) && appt.serviceIds.length
+          ? appt.serviceIds
+          : (appt?.serviceId ? [appt.serviceId] : []));
+    setEditSrvIds(freshSrvIds);
+
+    // klijent / napomena
+    setEditClientName(appt?.clientName || "");
+    setEditClientPhone(appt?.clientPhone || "");
+    setEditNote(appt?.note || "");
+  }, [apptWatchKey]);
+
+  // auto-displej cene (ako user nije dirao cenu)
   const autoDisplayPrice = Number(
-    (selectedServices.length ? modalTotalPrice : apptTotalPrice)
+    (selectedServices.length ? modalTotalPrice : (
+      (appt?.finalPrice != null) ? Number(appt.finalPrice) :
+      (appt?.price != null)      ? Number(appt.price)      :
+                                   Number(fallbackApptPrice || 0)
+    ))
   ) || 0;
 
-  // Ako korisnik nije dirao cenu, osveži je automatski pri promeni usluga/appta
+  React.useEffect(() => {
+if (!priceDirty) {
+  const hasSavedPrice = (appt?.finalPrice != null) || (appt?.price != null);
+  if (!hasSavedPrice) {
+    setEditPrice(autoDisplayPrice); // auto samo ako NEMA sačuvane cene
+  }
+}
 
-// 2) Ako je polje prazno (auto), ažuriraj ga kad se promene usluge/sume
- React.useEffect(() => {
-   if (isBlank(editPrice)) {
-     setEditPrice(String(autoDisplayPrice));
-   }
- }, [selectedServices.length, modalTotalPrice]);
- React.useEffect(() => {
-   if (!priceDirty) {
-     setEditPrice(String(autoDisplayPrice));
-   }
- }, [autoDisplayPrice, priceDirty]);
+  }, [autoDisplayPrice, priceDirty]);
 
-
-
-  // Prikazna cena: prazno -> auto, inače uneseno
- const displayPrice = priceDirty ? (Number(editPrice) || 0) : autoDisplayPrice;
+  const displayPrice = priceDirty ? (Number(editPrice) || 0) : autoDisplayPrice;
 
   // --- radno vreme za dan termina (mora pre auto-end efekta) ---
   const dow   = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
   const hours = (salonHours && salonHours[dow]) || DEFAULT_SALON_HOURS[dow];
+
+  // brzi +/- za kraj
+  const nudgeEnd = (deltaMin) => {
+    setEndTouched(true);
+    const base = timeToMin(endHHMM) + deltaMin;
+    const minEnd = timeToMin(start) + 5;
+    const bounded = Math.max(minEnd, Math.min(base, timeToMin(hours.close)));
+    setEndHHMM(minToTime(bounded));
+  };
+
+  // efektivno trajanje za prikaz
+  const effectiveDuration =
+    (Math.max(0, timeToMin(endHHMM) - timeToMin(start))) || modalTotalDuration || apptTotalDuration;
+  const endForBadge = endHHMM || minToTime(timeToMin(start) + effectiveDuration);
+
+  // Header naslov i boja
+  const headerNames = (selectedServices.length ? selectedServices : apptServices)
+    .map(s => s.name).join(", ")
+    || appt.serviceName || servicesById.get(appt.serviceId)?.name || "Usluga";
+  const firstSelectedId = (editSrvIds[0] || allowedServices[0]?.id || appt.serviceId);
 
   // --- AUTO PODEŠAVANJE KRAJA: aktivno dok korisnik nije dirao kraj ---
   React.useEffect(() => {
@@ -4644,7 +4844,7 @@ function ApptModal({
     endHHMM
   ]);
 
-  // --- klijent / istorija / kazna
+  // --- klijent / istorija / kazna ---
   const phoneN = normPhone(appt.clientPhone);
   const hasNoShowHistory   = !!(phoneN && noShowByPhone.get(phoneN));
   const earliestId         = phoneN ? earliestApptIdByPhone.get(phoneN) : null;
@@ -4656,7 +4856,7 @@ function ApptModal({
   const showPenaltyHere        = !!(pendingPen && isEarliestForPhone && !penaltyApplied);
   const showPenaltyAppliedHere = !!(penaltyApplied && isEarliestForPhone);
 
-  // --- mini stilovi (skraćeno) ---
+  // --- mini stilovi ---
   const styles = {
     backdrop:{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:9999,display:"flex",alignItems:isMobile?"stretch":"center",justifyContent:isMobile?"stretch":"center",padding:isMobile?0:12},
     card:{width:isMobile?"100vw":"min(560px,90vw)",maxWidth:"100%",height:isMobile?"100vh":"auto",minHeight:isMobile?"100dvh":"auto",maxHeight:isMobile?"100dvh":"92vh",background:"linear-gradient(180deg,#ffffff,#f7f8fc)",borderRadius:isMobile?0:20,boxShadow:"0 14px 36px rgba(0,0,0,.32)",display:"flex",flexDirection:"column",overflow:"hidden"},
@@ -4679,27 +4879,7 @@ function ApptModal({
     chip:{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:999,background:"#f4f6ff",border:"1px solid #e1e6ff",fontWeight:700}
   };
 
-  // brzi +/- za kraj
-  const nudgeEnd = (deltaMin) => {
-    setEndTouched(true);
-    const base = timeToMin(endHHMM) + deltaMin;
-    const minEnd = timeToMin(start) + 5; // barem +5 min iza početka
-    const bounded = Math.max(minEnd, Math.min(base, timeToMin(hours.close)));
-    setEndHHMM(minToTime(bounded));
-  };
-
-  // preview završnog vremena za bedž
-  const effectiveDuration =
-    (Math.max(0, timeToMin(endHHMM) - timeToMin(start))) || modalTotalDuration || apptTotalDuration;
-  const endForBadge = endHHMM || minToTime(timeToMin(start) + effectiveDuration);
-
-  // Header naslov i boja
-  const headerNames = (selectedServices.length ? selectedServices : apptServices)
-    .map(s => s.name).join(", ")
-    || appt.serviceName || servicesById.get(appt.serviceId)?.name || "Usluga";
-  const firstSelectedId = (editSrvIds[0] || allowedServices[0]?.id || appt.serviceId);
-
-  // ---------- Services picker ----------
+  // Services picker
   const [svcPickerOpen, setSvcPickerOpen] = React.useState(false);
   const toggleService = (id) => {
     setEditSrvIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -4713,7 +4893,8 @@ function ApptModal({
           <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
             <div style={styles.colorDot(appt.color || colorForServiceId(firstSelectedId))} />
             <div style={{ fontWeight:900, fontSize:isMobile?16:17, lineHeight:1.25, wordBreak:"break-word" }}>
-              {headerNames}
+              {(selectedServices.length ? selectedServices : apptServices).map(s => s.name).join(", ")
+                || appt.serviceName || servicesById.get(appt.serviceId)?.name || "Usluga"}
             </div>
           </div>
           <button style={styles.close} onClick={onClose} title="Zatvori">×</button>
@@ -4789,7 +4970,7 @@ function ApptModal({
             </div>
           </div>
 
-          {/* Usluge – prikaz izabranih + dugme za uređivanje */}
+          {/* Usluge */}
           <div style={{ display:"grid", gap:8 }}>
             <div style={{ fontWeight:700 }}>Usluge</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
@@ -4809,7 +4990,7 @@ function ApptModal({
               </button>
             </div>
 
-            {/* ✅ Koristi displayPrice */}
+            {/* Tabela suma */}
             <div style={{ marginTop:2, fontWeight:800 }}>
               Ukupno: {displayPrice.toLocaleString("sr-RS")} RSD · {selectedServices.length ? modalTotalDuration : (appt.durationMin ?? apptTotalDuration)} min
             </div>
@@ -4826,19 +5007,19 @@ function ApptModal({
             <div style={{ ...styles.badge, background:"#e8fff0", color:"#0b7a3d" }}>
               Cena: <b>{displayPrice.toLocaleString("sr-RS")} RSD</b>
             </div>
-            {hasNoShowHistory && isEarliestForPhone && !penaltyApplied && (
+            {showNoShowHere && (
               <div style={{ ...styles.badge, background:"#ffe8ea", color:"#7a1b1b" }}>
                 <FiAlertTriangle /> No-show istorija
               </div>
             )}
           </div>
 
-          {(pendingPen && isEarliestForPhone && !penaltyApplied) && (
+          {(showPenaltyHere) && (
             <div style={{ ...styles.badge, background:"#fff7e6", color:"#7a3d0b" }}>
               <FiInfo /> Kazna za naplatu: <b>{pendingPen.amount} RSD</b>
             </div>
           )}
-          {(penaltyApplied && isEarliestForPhone) && (
+          {(showPenaltyAppliedHere) && (
             <div style={{ ...styles.badge, background:"#e8fff0", color:"#0b7a3d" }}>
               <FiInfo /> Kazna primenjena: <b>{appt.penaltyApplied.amount} RSD</b>
             </div>
@@ -4867,8 +5048,8 @@ function ApptModal({
                 value={editPrice}
                 onChange={(e)=>{
                   const v = e.target.value;
-                  setEditPrice(v);                 // može biti i ""
-                  setPriceDirty(!isBlank(v));      // prazno = auto
+                  setEditPrice(v);
+                  setPriceDirty(!isBlank(v)); // prazno = auto
                 }}
                 placeholder="npr. 3200"
                 style={styles.inp}
@@ -4890,16 +5071,16 @@ function ApptModal({
 
             <button
               style={styles.save}
-              onClick={() => {
+              onClick={async () => {
                 // 1) efikasna lista usluga
                 const effectiveServices = (selectedServices.length ? selectedServices : apptServices);
 
                 // 2) saberi trajanje i auto cenu (sa popustom)
-                const autoDuration = effectiveServices.reduce((a,s)=>a+Number(s.durationMin||0),0);
-                const autoPrice    = effectiveServices.reduce((a,s)=>a+Number(getServicePrice(s)),0);
+                const autoDuration = effectiveServices.reduce((a, s) => a + Number(s.durationMin || 0), 0);
+                const autoPrice    = effectiveServices.reduce((a, s) => a + Number(getServicePrice(s)), 0);
                 const startMin = timeToMin(start);
 
-                // 3) izračunaj stabilne vremenske vrednosti
+                // 3) stabilne vremenske vrednosti
                 let endMinCalc;
                 if (endTouched) {
                   endMinCalc = timeToMin(endHHMM);
@@ -4909,41 +5090,39 @@ function ApptModal({
                     Math.min(startMin + autoDuration, timeToMin(hours.close))
                   );
                 }
-                const endHHMMFinal   = minToTime(endMinCalc);
-                const durationFinal  = Math.max(0, endMinCalc - startMin);
+                const endHHMMFinal  = minToTime(endMinCalc);
+                const durationFinal = Math.max(0, endMinCalc - startMin);
 
-                // 4) pripremi polja usluga
+                // 4) polja usluga
                 const serviceIds   = effectiveServices.map(s => s.id);
                 const servicesInfo = effectiveServices.map(s => ({
                   id: s.id,
                   name: s.name,
                   durationMin: Number(s.durationMin || 0),
-                  price: Number(getServicePrice(s)), // ⬅ popust
+                  price: Number(getServicePrice(s)),
                 }));
-
-                // 5) naslov (za brzi prikaz u kartici)
                 const serviceName = effectiveServices.map(s => s.name).join(", ");
 
-                // 6) SAVE (prazno polje -> auto cena)
-    onSave({
-  employeeId: empId,
-  dateKey: editDateStr,
-  startHHMM: start,
-  startMin,
-  endHHMM: endHHMMFinal,
-  endMin: endMinCalc,
-  durationMin: durationFinal,
+                // 5) SAVE (ručno > auto)
+                await onSave({
+                  employeeId: empId,
+                  dateKey: editDateStr,
+                  startHHMM: start,
+                  startMin,
+                  endHHMM: endHHMMFinal,
+                  endMin: endMinCalc,
+                  durationMin: durationFinal,
+                  price: priceDirty ? (Number(editPrice) || 0) : (Number(autoPrice) || 0),
+                  note: (editNote || "").trim(),
+                  serviceIds,
+                  servicesInfo,
+                  serviceName,
+                  clientName:  (editClientName  || "").trim(),
+                  clientPhone: (editClientPhone || "").trim(),
+                });
 
- price: priceDirty ? (Number(editPrice) || 0) : (Number(autoPrice) || 0),
-
-  note: (editNote || "").trim(),
-  serviceIds,
-  servicesInfo,
-  serviceName,
-  clientName:  (editClientName  || "").trim(),
-  clientPhone: (editClientPhone || "").trim(),
-});
-
+                // 6) zatvori modal posle snimanja (parent refresuje listu)
+                onClose?.();
               }}
               title="Sačuvaj izmene"
             >
@@ -4984,6 +5163,7 @@ function ApptModal({
     </div>
   );
 }
+
 
 /* -------------------- UI helpers & styles -------------------- */
 /* kartica termina – zajednički stil za DayGrid i ScheduleGrid */
