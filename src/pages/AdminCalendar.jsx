@@ -890,6 +890,131 @@ const [selectedClientId, setSelectedClientId] = useState(null);
 
   // schedule tab
   const [schedDate, setSchedDate] = useState(() => new Date());
+  // 🔔 Global "novo zakazivanje"
+const [noticeOpen, setNoticeOpen] = useState(false);
+const [unseenCount, setUnseenCount] = useState(0);
+const unseenIdsRef = useRef(new Set());
+
+// "prompt" za poslednje pristiglo + lista samo NOVIH + ceo HRONO timeline
+const [newApptNotice, setNewApptNotice] = useState(null);
+const [newBookings, setNewBookings] = useState([]);
+const [bookingsTimeline, setBookingsTimeline] = useState([]);
+// ⬇ dodaj pored ostalih useRef/useState:
+const DISMISSED_KEY = "ac_new_dismissed_v1";
+const PENDING_KEY   = "ac_new_pending_v1";
+
+// sve što si već odbacila (da se više ne pojavljuje)
+const dismissedIdsRef = useRef(new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]")));
+// sve što je "novo" i treba da stoji dok ga ne skloniš
+const pendingIdsRef   = useRef(new Set(JSON.parse(localStorage.getItem(PENDING_KEY) || "[]")));
+const timelineNewestFirst = React.useMemo(() => {
+  const dkToMs = (dk, startMin = 0) => {
+    if (!dk) return 0;
+    const t = new Date(dk + "T00:00:00").getTime() || 0;
+    return t + (Number(startMin) || 0) * 60_000;
+  };
+  const getSortKey = (x) =>
+    (x.createdAt?.toMillis?.() ?? null) ?? dkToMs(x.dateKey, x.startMin);
+
+  return [...bookingsTimeline]
+    .filter(x => !x.manual)            // sigurnosno: samo online
+    .sort((a, b) => getSortKey(b) - getSortKey(a)); // DESC: najnovije gore
+}, [bookingsTimeline]);
+
+
+function persistSets() {
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedIdsRef.current]));
+  localStorage.setItem(PENDING_KEY,   JSON.stringify([...pendingIdsRef.current]));
+}
+
+function dismissNew(id) {
+  // skini iz pending, dodaj u dismissed
+  pendingIdsRef.current.delete(id);
+  dismissedIdsRef.current.add(id);
+  persistSets();
+
+  // osveži UI odmah
+  setNewBookings(prev => prev.filter(b => b.id !== id));
+  setUnseenCount(c => Math.max(0, c - 1));
+}
+
+function clearAllNew() {
+  // sve trenutno "nove" premesti u dismissed
+  newBookings.forEach(b => dismissedIdsRef.current.add(b.id));
+  pendingIdsRef.current.clear();
+  persistSets();
+
+  setNewBookings([]);
+  setUnseenCount(0);
+}
+
+// helper za prikaz vremena
+function safeStartTime(hhmm, min) {
+  const ok = typeof hhmm === "string" && /^\d{2}:\d{2}$/.test(hhmm);
+  if (ok) return hhmm;
+  if (typeof min === "number" && Number.isFinite(min)) return minToTime(min);
+  return "";
+}
+ 
+
+  // GLOBAL: online rezervacije (nije vezano za dan)
+const initRef = useRef(false); // ne želimo da inicijalni snapshot digne bedž
+const knownIdsRef = useRef(new Set());
+useEffect(() => {
+  // Ako dodaš createdAt: serverTimestamp() na ONLINE kreiranju,
+  // pređi na orderBy("createdAt","desc") (i po želji dodaj limit()).
+  const q = query(
+    collection(db, "appointments"),
+    where("type", "==", "booking"),
+    where("status", "==", "booked"),
+    orderBy("dateKey", "desc"),
+    orderBy("startMin", "desc")
+  );
+
+ const off = onSnapshot(q, (snap) => {
+  // sortiranje: createdAt ako postoji, inače dateKey+startMin
+  const dkToMs = (dk, startMin = 0) => {
+    if (!dk) return 0;
+    const t = new Date(dk + "T00:00:00").getTime() || 0;
+    return t + (Number(startMin) || 0) * 60_000;
+  };
+  const sortKey = (x) => (x.createdAt?.toMillis?.() ?? dkToMs(x.dateKey, x.startMin));
+
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // SAMO online (ručne izbacujemo) — po želji zadrži i status filter:
+  const onlineOnly = all
+    .filter(x => x.manual !== true /* && (!x.status || x.status === "booked") */)
+    .sort((a, b) => sortKey(b) - sortKey(a)); // najnovije prvo
+
+  // hronološki feed
+  setBookingsTimeline(onlineOnly);
+
+  // detekcija novih (bez oslanjanja na docChanges)
+  const currentIds = new Set(onlineOnly.map(x => x.id));
+  const newcomers  = onlineOnly.filter(x => !knownIdsRef.current.has(x.id));
+
+  if (!initRef.current) {
+    // prvi snapshot: samo upamti šta postoji, ne puni “Nova”
+    knownIdsRef.current = currentIds;
+    initRef.current = true;
+  } else if (newcomers.length) {
+    setNewBookings(prev => [...newcomers, ...prev]); // najnoviji na vrh
+    setUnseenCount(prev => prev + newcomers.length);
+  }
+
+  knownIdsRef.current = currentIds;
+
+  // (opciono) debug:
+  // console.log("online:", onlineOnly.length, "new:", newcomers.length);
+});
+
+
+  return () => off();
+}, []);
+
+
+
   const [schedAppts, setSchedAppts] = useState([]);
 
   // clients with no-show history (by phone)
@@ -1849,7 +1974,11 @@ async function saveApptFromModal(patch) {
   const closeMin = timeToMin(hours.close);
   const withinSalonLocal = (s, e) => s >= openMin && e <= closeMin && e > s;
   if (!withinSalonLocal(startMin, endMin)) { alert("Van radnog vremena salona."); return; }
-  if (!withinShift(employeeId, startMin, endMin)) { alert("Van smene radnice."); return; }
+ if (!a.manual && !withinShift(employeeId, startMin, endMin)) {
+    alert("Van smene radnice.");
+    return;
+}
+
   if (!noOverlap(employeeId, startMin, endMin, a.id)) {
     alert("Preklapanje sa postojećim terminima/blokovima."); return;
   }
@@ -1901,7 +2030,6 @@ async function saveApptFromModal(patch) {
   if (typeof showToast === "function") showToast("✅ Sačuvano");
 }
 
-
 async function saveApptDuration() {
   const a = activeAppt;
   if (!a?.id) return;
@@ -1915,35 +2043,35 @@ async function saveApptDuration() {
     return;
   }
 
-  // 2) granice salona i smene
+  // 2) granice salona
   if (!withinSalon(startMin, newEndMin)) {
     alert("Van radnog vremena salona.");
     return;
   }
-  if (!withinShift(a.employeeId, startMin, newEndMin)) {
+
+  // 3) smena – preskoči ako je manual
+  const isManual = !!a.manual;
+  if (!isManual && !withinShift(a.employeeId, startMin, newEndMin)) {
     alert("Van smene radnice.");
     return;
   }
 
-  // 3) bez preklapanja (ignoriši sam termin)
+  // 4) bez preklapanja (ignoriši sam termin)
   if (!noOverlap(a.employeeId, startMin, newEndMin, a.id)) {
     alert("Preklapanje sa postojećim terminima/blokovima.");
     return;
   }
 
-  // 4) upis u Firestore
+  // 5) upis u Firestore
   await updateDoc(doc(db, "appointments", a.id), {
     endHHMM: editEndHHMM,
     endMin: newEndMin,
     durationMin: newEndMin - startMin,
-   
     updatedAt: serverTimestamp(),
   });
- console.log("✅ updateDoc done");
-  // zatvori modal
+  console.log("✅ updateDoc done");
   closeApptModal();
 }
-
 
 
 
@@ -2242,34 +2370,45 @@ async function applyVacationRange() {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   };
-  const onColDrop = (empIdTarget) => async (e) => {
-    e.preventDefault();
-    const data = e.dataTransfer.getData("text/plain");
-    if (!data) return;
-    const { id } = JSON.parse(data);
-    const a = appointments.find((x) => x.id === id);
-    if (!a) return;
-    if (a.employeeId === empIdTarget) return;
-    const segs = shiftsByEmp.get(empIdTarget) || [];
-    a.startMin = a.startMin ?? timeToMin(a.startHHMM);
-    a.endMin = a.endMin ?? timeToMin(a.endHHMM);
-    const okShift = segs.length === 0 ? (a.startMin >= openMin && a.endMin <= closeMin) : segs.some(
-      (seg) => a.startMin >= seg.start && a.endMin <= seg.end
-    );
+const onColDrop = (empIdTarget) => async (e) => {
+  e.preventDefault();
+  const data = e.dataTransfer.getData("text/plain");
+  if (!data) return;
+  const { id } = JSON.parse(data);
+  const a = appointments.find((x) => x.id === id);
+  if (!a) return;
+  if (a.employeeId === empIdTarget) return;
+
+  const segs = shiftsByEmp.get(empIdTarget) || [];
+  a.startMin = a.startMin ?? timeToMin(a.startHHMM);
+  a.endMin = a.endMin ?? timeToMin(a.endHHMM);
+
+  // 👇 nova logika: preskoči proveru smene ako je manual
+  const isManual = !!a.manual;
+  let okShift = true;
+  if (!isManual) {
+    okShift = segs.length === 0
+      ? (a.startMin >= openMin && a.endMin <= closeMin)
+      : segs.some((seg) => a.startMin >= seg.start && a.endMin <= seg.end);
+
     if (!okShift) {
       alert("Termin je van smene ciljane radnice.");
       return;
     }
-    if (!noOverlap(empIdTarget, a.startMin, a.endMin, a.id)) {
-      alert("Termin se preklapa kod ciljane radnice.");
-      return;
-    }
-    await updateDoc(doc(db, "appointments", id), {
-      employeeId: empIdTarget,
-      employeeName: employeesById.get(empIdTarget)?.name || "",
-      updatedAt: serverTimestamp(),
-    });
-  };
+  }
+
+  if (!noOverlap(empIdTarget, a.startMin, a.endMin, a.id)) {
+    alert("Termin se preklapa kod ciljane radnice.");
+    return;
+  }
+
+  await updateDoc(doc(db, "appointments", id), {
+    employeeId: empIdTarget,
+    employeeName: employeesById.get(empIdTarget)?.name || "",
+    updatedAt: serverTimestamp(),
+  });
+};
+
 
   /* ------------ modal open on click ------------ */
 
@@ -2325,26 +2464,202 @@ async function applyVacationRange() {
             ← Nazad
           </button>
         </div>
-        <div style={tabbar}>
-          <button
-            style={tab === "day" ? tabBtnActive : tabBtn}
-            onClick={() => setTab("day")}
+{/* TOP BAR: tabovi + Novo zakazivanje (uvek vidljivo) */}
+<div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 }}>
+  <div style={tabbar}>
+    <button style={tab === "day" ? tabBtnActive : tabBtn} onClick={() => setTab("day")}>Kalendar</button>
+    <button style={tab === "month" ? tabBtnActive : tabBtn} onClick={() => setTab("month")}>Raspored smena</button>
+    <button style={tab === "schedule" ? tabBtnActive : tabBtn} onClick={() => setTab("schedule")}>Raspored</button>
+  </div>
+
+{/* 🔔 Novo zakazivanje — otvara/zatvara panele bez obzira na tab */}
+<button
+  onClick={() => { setNoticeOpen(v => !v); setUnseenCount(0); }}
+  style={{
+    position: "relative",
+    borderRadius: 12,
+    padding: "8px 12px",
+    fontWeight: 800,
+    border: "1px solid rgba(255,255,255,.25)",
+    background: "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.06))",
+    color: "#fff",
+    cursor: "pointer"
+  }}
+  title="Nova online zakazivanja"
+>
+  Novo zakazivanje
+  {unseenCount > 0 && (
+    <span style={{
+      position: "absolute",
+      top: -8, right: -8,
+      minWidth: 22, height: 22,
+      borderRadius: 11,
+      fontSize: 12,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "0 6px",
+      background: "linear-gradient(180deg,#ff5fa2,#ff3f8f)",
+      color: "#fff",
+      boxShadow: "0 2px 8px rgba(0,0,0,.25)",
+      border: "1px solid rgba(255,255,255,.6)",
+    }}>
+      {unseenCount}
+    </span>
+  )}
+</button>
+</div>
+
+{/* ✅ Nova online zakazivanja (globalno) */}
+{noticeOpen && (
+  <div style={{
+    marginTop: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.15)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.71), rgba(255, 255, 255, 0.33))",
+    padding: 12,
+   
+  }}>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+      <div style={{ fontWeight: 800 }}>
+        Nova online zakazivanja{newBookings.length > 0 ? ` (${newBookings.length})` : ""}
+      </div>
+      {newBookings.length > 0 && (
+        <button
+          onClick={clearAllNew}
+          style={{
+            border: "1px solid rgba(255,255,255,.35)",
+            borderRadius: 10,
+            padding: "6px 10px",
+            fontWeight: 800,
+            background: "transparent",
+            color: "#fff",
+            cursor: "pointer"
+          }}
+          title="Očisti sve"
+        >
+          Očisti sve
+        </button>
+      )}
+    </div>
+
+    {newBookings.length === 0 ? (
+      <div style={{ opacity: 0.8 }}>Nema novih zakazivanja.</div>
+    ) : (
+      <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+        {newBookings.map(nb => (
+          <li
+            key={nb.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              padding: "6px 8px",
+              borderRadius: 8,
+              margin: "6px 0",
+              background: "rgba(255,255,255,.04)"
+            }}
           >
-            Kalendar
-          </button>
-          <button
-            style={tab === "month" ? tabBtnActive : tabBtn}
-            onClick={() => setTab("month")}
-          >
-            Raspored smena
-          </button>
-          <button
-            style={tab === "schedule" ? tabBtnActive : tabBtn}
-            onClick={() => setTab("schedule")}
-          >
-            Raspored
-          </button>
-        </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                {nb.clientName || "Nepoznat klijent"}
+              </div>
+              <div style={{ opacity: .9, fontSize: 13 }}>
+                {nb.dateKey} u {safeStartTime(nb.startHHMM, nb.startMin)}
+                {nb.employeeName ? ` — kod ${nb.employeeName}` : ""}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              {/* Otvara modal SAMO kad klikneš */}
+              <button
+                onClick={() => {
+                  const appt = (schedAppts?.find?.(a => a.id === nb.id)) || nb;
+                  openApptModal(appt);
+                  // ostaje u “Novim” dok ručno ne klikneš "Sakrij"
+                }}
+                style={{
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  fontWeight: 800,
+                  background: "linear-gradient(180deg,#ff5fa2,#ff3f8f)",
+                  color: "#fff",
+                  cursor: "pointer"
+                }}
+                title="Otvori termin"
+              >
+                Otvori
+              </button>
+
+              {/* Ručno skloni iz liste novih */}
+              <button
+                onClick={() => dismissNew(nb.id)}
+                style={{
+                  border: "1px solid rgba(255,255,255,.35)",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  fontWeight: 800,
+                  background: "transparent",
+                  color: "#fff",
+                  cursor: "pointer"
+                }}
+                title="Sakrij iz liste novih (ne briše termin)"
+              >
+                Sakrij
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+)}
+
+{/* 📜 Hronološki (online) — najnovije */}
+{noticeOpen && (
+  <div style={{
+    marginTop: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.15)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.71), rgba(255, 255, 255, 0.33))",
+    padding: 12,
+ 
+  }}>
+    <div style={{fontWeight: 800, marginBottom: 8}}>
+      Hronološki (online) — najnovije
+    </div>
+    {timelineNewestFirst.length === 0 ? (
+      <div style={{ opacity: 0.8 }}>Nema online zakazivanja.</div>
+    ) : (
+      <ol style={{ margin:"4px 0 0 0", padding:0, listStyle:"none" }}>
+        {timelineNewestFirst.map((b, i) => (
+          <li key={b.id} style={{ display:"flex", gap:8, alignItems:"flex-start", margin:"6px 0" }}>
+            <div style={{ minWidth:28, textAlign:"right", fontWeight:800 }}>{i + 1}.</div>
+            <div>
+              <div>
+                <strong>{b.clientName || "Nepoznat klijent"}</strong>{" "}
+                — {b.dateKey} u {safeStartTime(b.startHHMM, b.startMin)}
+                {` — kod ${b.employeeName || employeesById.get(b.employeeId)?.name || "nepoznato"}`}
+              </div>
+              <div style={{ opacity:.9 }}>
+                {b.serviceName ||
+                  (Array.isArray(b.servicesInfo) && b.servicesInfo.map(s => s.name).filter(Boolean).join(", ")) ||
+                  "Usluga"}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    )}
+  </div>
+)}
+
+
+
+
+
 
         {tab === "day" ? (
           <>
@@ -3357,80 +3672,91 @@ const allServicesArray =
       getServicePrice={getServicePrice}
       
   onSave={async (patch) => {
-               // START i END iz patch-a ili iz postojećeg termina
-const startStr = patch.startHHMM ?? activeAppt.startHHMM;
-const newStart = timeToMin(startStr);
+  // 1) Datum koji važi (možda izmenjen u modalu)
+  const dateKey = patch.dateKey ?? activeAppt.dateKey;
 
-// Ako je ApptModal već izračunao kraj – poštuj to
-const endFromPatch = patch.endHHMM ? timeToMin(patch.endHHMM) : null;
+  // 2) START/END
+  const startStr = patch.startHHMM ?? activeAppt.startHHMM;
+  const newStart = timeToMin(startStr);
 
-// Ako nije poslao end, koristi trajanje iz patch-a; ako ni to nema, onda fallback na stari termin/uslugu
-const fallbackSrv = servicesById.get(activeAppt.serviceId);
-const durationFromPatch =
-  patch.durationMin != null ? Number(patch.durationMin) :
-  (activeAppt.durationMin != null ? Number(activeAppt.durationMin) :
-   Number(fallbackSrv?.durationMin || 0));
+  const endFromPatch = patch.endHHMM ? timeToMin(patch.endHHMM) : null;
 
-const newEnd = endFromPatch != null ? endFromPatch : (newStart + durationFromPatch);
+  const fallbackSrv = servicesById.get(activeAppt.serviceId);
+  const durationFromPatch =
+    patch.durationMin != null ? Number(patch.durationMin) :
+    (activeAppt.durationMin != null ? Number(activeAppt.durationMin) :
+     Number(fallbackSrv?.durationMin || 0));
 
+  const newEnd = endFromPatch != null ? endFromPatch : (newStart + durationFromPatch);
 
-                const dow = DOW[new Date(activeAppt.dateKey + "T00:00:00").getDay()];
-                const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
-                const open = timeToMin(hours.open);
-                const close = timeToMin(hours.close);
+  // 3) Radno vreme salona po DOW za novi datum
+  const dow = DOW[new Date(dateKey + "T00:00:00").getDay()];
+  const hours = salonHours[dow] || DEFAULT_SALON_HOURS[dow];
+  const open  = timeToMin(hours.open);
+  const close = timeToMin(hours.close);
 
-                if (!(newEnd > newStart && newStart >= open && newEnd <= close)) {
-                  alert("Vreme je van radnog vremena salona.");
-                  return;
-                }
-                const emp = patch.employeeId || activeAppt.employeeId;
-                const segs = shiftsByEmp.get(emp) || [];
-                let okShift;
-                if (segs.length === 0) {
-                  okShift = newStart >= open && newEnd <= close;
-                } else {
-                  okShift = segs.some(
-                    (seg) => newStart >= seg.start && newEnd <= seg.end
-                  );
-                }
-                if (!okShift) {
-                  alert("Vreme je van smene radnice.");
-                  return;
-                }
-                if (!noOverlap(emp, newStart, newEnd, activeAppt.id)) {
-                  alert("Preklapanje sa postojećim terminom.");
-                  return;
-                }
+  // 4) Salon check (ostaje obavezan)
+  if (!(newEnd > newStart && newStart >= open && newEnd <= close)) {
+    alert("Vreme je van radnog vremena salona.");
+    return;
+  }
 
-await updateDoc(doc(db, "appointments", activeAppt.id), {
-  // upiši SVE iz modala (cena, napomena, klijent, servicesInfo, serviceIds, dateKey...)
-  ...patch,
+  // 5) Shift check – preskoči za ručne termine
+ 
+ // 5) Shift check – preskoči za ručne termine
+const emp  = patch.employeeId || activeAppt.employeeId;
+const segs = shiftsByEmp.get(emp) || [];
 
-  // i dalje zabeleži stabilne vrednosti vremena:
-  employeeId: emp,
-  employeeName: employeesById.get(emp)?.name || "",
-  startHHMM: minToTime(newStart),
-  endHHMM: minToTime(newEnd),
-  startMin: newStart,
-  endMin: newEnd,
+// ako je manual → odmah preskoči smenu
+const isManual = !!(patch.manual ?? activeAppt.manual);
 
-  // ako želiš i trajanje kao polje:
-  durationMin: (patch.durationMin != null)
-    ? Number(patch.durationMin)
-    : (newEnd - newStart),
+let okShift = true;
+if (!isManual) {
+  if (segs.length === 0) {
+    okShift = newStart >= open && newEnd <= close;
+  } else {
+    okShift = segs.some(seg => newStart >= seg.start && newEnd <= seg.end);
+  }
 
-  updatedAt: serverTimestamp(),
-});
+  if (!okShift) {
+    alert("Vreme je van smene radnice.");
+    return;
+  }
+}
 
 
-                setActiveAppt(null);
-              }}
-              onNoShow={async () => {
-                await markNoShowWithClient(activeAppt);
-                setActiveAppt(null);
-              }}
-             onCancel={async () => {
-  await cancelApptWithRule(activeAppt);
+
+  // 6) Preklapanje – obavezno proveri za odgovarajući datum
+  if (!noOverlap(emp, newStart, newEnd, activeAppt.id, dateKey)) {
+    alert("Preklapanje sa postojećim terminom.");
+    return;
+  }
+
+  // 7) Upis
+  await updateDoc(doc(db, "appointments", activeAppt.id), {
+    ...patch, // price, note, servicesInfo, serviceIds, client*, itd.
+
+    // stabilne vrednosti vremena i meta:
+    dateKey,
+    employeeId: emp,
+    employeeName: employeesById.get(emp)?.name || "",
+
+    startHHMM: minToTime(newStart),
+    endHHMM:   minToTime(newEnd),
+    startMin:  newStart,
+    endMin:    newEnd,
+
+    durationMin: (patch.durationMin != null)
+      ? Number(patch.durationMin)
+      : (newEnd - newStart),
+
+    // sačuvaj manual flag ako već postoji
+    manual: isManual,
+
+    updatedAt: serverTimestamp(),
+  });
+
+  // 8) Zatvori modal da bi se state sveže inicijalizovao pri sledećem otvaranju
   setActiveAppt(null);
 }}
 
