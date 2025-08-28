@@ -35,13 +35,10 @@ function initAdmin() {
 function formatDateTimeRAW(dateISO, timeHHMM) {
   const [y, m, d] = String(dateISO).split("-");
   const hhmm = String(timeHHMM || "00:00").padStart(5, "0");
-  // 26.08.2025. format:
   const fmtDate = `${d}.${m}.${y}.`;
-  const fmtTime = hhmm; // bez konverzije
+  const fmtTime = hhmm;
   return { fmtDate, fmtTime };
 }
-
-
 
 function getLocalHour(tz) {
   const s = new Intl.DateTimeFormat('en-GB', {
@@ -67,12 +64,12 @@ function toE164RS(phone) {
   if (d.startsWith('6')) return '+381' + d;
   return null;
 }
-// ASCII fallback (skidanje dijakritika i emoji-ja)
+// ASCII fallback
 function toAscii(s = '') {
   return s
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // dijakritike
-    .replace(/[^\x20-\x7E]/g, ''); // van-ASCII (emoji itd.)
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7E]/g, '');
 }
 
 /* ---------- Brevo (Send SMS) ---------- */
@@ -117,7 +114,7 @@ async function getAppointmentsForTomorrow() {
     const a = doc.data();
     out.push({
       clientPhone: a.clientPhone,
-      serviceName: a.serviceName, // tačan naziv iz baze (bez .toLowerCase)
+      serviceName: a.serviceName,
       employeeName: a.employeeName,
       startHHMM: a.startHHMM,
       dateKey: a.dateKey,
@@ -146,7 +143,6 @@ async function markSent(fs, key, payload) {
     },
     { merge: true }
   ).catch(async () => {
-    // fallback bez čitanja
     await ref.set({ sentAt: Date.now(), payload, count: 1 }, { merge: true });
   });
 }
@@ -156,27 +152,25 @@ export default async function handler(req, res) {
   try {
     const apiKey = env('BREVO_API_KEY');
     const senderMain = env('BREVO_SENDER') || env('SMS_SENDER');
-    const senderFallback = env('BREVO_SENDER_FALLBACK') || env('SMS_SENDER_FALLBACK'); // opcioni numeric
+    const senderFallback = env('BREVO_SENDER_FALLBACK') || env('SMS_SENDER_FALLBACK');
     const tz = env('LOCAL_TZ', 'Europe/Belgrade');
-    const salonPhone = env('REMINDER_SALON_PHONE') || ''; // broj koji ide u "Kontakt: …"
+    const salonPhone = env('REMINDER_SALON_PHONE') || '';
 
-    // Query/ENV opcije
-    const dryRun = /^(1|true)$/i.test(String(req.query.dryRun || ''));
+    // Podrška za oba query naziva: ?dry=1 i ?dryRun=1
+    const dryRun = /^(1|true)$/i.test(String(req.query.dryRun || req.query.dry || ''));
     const force = /^(1|true)$/i.test(String(req.query.force || ''));
     const asciiOnly = /^(1|true)$/i.test(
       String(req.query.ascii || env('SMS_ASCII_ONLY') || '')
     );
     const useFallbackSender = /^(1|true)$/i.test(String(req.query.fallback || ''));
-    const onlyParam = String(req.query.only || '').trim(); // npr. ?only=+38160xxxxxxx
+    const onlyParam = String(req.query.only || '').trim();
     const onlyE164 = onlyParam ? toE164RS(onlyParam) : null;
 
-    // Anti-duplikat prozor (minuta) – možeš proslediti ?dedupeMin=90
     const dedupeMin = Math.max(
       0,
       parseInt(String(req.query.dedupeMin || ''), 10) || 120
     );
 
-    // Izbor sender-a
     const chosenSender =
       useFallbackSender && senderFallback ? senderFallback : senderMain;
 
@@ -189,53 +183,60 @@ export default async function handler(req, res) {
           (useFallbackSender ? ' – fallback nije postavljen' : ''),
       });
 
-    // Cron/force gate
     const isCron = !!req.headers['x-vercel-cron'];
     const mode = isCron ? 'cron' : force ? 'force' : 'manual';
     const localHour = getLocalHour(tz);
-    const shouldSendNow = force || localHour === 15; // slanje tačno u 15h, ili odmah uz ?force=1
+    const shouldSendNow = force || localHour === 15; // slanje u 15h, ili odmah uz ?force=1
     const allowed = isCron || force;
 
     // Učitaj termine
     const appts = await getAppointmentsForTomorrow();
 
-    // po želji filtar na radno vreme
+    // Filtriraj na radno vreme
     let filtered = appts.filter((a) => {
       const m = timeToMin(a.startHHMM);
       return m >= 8 * 60 && m <= 22 * 60;
     });
 
-    // opcioni filter: slanje samo na jedan broj (debug / target)
+    // Po potrebi ciljaj samo jedan broj
     if (onlyE164) {
       filtered = filtered.filter(a => toE164RS(a.clientPhone) === onlyE164);
     }
 
-    // format poruke (čist ASCII potpis, bez srca)
- const buildMsg = (a) => {
-  const { fmtDate, fmtTime } = formatDateTimeRAW(a.dateKey, a.startHHMM);
-  let txt =
-    `Imate zakazanu uslugu ${String(a.serviceName)} ${fmtDate} u ${fmtTime}h` +
-    ` Kontakt: ${salonPhone || toE164RS(a.clientPhone) || ''} | Vas aBeauty`;
-  if (asciiOnly) txt = toAscii(txt);
-  return txt;
-};
+    // Grupisanje po broju (jedna poruka po klijentu)
+    const grouped = {};
+    for (const a of filtered) {
+      const to = toE164RS(a.clientPhone);
+      if (!to) continue;
+      if (!grouped[to]) grouped[to] = [];
+      grouped[to].push(a);
+    }
 
+    function buildMsgGroup(list) {
+      const slots = list
+        .map(a => {
+          const { fmtDate, fmtTime } = formatDateTimeRAW(a.dateKey, a.startHHMM);
+          return `${fmtDate} u ${fmtTime}h (${a.serviceName || "usluga"})`;
+        })
+        .join("; ");
+      let txt = `Imate zakazane termine: ${slots}. Kontakt: ${salonPhone || ""} | Vas aBeauty`;
+      return asciiOnly ? toAscii(txt) : txt;
+    }
 
-    // Dry-run ili zabranjeno vreme
+    // Dry run ili zabranjeno slanje u ovom satu
     if (dryRun || !shouldSendNow || !allowed) {
-      const sample = filtered.slice(0, 5).map((a) => ({
-        to: a.clientPhone,
-        toE164: toE164RS(a.clientPhone),
-        message: buildMsg(a),
+      const sample = Object.entries(grouped).slice(0, 5).map(([to, list]) => ({
+        to,
+        message: buildMsgGroup(list),
       }));
       return json(res, 200, {
         ok: true,
         tz,
         mode,
         localHour,
-        willSend: shouldSendNow && allowed && filtered.length > 0 && !dryRun,
+        willSend: shouldSendNow && allowed && Object.keys(grouped).length > 0 && !dryRun,
         dryRun,
-        count: filtered.length,
+        count: Object.keys(grouped).length,
         asciiOnly,
         sender: chosenSender,
         only: onlyE164 || null,
@@ -244,30 +245,22 @@ export default async function handler(req, res) {
       });
     }
 
-    // Slanje (sa anti-dupliciranjem)
+    // Slanje po klijentu
     const fs = getFirestore();
-    const inRunSet = new Set(); // da ne šaljemo isti ključ i u istom run-u
+    const inRunSet = new Set();
     const results = [];
 
-    for (const a of filtered) {
+    for (const [to, list] of Object.entries(grouped)) {
       try {
-        const to = toE164RS(a.clientPhone);
-        if (!to) {
-          results.push({
-            to: a.clientPhone,
-            ok: false,
-            error: 'Neispravan broj telefona',
-          });
-          continue;
-        }
+        // Stabilan ključ: sortiramo termine pre spajanja
+        const key = list
+          .map(a => `${a.dateKey}-${a.startHHMM}`)
+          .sort()
+          .join('|');
 
-        const key = `${a.dateKey}-${a.startHHMM}-${to}`; // jedinstveno po terminu i primaocu
-
-        // skip ako je isti ključ već poslat nedavno
         if (inRunSet.has(key) || (dedupeMin > 0 && await wasRecentlySent(fs, key, dedupeMin))) {
           results.push({
-            toOriginal: a.clientPhone,
-            toE164: to,
+            to,
             ok: true,
             status: 208,
             data: { skipped: 'duplicate_recent', windowMin: dedupeMin },
@@ -275,13 +268,13 @@ export default async function handler(req, res) {
           continue;
         }
 
-        const message = buildMsg(a);
+        const message = buildMsgGroup(list);
         const resp = await sendSMS({
           apiKey,
           sender: chosenSender,
           to,
           text: message,
-          unicodeEnabled: !asciiOnly, // ako radimo ASCII fallback, ne treba UCS-2
+          unicodeEnabled: !asciiOnly,
         });
 
         inRunSet.add(key);
@@ -290,15 +283,14 @@ export default async function handler(req, res) {
         }
 
         results.push({
-          toOriginal: a.clientPhone,
-          toE164: to,
+          to,
           ok: resp.ok,
           status: resp.status,
           data: resp.data,
         });
       } catch (e) {
         results.push({
-          to: a.clientPhone,
+          to,
           ok: false,
           error: String(e?.message || e),
         });
@@ -315,10 +307,9 @@ export default async function handler(req, res) {
       only: onlyE164 || null,
       dedupeMin,
       sent: results,
-      metrics: { total: filtered.length, ok: okCount, failed: results.length - okCount },
+      metrics: { total: Object.keys(grouped).length, ok: okCount, failed: results.length - okCount },
     });
   } catch (err) {
-    // malo bogatiji error za lakšu dijagnostiku u cron "Details"
     return json(res, 500, {
       ok: false,
       error: String(err?.message || err),

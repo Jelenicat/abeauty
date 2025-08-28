@@ -1,5 +1,5 @@
 // src/pages/BookTime.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useBooking } from "../context/BookingContext";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase";
@@ -81,17 +81,19 @@ export default function BookTime() {
   const { user } = useAuth();
   const nav = useNavigate();
   const isMobile = useIsMobile();
-const [salonHours, setSalonHours] = useState(DEFAULT_SALON_HOURS);
-useEffect(() => {
-  (async () => {
-    try {
-      const snap = await getDoc(doc(db, "settings", "salonHours"));
-      if (snap.exists()) {
-        setSalonHours({ ...DEFAULT_SALON_HOURS, ...(snap.data() || {}) });
-      }
-    } catch {}
-  })();
-}, []);
+
+  const [salonHours, setSalonHours] = useState(DEFAULT_SALON_HOURS);
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "settings", "salonHours"));
+        if (snap.exists()) {
+          setSalonHours({ ...DEFAULT_SALON_HOURS, ...(snap.data() || {}) });
+        }
+      } catch {}
+    })();
+  }, []);
+
   const backBtn = {
     height: 40, borderRadius: 12, border: "1px solid rgba(0,0,0,.12)", padding: "0 16px",
     fontWeight: 900, cursor: "pointer", background: "#fff", color: "#000", boxShadow: "0 6px 16px rgba(0,0,0,.08)"
@@ -130,42 +132,100 @@ useEffect(() => {
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState(false);
 
-  useEffect(() => {
-    let cancel = false;
-    async function load() {
-      if (!activeService) return;
-      setLoading(true);
-      const dk = dateKey(selectedDay);
-      const map = new Map();
-      for (const e of eligible) {
-        const qS = query(collection(db, "shifts"), where("dateKey", "==", dk), where("employeeId", "==", e.id));
-        const sSnap = await getDocs(qS);
-        let segments = sSnap.docs.flatMap((d) => d.data().segments || []);
-if (!segments.length) {
-  const dowKey = DOW[selectedDay.getDay()];
- const h = salonHours[dowKey] || DEFAULT_SALON_HOURS[dowKey];
-  // ako nema smene, radi od otvaranja do zatvaranja
-  segments = [{ start: h.open, end: h.close }];
-}
-        const qA = query(collection(db, "appointments"), where("dateKey", "==", dk), where("employeeId", "==", e.id));
-        const aSnap = await getDocs(qA);
-        const busy = aSnap.docs
-  .map((d) => d.data())
-  .filter(a =>
-    (a.type === "booking" && a.status === "booked") || // aktivne rezervacije
-    a.type === "block"      ||                         // ručne blokade
-    a.type === "vacation"   ||                         // odmori
-    a.type === "break"                                // pauze
-  );
-
-        const slots = computeSlots({ segments, busy, totalMin: Number(activeService.durationMin || 0), step: 15 });
-        map.set(e.id, slots);
-      }
-      if (!cancel) { setSlotsByEmp(map); setLoading(false); }
+  /* ------------ FIX: load kao useCallback + debounce useEffect ------------ */
+  const load = useCallback(async () => {
+    if (!activeService) {
+      setSlotsByEmp(new Map());
+      return;
     }
-    load();
-    return () => { cancel = true; };
- }, [selectedDay, eligible, activeService, salonHours]);
+
+    setLoading(true);
+    const dk = dateKey(selectedDay);
+
+    const empIds = eligible.map(e => e.id);
+    if (empIds.length === 0) {
+      setSlotsByEmp(new Map());
+      setLoading(false);
+      return;
+    }
+
+    const chunks = [];
+    for (let i = 0; i < empIds.length; i += 10) chunks.push(empIds.slice(i, i + 10));
+
+    try {
+      // 1) Paralelno povuci SVE smene i SVE termine za taj dan (u chunkovima po 10)
+      const [shiftSnaps, apptSnaps] = await Promise.all([
+        Promise.all(chunks.map(ids =>
+          getDocs(query(
+            collection(db, "shifts"),
+            where("dateKey", "==", dk),
+            where("employeeId", "in", ids)
+          ))
+        )),
+        Promise.all(chunks.map(ids =>
+          getDocs(query(
+            collection(db, "appointments"),
+            where("dateKey", "==", dk),
+            where("employeeId", "in", ids)
+          ))
+        )),
+      ]);
+
+      // 2) Mape: segmente smena i zauzeća po radnici
+      const segsByEmp = new Map();
+      shiftSnaps.flat().forEach(s => {
+        s.docs.forEach(d => {
+          const data = d.data() || {};
+          const arr = data.segments || [];
+          const list = segsByEmp.get(data.employeeId) || [];
+          list.push(...arr);
+          segsByEmp.set(data.employeeId, list);
+        });
+      });
+
+      const busyByEmp = new Map();
+      apptSnaps.flat().forEach(s => {
+        s.docs.forEach(d => {
+          const a = d.data() || {};
+          const blocks = (busyByEmp.get(a.employeeId) || []);
+          if (
+            (a.type === "booking" && a.status === "booked") ||
+            a.type === "block" ||
+            a.type === "vacation" ||
+            a.type === "break"
+          ) blocks.push(a);
+          busyByEmp.set(a.employeeId, blocks);
+        });
+      });
+
+      // 3) Fallback: ako nema smene, koristi radno vreme salona za taj DOW
+      const dowKey = DOW[selectedDay.getDay()];
+      const h = salonHours[dowKey] || DEFAULT_SALON_HOURS[dowKey];
+      const defaultSeg = [{ start: h.open, end: h.close }];
+
+      // 4) Izračunaj slotove za sve radnice
+      const duration = Number(activeService?.durationMin || 0);
+      const map = new Map();
+      for (const id of empIds) {
+        const segments = (segsByEmp.get(id) || defaultSeg);
+        const busy = (busyByEmp.get(id) || []);
+        const slots = computeSlots({ segments, busy, totalMin: duration, step: 15 });
+        map.set(id, slots);
+      }
+
+      setSlotsByEmp(map);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeService, eligible, salonHours, selectedDay]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      load();
+    }, 180); // debounce ~180ms
+
+    return () => clearTimeout(t);
+  }, [load]);
 
   const combined = useMemo(() => {
     const arr = [];
@@ -208,19 +268,19 @@ if (!segments.length) {
       const dk = dateKey(selectedDay);
       const qA = query(collection(db, "appointments"), where("dateKey", "==", dk), where("employeeId", "==", emp.id));
       const aSnap = await getDocs(qA);
-    const busy = aSnap.docs
-  .map((d) => d.data())
-  .filter(a =>
-    (a.type === "booking" && a.status === "booked") ||
-    a.type === "block" ||
-    a.type === "vacation" ||
-    a.type === "break"
-  );
+      const busy = aSnap.docs
+        .map((d) => d.data())
+        .filter(a =>
+          (a.type === "booking" && a.status === "booked") ||
+          a.type === "block" ||
+          a.type === "vacation" ||
+          a.type === "break"
+        );
 
-if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))) {
-  alert("Termin je upravo zauzet. Izaberi drugi.");
-  return;
-}
+      if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))) {
+        alert("Termin je upravo zauzet. Izaberi drugi.");
+        return;
+      }
 
       const docRef = await addDoc(collection(db, "appointments"), {
         type: "booking",
@@ -243,45 +303,47 @@ if (busy.some((b) => overlaps(slot.startMin, slot.endMin, b.startMin, b.endMin))
         ...(activeService?.color ? { color: activeService.color } : {}),
       });
 
-      // === NOVO: pošalji admin push notifikaciju (DEV/PROD safe + log) ===
+      // === admin push notifikacija ===
       try {
         const dateText = new Intl.DateTimeFormat("sr-RS", {
           weekday: "short", day: "2-digit", month: "short"
         }).format(selectedDay);
         const timeText = minToTime(slot.startMin);
 
-        // Ako je lokalni dev -> gađaj vercel domen; u produkciji koristi relativni URL
         const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(window.location.origin);
         const url = isLocal
           ? "https://abeauty.im/api/notify-admins-new-appointment"
           : "/api/notify-admins-new-appointment";
 
-       const resp = await fetch(url, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
-    clientPhone: user?.phone || "",
-    serviceName: activeService?.name || "",
-    startText: `${dateText} ${timeText}`,
-    screen: "/admin/kalendar",
-    dateKey: dk,                 // npr. "2025-08-24"
-    employeeId: emp.id,          // kome je dodeljen termin
-    employeeName: emp.name || "",// ⬅️ DODATO
-    startMin: slot.startMin,     // 0..1439
-    apptId: docRef.id
-  }),
-});
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+            clientPhone: user?.phone || "",
+            serviceName: activeService?.name || "",
+            startText: `${dateText} ${timeText}`,
+            screen: "/admin/kalendar",
+            dateKey: dk,
+            employeeId: emp.id,
+            employeeName: emp.name || "",
+            startMin: slot.startMin,
+            apptId: docRef.id
+          }),
+        });
 
         const txt = await resp.text();
         console.log("notify-admins response:", resp.status, txt);
       } catch (e) {
         console.warn("Slanje admin notifikacije nije uspelo:", e);
       }
+
       const nextSelected = selectedServices.filter((x) => x.id !== activeService.id);
       if (typeof setSelectedServices === "function") setSelectedServices(() => nextSelected);
-      if (nextSelected.length) { setActiveId(nextSelected[0].id); alert("Termin je uspešno zakazan ❤️"); }
-      else {
+      if (nextSelected.length) {
+        setActiveId(nextSelected[0].id);
+        alert("Termin je uspešno zakazan ❤️");
+      } else {
         alert("Sve izabrane usluge su uspešno zakazane ❤️");
         if (typeof clearServices === "function") clearServices();
         else if (typeof setSelectedServices === "function") setSelectedServices(() => []);
@@ -563,9 +625,9 @@ function ModeToggle({ mode, onChange }) {
 
 function StylistsStrip({ employees, selectedId, onSelect, mobile = false }) {
   if (!employees?.length) return <div style={{ color: "#fff", opacity: 0.85, padding: 8 }}>Nema radnica za ovu uslugu/kategoriju.</div>;
-const AV = mobile ? 110 : 130;  // slike baš velike
-const GAP = mobile ? 4 : 4;     // najmanji razmak
-const MINW = mobile ? 110 : 130;
+  const AV = mobile ? 110 : 130;  // slike baš velike
+  const GAP = mobile ? 4 : 4;     // najmanji razmak
+  const MINW = mobile ? 110 : 130;
 
   const PAD = mobile ? 4 : 8;
 

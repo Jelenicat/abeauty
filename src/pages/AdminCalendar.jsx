@@ -898,6 +898,12 @@ const unseenIdsRef = useRef(new Set());
 // "prompt" za poslednje pristiglo + lista samo NOVIH + ceo HRONO timeline
 const [newApptNotice, setNewApptNotice] = useState(null);
 const [newBookings, setNewBookings] = useState([]);
+// --- Hronološki: postepeni prikaz (20 po strani) ---
+
+// šta trenutno prikazujemo
+
+
+
 const [bookingsTimeline, setBookingsTimeline] = useState([]);
 // ⬇ dodaj pored ostalih useRef/useState:
 const DISMISSED_KEY = "ac_new_dismissed_v1";
@@ -921,6 +927,20 @@ const timelineNewestFirst = React.useMemo(() => {
     .sort((a, b) => getSortKey(b) - getSortKey(a)); // DESC: najnovije gore
 }, [bookingsTimeline]);
 
+// --- Hronološki: postepeni prikaz (20 po strani) ---
+const [chronoCount, setChronoCount] = useState(20);
+
+const chronoVisible = useMemo(
+  () => (timelineNewestFirst || []).slice(0, chronoCount),
+  [timelineNewestFirst, chronoCount]
+);
+
+const canShowMoreChrono = chronoCount < (timelineNewestFirst?.length || 0);
+const showMoreChrono = () =>
+  setChronoCount(c => Math.min(c + 20, timelineNewestFirst.length));
+
+// (opciono) reset kad se lista promeni
+useEffect(() => { setChronoCount(20); }, [timelineNewestFirst]);
 
 function persistSets() {
   localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedIdsRef.current]));
@@ -2619,42 +2639,93 @@ const onColDrop = (empIdTarget) => async (e) => {
 
 {/* 📜 Hronološki (online) — najnovije */}
 {noticeOpen && (
-  <div style={{
-    marginTop: 10,
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.15)",
-    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.71), rgba(255, 255, 255, 0.33))",
-    padding: 12,
- 
-  }}>
-    <div style={{fontWeight: 800, marginBottom: 8}}>
+  <div
+    style={{
+      marginTop: 10,
+      borderRadius: 12,
+      border: "1px solid rgba(255,255,255,.15)",
+      background:
+        "linear-gradient(180deg, rgba(255, 255, 255, 0.71), rgba(255, 255, 255, 0.33))",
+      padding: 12,
+    }}
+  >
+    <div style={{ fontWeight: 800, marginBottom: 8 }}>
       Hronološki (online) — najnovije
     </div>
     {timelineNewestFirst.length === 0 ? (
       <div style={{ opacity: 0.8 }}>Nema online zakazivanja.</div>
     ) : (
-      <ol style={{ margin:"4px 0 0 0", padding:0, listStyle:"none" }}>
-        {timelineNewestFirst.map((b, i) => (
-          <li key={b.id} style={{ display:"flex", gap:8, alignItems:"flex-start", margin:"6px 0" }}>
-            <div style={{ minWidth:28, textAlign:"right", fontWeight:800 }}>{i + 1}.</div>
-            <div>
+      <>
+        <ol
+          style={{ margin: "4px 0 0 0", padding: 0, listStyle: "none" }}
+        >
+          {chronoVisible.map((b, i) => (
+            <li
+              key={b.id}
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+                margin: "6px 0",
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 28,
+                  textAlign: "right",
+                  fontWeight: 800,
+                }}
+              >
+                {i + 1}.
+              </div>
               <div>
-                <strong>{b.clientName || "Nepoznat klijent"}</strong>{" "}
-                — {b.dateKey} u {safeStartTime(b.startHHMM, b.startMin)}
-                {` — kod ${b.employeeName || employeesById.get(b.employeeId)?.name || "nepoznato"}`}
+                <div>
+                  <strong>{b.clientName || "Nepoznat klijent"}</strong>{" "}
+                  — {b.dateKey} u {safeStartTime(b.startHHMM, b.startMin)}
+                  {` — kod ${
+                    b.employeeName ||
+                    employeesById.get(b.employeeId)?.name ||
+                    "nepoznato"
+                  }`}
+                </div>
+                <div style={{ opacity: 0.9 }}>
+                  {b.serviceName ||
+                    (Array.isArray(b.servicesInfo) &&
+                      b.servicesInfo
+                        .map((s) => s.name)
+                        .filter(Boolean)
+                        .join(", ")) ||
+                    "Usluga"}
+                </div>
               </div>
-              <div style={{ opacity:.9 }}>
-                {b.serviceName ||
-                  (Array.isArray(b.servicesInfo) && b.servicesInfo.map(s => s.name).filter(Boolean).join(", ")) ||
-                  "Usluga"}
-              </div>
-            </div>
-          </li>
-        ))}
-      </ol>
+            </li>
+          ))}
+        </ol>
+
+        {canShowMoreChrono && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={showMoreChrono}
+              style={{
+                padding: "6px 12px",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,.3)",
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.08))",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              Prikaži više
+            </button>
+          </div>
+        )}
+      </>
     )}
   </div>
 )}
+
 
 
 
