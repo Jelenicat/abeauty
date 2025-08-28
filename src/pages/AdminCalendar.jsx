@@ -34,6 +34,7 @@ import {
   FiSave,
   FiX,
   FiInfo,
+  FiSearch,
 } from "react-icons/fi";
 
 /* -------------------- helpers -------------------- */
@@ -625,6 +626,12 @@ const autoPickedRef = useRef(false);
 const [selSrvIds, setSelSrvIds] = useState([]);
 // --- SERVICES DROPDOWN STATE & HANDLERS ---
 const [srvOpen, setSrvOpen] = useState(false);
+const [srvQuery, setSrvQuery] = useState("");
+const onSrvSearch = (e) => setSrvQuery(e.target.value);
+const clearSrvSearch = () => setSrvQuery("");
+
+// kad se panel otvori – resetuj polje za pretragu
+useEffect(() => { if (srvOpen) setSrvQuery(""); }, [srvOpen]);
 const buttonRef = useRef(null);
 const panelRef = useRef(null);
 const [panelTop, setPanelTop] = useState(0);
@@ -2345,14 +2352,75 @@ async function applyVacationRange() {
 
 {srvOpen && (() => {
   // fallback lista usluga
-  const allServicesArray =
+const allServicesArray =
     Array.isArray(services) ? services : Array.from((servicesById?.values?.() || []));
-  const svcList = (allowedServicesForSelectedEmp?.length ? allowedServicesForSelectedEmp : allServicesArray) || [];
+  const baseList =
+    (allowedServicesForSelectedEmp?.length ? allowedServicesForSelectedEmp : allServicesArray) || [];
+
+  const q = srvQuery.trim().toLowerCase();
+  const svcList = baseList.filter((s) => {
+    if (!q) return true;
+    const byName = (s?.name || "").toLowerCase().includes(q);
+    // dozvoli i pretragu po ceni (ako ukucaju broj)
+    const digits = q.replace(/[^\d]/g, "");
+    const byPrice = digits ? String(getServicePrice(s) || 0).includes(digits) : false;
+    return byName || byPrice;
+  });
 
   // ZAJEDNIČKI SADRŽAJ
   const content = (
     <>
-      <div style={{ padding: 10, display: "grid", gap: 6, minHeight: 120 }}>
+       <div style={{ padding: 10, display: "grid", gap: 6, minHeight: 120 }}>
+      {/* 🔎 Search bar */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "28px 1fr auto",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 12px",
+            borderRadius: 14,
+            background: "#fff",
+            boxShadow: "0 1px 3px rgba(0,0,0,.06)",
+            position: "sticky",
+            top: 0,
+            zIndex: 1,
+          }}
+        >
+          <FiSearch style={{ opacity: 0.7 }} />
+          <input
+            type="text"
+            value={srvQuery}
+            onChange={onSrvSearch}
+            placeholder="Pretraži usluge (naziv ili cena)…"
+            style={{
+              outline: "none",
+              border: "none",
+              background: "transparent",
+              fontSize: 16,
+            }}
+            autoFocus={!isMobile} // na desktopu odmah fokus
+          />
+          {srvQuery ? (
+            <button
+              type="button"
+              onClick={clearSrvSearch}
+              title="Obriši pretragu"
+              style={{
+                border: "1px solid rgba(0,0,0,.08)",
+                background: "#f7f7f7",
+                padding: "4px 10px",
+                borderRadius: 10,
+                fontWeight: 700,
+              }}
+            >
+              ×
+            </button>
+          ) : (
+            <span style={{ width: 24 }} />
+          )}
+        </div>
+
         {svcList.map((s) => {
           const checked = selSrvIds.includes(s.id);
           const price = Number(getServicePrice(s) || 0);
@@ -4529,23 +4597,23 @@ function ApptModal({
   ) || 0;
 
   // Ako korisnik nije dirao cenu, osveži je automatski pri promeni usluga/appta
- // 1) Kad se appt promeni i korisnik nije kucao, prikaži cenu iz dokumenta
-React.useEffect(() => {
-  if (!priceDirty) {
-    setEditPrice(apptTotalPrice != null ? String(apptTotalPrice) : "");
-  }
-}, [appt?.id, apptTotalPrice, priceDirty]);
+
 // 2) Ako je polje prazno (auto), ažuriraj ga kad se promene usluge/sume
-React.useEffect(() => {
-  if (isBlank(editPrice)) {
-    setEditPrice(String(autoDisplayPrice));
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [selectedServices.length, modalTotalPrice]);
+ React.useEffect(() => {
+   if (isBlank(editPrice)) {
+     setEditPrice(String(autoDisplayPrice));
+   }
+ }, [selectedServices.length, modalTotalPrice]);
+ React.useEffect(() => {
+   if (!priceDirty) {
+     setEditPrice(String(autoDisplayPrice));
+   }
+ }, [autoDisplayPrice, priceDirty]);
+
 
 
   // Prikazna cena: prazno -> auto, inače uneseno
-  const displayPrice = isBlank(editPrice) ? autoDisplayPrice : (Number(editPrice) || 0);
+ const displayPrice = priceDirty ? (Number(editPrice) || 0) : autoDisplayPrice;
 
   // --- radno vreme za dan termina (mora pre auto-end efekta) ---
   const dow   = DOW[new Date(appt.dateKey + "T00:00:00").getDay()];
@@ -4866,7 +4934,7 @@ React.useEffect(() => {
   endMin: endMinCalc,
   durationMin: durationFinal,
 
- price: isBlank(editPrice) ? (Number(autoPrice) || 0) : (Number(editPrice) || 0),
+ price: priceDirty ? (Number(editPrice) || 0) : (Number(autoPrice) || 0),
 
   note: (editNote || "").trim(),
   serviceIds,
