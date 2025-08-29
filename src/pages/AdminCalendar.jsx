@@ -1273,7 +1273,7 @@ useEffect(() => {
     const all = s.docs.map((d) => ({ id: d.id, ...d.data() }));
     const visible = all.filter(
       (a) =>
-        (a.type === "booking" && a.status === "booked") ||
+           (a.type === "booking" && (a.status === "booked" || a.status === "no-show")) ||
         a.type === "block" ||
         a.type === "vacation" ||
         a.type === "break"
@@ -1852,7 +1852,7 @@ const durationEdited  = Number(editDuration) !== Number(totalDuration);
           color: primaryColor,
 
           clientName: nameToSave,
-          clientPhone: phoneToSave,
+         clientPhone: phoneN,
 
           penaltyApplied,       // ako je postojala
           manual: true,         // 👈 oznaka "ručno"
@@ -2144,7 +2144,8 @@ async function saveApptDuration() {
         );
 
         // < 6h => pending kazna ako je još nema
-        if (appt.type === "booking" && diffHours < 6) {
+    if (true) {
+
           const hasActivePenalty =
             data.pendingPenalty && Number(data.pendingPenalty.amount || 0) > 0;
           if (hasActivePenalty) return;
@@ -2185,7 +2186,8 @@ async function saveApptDuration() {
   const diffHours = (apptDate.getTime() - Date.now()) / 36e5;
 
   // < 6h => pending kazna ako je još nema, pa pokušaj odmah da je “zalepiš” na najraniji budući
-  if (appt.type === "booking" && diffHours < 6) {
+ if (diffHours < 6) {
+
     const phone = normPhone(appt.clientPhone);
     if (phone) {
       const cRef = doc(db, "clients", phone);
@@ -3841,6 +3843,21 @@ if (!isManual) {
   // 8) Zatvori modal da bi se state sveže inicijalizovao pri sledećem otvaranju
   setActiveAppt(null);
 }}
+onNoShow={async () => {
+  try {
+    await markNoShowWithClient(activeAppt);   // doda pending kaznu za sledeći termin
+
+    // ➕ ažuriraj i status samog termina da ostane u bazi ali kao "no-show"
+    await updateDoc(doc(db, "appointments", activeAppt.id), {
+      status: "no-show",
+      updatedAt: serverTimestamp(),
+    });
+
+    showToast?.("No-show zabeležen");
+  } finally {
+    setActiveAppt(null); // zatvori modal
+  }
+}}
 
               onDelete={async () => {
                 await deleteAppt(activeAppt.id);
@@ -4013,6 +4030,23 @@ function DayGrid({
     textAlign: "center",
     boxShadow: "0 2px 6px rgba(0,0,0,.15)",
   };
+  const badgeRow = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  marginTop: 6,
+};
+const badge = (border, bg) => ({
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  fontSize: 12,
+  lineHeight: "16px",
+  fontWeight: 700,
+  border: `1px solid ${border}`,
+  background: bg,
+});
+
 
   const getClientY = (e) => {
     const t = e.touches?.[0] || e.changedTouches?.[0];
@@ -4410,6 +4444,31 @@ function DayGrid({
                           )}
                         </div>
                       ) : null}
+{/* BADGE RED: no-show / kazna primenjena / kazna za naplatu */}
+{!isInfoCard && (
+  <div style={badgeRow}>
+    {/* 1) NO-SHOW na ovoj kartici */}
+    {a.status === "no-show" && (
+      <span style={badge("#7f1d1d", "#fee2e2")}>No-show</span>
+    )}
+
+    {/* 2) KAZNA PRIMENJENA na ovom terminu */}
+    {a?.penaltyApplied?.amount > 0 && (
+      <span style={badge("#ff2600ff", "#ce1b1bff")}>
+        Kazna : {Number(a.penaltyApplied.amount)} RSD
+      </span>
+    )}
+
+    {/* 3) KAZNA ZA NAPLATU na prvom narednom terminu tog broja */}
+    {!a?.penaltyApplied?.amount &&
+      pendingPen &&
+      earliestIdForPhone === a.id && (
+        <span style={badge("#78350f", "#fef3c7")}>
+          Kazna za naplatu: {Number(pendingPen.amount)} RSD
+        </span>
+      )}
+  </div>
+)}
 
                       {/* × dugme samo na blokadi */}
                      {/* × dugme za blokadu i odmor */}
