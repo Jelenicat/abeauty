@@ -980,9 +980,9 @@ function safeStartTime(hhmm, min) {
   // GLOBAL: online rezervacije (nije vezano za dan)
 const initRef = useRef(false); // ne želimo da inicijalni snapshot digne bedž
 const knownIdsRef = useRef(new Set());
-useEffect(() => {
-  // Ako dodaš createdAt: serverTimestamp() na ONLINE kreiranju,
-  // pređi na orderBy("createdAt","desc") (i po želji dodaj limit()).
+
+
+ useEffect(() => {
   const q = query(
     collection(db, "appointments"),
     where("type", "==", "booking"),
@@ -991,47 +991,58 @@ useEffect(() => {
     orderBy("startMin", "desc")
   );
 
- const off = onSnapshot(q, (snap) => {
-  // sortiranje: createdAt ako postoji, inače dateKey+startMin
-  const dkToMs = (dk, startMin = 0) => {
-    if (!dk) return 0;
-    const t = new Date(dk + "T00:00:00").getTime() || 0;
-    return t + (Number(startMin) || 0) * 60_000;
-  };
-  const sortKey = (x) => (x.createdAt?.toMillis?.() ?? dkToMs(x.dateKey, x.startMin));
+  const off = onSnapshot(q, (snap) => {
+    // sortiranje: createdAt ako postoji, inače dateKey+startMin
+    const dkToMs = (dk, startMin = 0) => {
+      if (!dk) return 0;
+      const t = new Date(dk + "T00:00:00").getTime() || 0;
+      return t + (Number(startMin) || 0) * 60_000;
+    };
+    const sortKey = (x) =>
+      (x.createdAt?.toMillis?.() ?? dkToMs(x.dateKey, x.startMin));
 
-  const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // SAMO online (ručne izbacujemo) — po želji zadrži i status filter:
-  const onlineOnly = all
-    .filter(x => x.manual !== true /* && (!x.status || x.status === "booked") */)
-    .sort((a, b) => sortKey(b) - sortKey(a)); // najnovije prvo
+    // SAMO online (ručne izbacujemo)
+    const onlineOnly = all
+      .filter(x => x.manual !== true /* && (!x.status || x.status === "booked") */)
+      .sort((a, b) => sortKey(b) - sortKey(a)); // najnovije prvo
 
-  // hronološki feed
-  setBookingsTimeline(onlineOnly);
+    // hronološki feed
+    setBookingsTimeline(onlineOnly);
 
-  // detekcija novih (bez oslanjanja na docChanges)
-  const currentIds = new Set(onlineOnly.map(x => x.id));
-  const newcomers  = onlineOnly.filter(x => !knownIdsRef.current.has(x.id));
+    // detekcija novih
+    const currentIds = new Set(onlineOnly.map(x => x.id));
+    const newcomers  = onlineOnly.filter(x => !knownIdsRef.current.has(x.id));
 
-  if (!initRef.current) {
-    // prvi snapshot: samo upamti šta postoji, ne puni “Nova”
+    // 1) dodaj novajlije u PENDING (ako nisu dismissed)
+    for (const x of newcomers) {
+      if (!dismissedIdsRef.current.has(x.id)) {
+        pendingIdsRef.current.add(x.id);
+      }
+    }
+    persistSets();
+
+    // 2) uvek renderuj iz PENDING seta
+    const byId = new Map(onlineOnly.map(x => [x.id, x]));
+    const pendingArr = [...pendingIdsRef.current]
+      .map(id => byId.get(id))
+      .filter(Boolean); // ako je obrisan/otkazan, ispuštamo ga iz liste
+
+    setNewBookings(pendingArr);
+    setUnseenCount(pendingArr.length);
+
+    if (!initRef.current) {
+      // prvi snapshot: samo upamti šta postoji
+      knownIdsRef.current = currentIds;
+      initRef.current = true;
+    }
     knownIdsRef.current = currentIds;
-    initRef.current = true;
-  } else if (newcomers.length) {
-    setNewBookings(prev => [...newcomers, ...prev]); // najnoviji na vrh
-    setUnseenCount(prev => prev + newcomers.length);
-  }
+  });
 
-  knownIdsRef.current = currentIds;
-
-  // (opciono) debug:
-  // console.log("online:", onlineOnly.length, "new:", newcomers.length);
-});
-
-
-  return () => off();
+  return () => off();   // ⬅ ovo ostaje isto!
 }, []);
+
 
 
 
