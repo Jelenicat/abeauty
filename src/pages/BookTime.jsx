@@ -285,6 +285,7 @@ export default function BookTime() {
       const docRef = await addDoc(collection(db, "appointments"), {
         type: "booking",
         status: "booked",
+        manual: false, 
         employeeId: emp.id,
         employeeName: emp.name || "",
         dateKey: dk,

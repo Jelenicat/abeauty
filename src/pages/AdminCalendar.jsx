@@ -163,10 +163,54 @@ function labelFor(a, servicesById) {
   if (a.type === "block")    return "Blokirano";
   if (a.type === "break")    return "Pauza";
   if (a.type === "shift")    return "Smena";
-   const s = servicesById.get(a.serviceId);
+
+  const s = servicesById.get(a.serviceId);
   const base = a.serviceName || s?.name || "Usluga";
-  return a.manual ? base + " (ručno)" : base;
+
+  const Badge = ({ children }) => (
+    <span
+      style={{
+        marginLeft: 6,
+        background: "#ff5fa2",
+        color: "#fff",
+        borderRadius: 6,
+        padding: "2px 6px",
+        fontSize: 11,
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </span>
+  );
+
+  const badges = [];
+
+  // No-show bedž
+  if (a.status === "no-show") {
+    badges.push(<Badge key="ns">No-show</Badge>);
+  }
+
+  // Ako je ručno ➜ (ručno), inače ➜ aBeauty
+// Ako je ručno ➜ (ručno), inače ➜ aBeauty
+// Ako je ručno ➜ (ručno), ako je online ➜ aBeauty, a ako polje ne postoji ➜ ništa
+if (Object.prototype.hasOwnProperty.call(a, "manual")) {
+  if (a.manual === true) {
+    badges.push(<Badge key="m">ručno</Badge>);
+  } else {
+    badges.push(<Badge key="ab">aBeauty</Badge>);
+  }
 }
+
+
+  return (
+    <>
+      {base} {badges}
+    </>
+  );
+}
+
+
+
 
 // pored apptBgFor / labelFor
 const apptZFor = (a) =>
@@ -1364,8 +1408,9 @@ const q = query(
   collection(db, "appointments"),
   where("dateKey", "==", dk),
   where("type", "==", "booking"),
-  where("status", "==", "booked")
+  where("status", "in", ["booked", "no-show"])
 );
+
 
     const off = onSnapshot(q, (s) =>
       setSchedAppts(
@@ -4367,6 +4412,8 @@ const badge = (border, bg) => ({
                           })());
 
                   const apptNames = apptServices.map(s => s.name).join(", ");
+                  const baseName = apptNames || a.serviceName || "Usluga";
+
                  const priceFromServices = apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0);
 
 // Ako postoji lista usluga → uvek zbir iz usluga.
@@ -4412,7 +4459,7 @@ const badge = (border, bg) => ({
                       onTouchStart={stopTouchPropagation}
                       onTouchEnd={stopTouchPropagation}
                     >
-                      {/* Naslov kartice */}
+                      
                       <div style={cardTitle(isMobile)}>
                         {labelFor(a, servicesById)}
                       </div>
@@ -4613,6 +4660,18 @@ function ScheduleGrid({
     fontSize: 12,
     borderRight: "0.5px solid rgba(255,255,255,.25)",
   };
+  // isti stil bedža kao u DayGrid-u
+const badge = (border, bg) => ({
+  display: "inline-block",
+  padding: "3px 8px",
+  borderRadius: 999,
+  fontSize: 12,
+  lineHeight: "16px",
+  fontWeight: 700,
+  border: `1px solid ${border}`,
+  background: bg,
+});
+
 
   // "Sada" linija (samo ako je danas)
   const isToday = dateKey(dateObj) === dateKey(new Date());
@@ -4757,6 +4816,8 @@ function ScheduleGrid({
            }] : [];
        })());
  const apptNames = apptServices.map(s => s.name).join(", ");
+ const baseName = apptNames || a.serviceName || "Usluga";
+
  const priceTotal = (a?.price != null)
   ? Number(a.price)
   : apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0);
@@ -4791,7 +4852,23 @@ function ScheduleGrid({
    }`
  }
 >
-                <div style={cardTitle(isMobile)}>{labelFor(a, servicesById)}</div>
+          
+<div style={cardTitle(isMobile)}>
+  {baseName}{" "}
+  {Object.prototype.hasOwnProperty.call(a, "manual") && (
+    <span style={{ ...badge("#ff5fa2", "#ff5fa2"), color: "#fff" }}>
+      {a.manual ? "ručno" : "aBeauty"}
+    </span>
+  )}
+  {a.status === "no-show" && (
+    <span style={badge("#7f1d1d", "#fee2e2")}>No-show</span>
+  )}
+</div>
+
+
+
+
+
 {/* meta: za vacation/break/block prikaži samo vreme (kao blokada) */}
  {(a.type === "vacation" || a.type === "break" || a.type === "block") ? (
     <div style={metaRow}>
