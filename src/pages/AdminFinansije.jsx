@@ -156,6 +156,58 @@ export default function AdminFinansije() {
     return Number(a.basePrice ?? 0);
   }
 
+  /* =========================
+     DEDUPE HELPERI — spreči duple termine u obračunu
+     ========================= */
+  function normStr(x) {
+    return String(x || "").trim().toLowerCase();
+  }
+  function onlyDigits(x) {
+    return String(x || "").replace(/\D/g, "");
+  }
+  function extractDateAndTime(a) {
+    const dateKey =
+      a.dateKey ||
+      (a.startAt?.toDate ? a.startAt.toDate().toISOString().slice(0, 10) : "");
+    const startHHMM =
+      a.startHHMM ||
+      (a.startAt?.toDate ? a.startAt.toDate().toTimeString().slice(0, 5) : "");
+    return { dateKey, startHHMM };
+  }
+  function serviceKeyOf(a) {
+    if (Array.isArray(a.servicesInfo) && a.servicesInfo.length) {
+      const names = a.servicesInfo
+        .map(s => normStr(s?.name || ""))
+        .filter(Boolean)
+        .sort();
+      return names.join(",");
+    }
+    return normStr(a.serviceName || "usluga");
+  }
+  function clientKeyOf(a) {
+    const phone = onlyDigits(a.clientPhone);
+    if (phone) return `p:${phone}`;
+    const name = normStr(a.clientName);
+    return name ? `n:${name}` : "unknown";
+  }
+  function dedupeKey(a) {
+    const { dateKey, startHHMM } = extractDateAndTime(a);
+    const emp = String(a.employeeId || "unknown");
+    return [emp, dateKey, startHHMM, clientKeyOf(a), serviceKeyOf(a)].join("|");
+  }
+  function dedupeAppointments(arr = []) {
+    const seen = new Set();
+    const out = [];
+    for (const a of arr) {
+      const k = dedupeKey(a);
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(a);
+      }
+    }
+    return out;
+  }
+
   // ===== Izračuni =====
   const costsSum = useMemo(
     () => expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0),
@@ -182,20 +234,25 @@ export default function AdminFinansije() {
     });
   }, [appointments]);
 
+  // ⚠️ DEDUPE: isti (radnica + datum + vreme + klijent + usluga) računa se kao jedan
+  const monthAppointmentsDeduped = useMemo(() => {
+    return dedupeAppointments(monthAppointments);
+  }, [monthAppointments]);
+
   // ukupni prihod (bruto)
   const revenue = useMemo(() => {
-    return monthAppointments.reduce((sum, a) => {
+    return monthAppointmentsDeduped.reduce((sum, a) => {
       const v = amountForAppt(a);
       return sum + (isFinite(v) ? v : 0);
     }, 0);
-  }, [monthAppointments]);
+  }, [monthAppointmentsDeduped]);
 
   const net = useMemo(() => revenue - costsSum, [revenue, costsSum]);
 
   // --- zarada po radnici (bruto po radnici)
   const earningsByEmployee = useMemo(() => {
     const m = new Map();
-    for (const a of monthAppointments) {
+    for (const a of monthAppointmentsDeduped) {
       const eid = a.employeeId || "unknown";
       const v = amountForAppt(a);
       m.set(eid, (m.get(eid) || 0) + (isFinite(v) ? v : 0));
@@ -207,7 +264,7 @@ export default function AdminFinansije() {
     }
     list.sort((a,b)=> b.total - a.total || a.name.localeCompare(b.name));
     return list;
-  }, [monthAppointments, employees]);
+  }, [monthAppointmentsDeduped, employees]);
 
   // --- termini grupisani po radnici (+ sortirani) + tačne cene i imena svih usluga
   const apptsByEmployee = useMemo(() => {
@@ -229,7 +286,7 @@ export default function AdminFinansije() {
 
       return { ...a, _dateKey: d, _sh: sh, _eh: eh, _amount: price, _serviceNames: serviceNames };
     };
-    for (const a of monthAppointments) {
+    for (const a of monthAppointmentsDeduped) {
       const eid = a.employeeId || "unknown";
       if (!m.has(eid)) m.set(eid, []);
       m.get(eid).push(norm(a));
@@ -238,7 +295,7 @@ export default function AdminFinansije() {
       arr.sort((x,y) => (x._dateKey||"").localeCompare(y._dateKey||"") || (x._sh||"").localeCompare(y._sh||""));
     }
     return m;
-  }, [monthAppointments]);
+  }, [monthAppointmentsDeduped]);
 
   // ===== Akcije: troškovi =====
   async function addTemplate(e) {

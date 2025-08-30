@@ -212,13 +212,30 @@ export default async function handler(req, res) {
       grouped[to].push(a);
     }
 
+    // IZMENJENA FUNKCIJA – deduplikacija istih termina
     function buildMsgGroup(list) {
-      const slots = list
+      const seen = new Set();
+      const uniq = [];
+      for (const a of list) {
+        const key = `${a.dateKey}|${a.startHHMM}|${String(a.serviceName || "").trim().toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniq.push(a);
+        }
+      }
+
+      // sortiraj po datumu+vremenu radi stabilnosti
+      uniq.sort((x, y) =>
+        (x.dateKey + x.startHHMM).localeCompare(y.dateKey + y.startHHMM)
+      );
+
+      const slots = uniq
         .map(a => {
           const { fmtDate, fmtTime } = formatDateTimeRAW(a.dateKey, a.startHHMM);
           return `${fmtDate} u ${fmtTime}h (${a.serviceName || "usluga"})`;
         })
         .join("; ");
+
       let txt = `Imate zakazane termine: ${slots}. Kontakt: ${salonPhone || ""} | Vas aBeauty`;
       return asciiOnly ? toAscii(txt) : txt;
     }
