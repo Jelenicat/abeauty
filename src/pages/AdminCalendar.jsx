@@ -1965,10 +1965,11 @@ try {
       updatedAt: serverTimestamp(),
     });
   }
-  async function deleteAppt(id) {
-    if (!confirm("Obrisati stavku?")) return;
-    await deleteDoc(doc(db, "appointments", id));
-  }
+async function deleteAppt(id, promptText = "Obrisati stavku?") {
+  if (!confirm(promptText)) return;
+  await deleteDoc(doc(db, "appointments", id));
+}
+
 // === ZAMENI TVOJ POSTOJEĆI saveApptFromModal OVIM ===
 async function saveApptFromModal(patch) {
   const a = activeAppt;
@@ -3904,10 +3905,10 @@ onNoShow={async () => {
   }
 }}
 
-              onDelete={async () => {
-                await deleteAppt(activeAppt.id);
-                setActiveAppt(null);
-              }}
+             onDelete={async (msg) => {
+  await deleteAppt(activeAppt.id, msg);
+  setActiveAppt(null);
+}}
               noShowByPhone={noShowByPhone}
             />,
             document.body
@@ -5609,9 +5610,9 @@ if (!priceDirty) {
         {/* Donja traka – akcije */}
         <div style={styles.actions}>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            <button style={{ ...styles.actionBtn, background:"#fff", color:"#222" }} onClick={onCancel} title="Otkaži"><FiSlash /> Otkaži</button>
+            <button style={{ ...styles.actionBtn, background:"#fff", color:"#222" }}  onClick={() => onDelete?.("Otkazati termin?")}  title="Otkaži"><FiSlash /> Otkaži</button>
             <button style={{ ...styles.actionBtn, background:"#fff7e6", color:"#7a3d0b" }} onClick={onNoShow} title="No-show"><FiAlertTriangle /> No-show</button>
-            <button style={{ ...styles.actionBtn, background:"#ffe6e6", color:"#d9534f" }} onClick={onDelete} title="Obriši"><FiTrash2 /> Obriši</button>
+            <button style={{ ...styles.actionBtn, background:"#ffe6e6", color:"#d9534f" }}  onClick={() => onDelete?.("Obrisati stavku?")}  title="Obriši"><FiTrash2 /> Obriši</button>
 
             <button
               style={styles.save}
