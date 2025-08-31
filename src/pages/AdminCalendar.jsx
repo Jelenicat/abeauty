@@ -160,7 +160,45 @@ const apptBgFor = (a, colorForServiceId) => {
 };
 function labelFor(a, servicesById) {
   if (a.type === "vacation") return "Odmor";
-  if (a.type === "block")    return "Blokirano";
+if (a.type === "block") {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div>Blokirano</div>
+      <div style={{ marginTop: 4, fontSize: 12 }}>
+        {a.reason ? (
+          <>
+            Razlog: {a.reason}{" "}
+            <FiEdit3
+              style={{ cursor: "pointer", marginLeft: 6 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const newReason = prompt("Unesi razlog blokade:", a.reason || "");
+                if (newReason !== null) {
+                  updateDoc(doc(db, "appointments", a.id), { reason: newReason });
+                }
+              }}
+            />
+          </>
+        ) : (
+          <span
+            style={{ cursor: "pointer", opacity: 0.7 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              const newReason = prompt("Unesi razlog blokade:");
+              if (newReason) {
+                updateDoc(doc(db, "appointments", a.id), { reason: newReason });
+              }
+            }}
+          >
+            + Dodaj razlog
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
   if (a.type === "break")    return "Pauza";
   if (a.type === "shift")    return "Smena";
 
@@ -1101,7 +1139,8 @@ const knownIdsRef = useRef(new Set());
   const [editPrice, setEditPrice] = useState("");
   const [editEndHHMM, setEditEndHHMM] = useState("");
   const [editNote, setEditNote] = useState("");
-  
+
+
   // lokalan datum za modal (string "YYYY-MM-DD")
 
 
@@ -1779,6 +1818,7 @@ async function blockWholeDaysRange({ employeeId, fromDate, toDate }) {
       endHHMM:   minToTime(closeMinLocal),
       startMin:  openMinLocal,
       endMin:    closeMinLocal,
+      reason: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -1952,6 +1992,7 @@ try {
     endHHMM: minToTime(end),
     startMin: start,
     endMin: end,
+  reason: null, 
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -2514,6 +2555,7 @@ const onColDrop = (empIdTarget) => async (e) => {
       endHHMM: minToTime(end),
       startMin: start,
       endMin: end,
+      reason:null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -3913,9 +3955,11 @@ onNoShow={async () => {
             />,
             document.body
           )}
+        
       </div>
     </div>
   );
+  
 }
 
 /* -------------------- DayStrip (horizontal days) -------------------- */
