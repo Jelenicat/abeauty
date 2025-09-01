@@ -144,6 +144,38 @@ async function applyPendingToEarliestAppt(db, phone, amount) {
     );
   });
 }
+// uklanja penaltyApplied sa najranijeg budućeg termina ako je došao iz datog no-show termina
+async function clearPenaltyFromFutureAppt(db, phone, sourceApptId) {
+  if (!phone) return;
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+  const qAppt = query(
+    collection(db, "appointments"),
+    where("clientPhone", "==", phone),
+    where("status", "==", "booked"),
+    where("dateKey", ">=", todayKey),
+    orderBy("dateKey", "asc"),
+    orderBy("startMin", "asc")
+  );
+
+  const snap = await getDocs(qAppt);
+  if (snap.empty) return;
+
+  // prolazimo kroz buduće termine i skidamo kaznu samo ako je iz ovog no-show izvora
+  for (const d of snap.docs) {
+    const a = d.data();
+    const applied = a?.penaltyApplied;
+    if (applied?.amount > 0 && applied?.sourceApptId === sourceApptId) {
+      await updateDoc(d.ref, {
+        penaltyApplied: deleteField(),
+        updatedAt: serverTimestamp(),
+      });
+      break; // skini samo sa prvog kome je zalepljena
+    }
+  }
+}
 
 
 // ⬇⬇⬇ DODAJ OVDE, van komponente
@@ -224,9 +256,11 @@ if (a.type === "block") {
   const badges = [];
 
   // No-show bedž
-  if (a.status === "no-show") {
-    badges.push(<Badge key="ns">No-show</Badge>);
-  }
+  // sledeći termin posle no-show-a → ima penaltyApplied
+if (a?.penaltyApplied && (a.penaltyApplied.amount > 0 || a.penaltyApplied.sourceApptId)) {
+  badges.push(<Badge key="nsh">No-show istorija</Badge>);
+}
+
 
   // Ako je ručno ➜ (ručno), inače ➜ aBeauty
 // Ako je ručno ➜ (ručno), inače ➜ aBeauty
@@ -237,6 +271,10 @@ if (Object.prototype.hasOwnProperty.call(a, "manual")) {
   } else {
     badges.push(<Badge key="ab">aBeauty</Badge>);
   }
+  if (a.status === "no-show") {
+  badges.push(<Badge key="ns">No-show</Badge>);
+}
+
 }
 
 
@@ -793,7 +831,8 @@ useEffect(() => {
       // "booking" | "block"
 
 
-const [selEmpId, setSelEmpId] = useState(""); // empty string, ne null
+const [selEmpId, setSelEmpId] = useState(null);
+// empty string, ne null
 // --- mobile reordering state ---
 const [empSelectMode, setEmpSelectMode] = useState(false);
 const [empSelectedId, setEmpSelectedId] = useState(null);
@@ -1496,7 +1535,12 @@ useEffect(() => {
 
   // defaults
  useEffect(() => {
-  if (!autoPickedRef.current && selEmpId == null && employees.length && !isMobile) {
+    if (
+    !autoPickedRef.current &&
+    (selEmpId === null || selEmpId === "") &&
+    employees.length &&
+    !isMobile
+  ) {
   setSelEmpId(employees[0].id);
      autoPickedRef.current = true; // auto-pick samo prvi put
    }
@@ -1683,6 +1727,11 @@ const idsToRender = useMemo(() => {
   // inače sve radnice
   return employees.map(e => e.id);
 }, [isMobile, selEmpId, selectedEmpIds, onlyWorking, workingTodayIds, vacationEmpIds, employees]);
+useEffect(() => {
+  if ((selEmpId === null || selEmpId === "") && idsToRender.length === 1) {
+    setSelEmpId(idsToRender[0]);
+  }
+}, [idsToRender, selEmpId]);
 
 // radnice koje su na odmoru danas
 
@@ -2194,70 +2243,124 @@ async function saveApptDuration() {
 
 
   // mark no-show + increment client counter by phone
-  async function markNoShowWithClient(appt) {
-    if (!appt?.id) return;
+  async function markNoShowWithClient(appt, servicesById) {
+  if (!appt?.id) return;
 
-    // status -> no-show
-    await updateDoc(doc(db, "appointments", appt.id), {
-      status: "no-show",
-      noShowAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  // status -> no-show
+  await updateDoc(doc(db, "appointments", appt.id), {
+    status: "no-show",
+    noShowAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 
-    // razlika u satima do termina (lokalno)
-    const apptDate = new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}`);
-    const diffHours = (apptDate.getTime() - Date.now()) / 36e5;
+  // razlika u satima do termina (lokalno)
+  const apptDate = new Date(`${appt.dateKey}T${appt.startHHMM || "00:00"}`);
+  const diffHours = (apptDate.getTime() - Date.now()) / 36e5;
 
-    const phone = normPhone(appt.clientPhone);
-    if (phone) {
-      const cRef = doc(db, "clients", phone);
+  const phone = normPhone(appt.clientPhone);
+  if (phone) {
+    const cRef = doc(db, "clients", phone);
 
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(cRef);
-        const data = snap.exists() ? snap.data() : {};
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(cRef);
+      const data = snap.exists() ? snap.data() : {};
+
+      tx.set(
+        cRef,
+        {
+          phone,
+          name: appt.clientName || "",
+          noShowCount: increment(1),
+          updatedAt: serverTimestamp(),
+          createdAt: snap.exists()
+            ? (data.createdAt || serverTimestamp())
+            : serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      // < 6h => pending kazna ako je još nema
+      if (true) {
+        const hasActivePenalty =
+          data.pendingPenalty && Number(data.pendingPenalty.amount || 0) > 0;
+        if (hasActivePenalty) return;
+
+        const penaltyAmount = computePenaltyAmountFromAppt(appt, servicesById);
 
         tx.set(
           cRef,
           {
-            phone,
-            name: appt.clientName || "",
-            noShowCount: increment(1),
-            updatedAt: serverTimestamp(),
-            createdAt: snap.exists()
-              ? (data.createdAt || serverTimestamp())
-              : serverTimestamp(),
+            pendingPenalty: {
+              amount: penaltyAmount,
+              sourceApptId: appt.id,
+              sourceService: appt.serviceName || "",
+              createdAt: serverTimestamp(),
+            },
           },
           { merge: true }
         );
+      }
+    });
 
-        // < 6h => pending kazna ako je još nema
-    if (true) {
+    await applyPendingToEarliestAppt(db, phone);
+  }
+}
 
-          const hasActivePenalty =
-            data.pendingPenalty && Number(data.pendingPenalty.amount || 0) > 0;
-          if (hasActivePenalty) return;
 
-          const penaltyAmount = computePenaltyAmountFromAppt(appt, servicesById);
+// === NOVO: toggle no-show ON/OFF ===
+async function toggleNoShow(appt, servicesById, closeModal) {
+  if (!appt?.id) return;
 
-          tx.set(
-            cRef,
-            {
-              pendingPenalty: {
-                amount: penaltyAmount,
-                sourceApptId: appt.id,
-                sourceService: appt.serviceName || "",
-                createdAt: serverTimestamp(),
-              },
-            },
-            { merge: true }
-          );
+  const phone = normPhone(appt.clientPhone);
+
+  // Ako je već no-show → ISKLJUČI
+ // Ako je već no-show → ISKLJUČI
+if (appt.status === "no-show") {
+  await updateDoc(doc(db, "appointments", appt.id), {
+    status: "booked",
+    noShowAt: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+
+  if (phone) {
+    const cRef = doc(db, "clients", phone);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(cRef);
+      if (!snap.exists()) return;
+
+      const data = snap.data() || {};
+      const current = Number(data.noShowCount || 0);
+      const newCount = Math.max(0, current - 1);
+
+      const patch = { updatedAt: serverTimestamp() };
+
+      if (newCount === 0) {
+        patch.noShowCount = deleteField();
+        patch.pendingPenalty = deleteField();
+      } else {
+        patch.noShowCount = newCount;
+        if (data.pendingPenalty?.sourceApptId === appt.id) {
+          patch.pendingPenalty = deleteField();
         }
-      });
+      }
 
-      await applyPendingToEarliestAppt(db, phone);
-    }
+      tx.set(cRef, patch, { merge: true });
+    });
+
+    // 👇 DODAJ OVO
+    await clearPenaltyFromFutureAppt(db, phone, appt.id);
   }
 
+  closeModal?.();
+  return;
+}
+
+
+  // Inače → UKLJUČI
+  await markNoShowWithClient(appt, servicesById);
+
+  closeModal?.();   // ✅ zatvori modal
+}
   async function cancelApptWithRule(appt) {
   if (!appt?.id) return;
 
@@ -3932,20 +4035,12 @@ if (!isManual) {
   setActiveAppt(null);
 }}
 onNoShow={async () => {
-  try {
-    await markNoShowWithClient(activeAppt);   // doda pending kaznu za sledeći termin
-
-    // ➕ ažuriraj i status samog termina da ostane u bazi ali kao "no-show"
-    await updateDoc(doc(db, "appointments", activeAppt.id), {
-      status: "no-show",
-      updatedAt: serverTimestamp(),
-    });
-
-    showToast?.("No-show zabeležen");
-  } finally {
-    setActiveAppt(null); // zatvori modal
-  }
+  await toggleNoShow(activeAppt, servicesById, () => setActiveAppt(null));
 }}
+
+
+
+
 
              onDelete={async (msg) => {
   await deleteAppt(activeAppt.id, msg);
@@ -5655,7 +5750,18 @@ if (!priceDirty) {
         <div style={styles.actions}>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             <button style={{ ...styles.actionBtn, background:"#fff", color:"#222" }}  onClick={() => onDelete?.("Otkazati termin?")}  title="Otkaži"><FiSlash /> Otkaži</button>
-            <button style={{ ...styles.actionBtn, background:"#fff7e6", color:"#7a3d0b" }} onClick={onNoShow} title="No-show"><FiAlertTriangle /> No-show</button>
+        <button
+  style={{
+    ...styles.actionBtn,
+    background: appt.status === "no-show" ? "#fde2e2" : "#fff7e6",
+    color:"#7a3d0b"
+  }}
+  onClick={onNoShow}
+  title={appt.status === "no-show" ? "Ukloni No-show" : "No-show"}
+>
+  <FiAlertTriangle /> {appt.status === "no-show" ? "Ukloni No-show" : "No-show"}
+</button>
+
             <button style={{ ...styles.actionBtn, background:"#ffe6e6", color:"#d9534f" }}  onClick={() => onDelete?.("Obrisati stavku?")}  title="Obriši"><FiTrash2 /> Obriši</button>
 
             <button
