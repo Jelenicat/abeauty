@@ -1019,6 +1019,11 @@ const unseenIdsRef = useRef(new Set());
 // "prompt" za poslednje pristiglo + lista samo NOVIH + ceo HRONO timeline
 const [newApptNotice, setNewApptNotice] = useState(null);
 const [newBookings, setNewBookings] = useState([]);
+// 🔔 Global "novo otkazivanje"
+const [cancelOpen, setCancelOpen] = useState(false);
+const [newCancels, setNewCancels] = useState([]);           // lista novih otkazivanja
+const [unseenCancelCount, setUnseenCancelCount] = useState(0);
+
 // --- Hronološki: postepeni prikaz (20 po strani) ---
 
 // šta trenutno prikazujemo
@@ -1168,6 +1173,46 @@ const knownIdsRef = useRef(new Set());
 
 
   const [schedAppts, setSchedAppts] = useState([]);
+// 🔔 GLOBAL: online otkazivanja (nije vezano za dan)
+// refovi da ne diže bedž na prvi snapshot (staro stanje)
+const initCancelRef = useRef(false);
+const knownCancelledIdsRef = useRef(new Set());
+
+useEffect(() => {
+  const q = query(
+    collection(db, "appointments"),
+    where("type", "==", "booking"),
+    where("status", "==", "cancelled"),
+    orderBy("cancelledAt", "desc")   // ⟵ ključno
+    // , limit(50)                    // (opciono) ako želiš ograničenje
+  );
+
+  const off = onSnapshot(q, (snap) => {
+    const all = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
+
+    // Samo klijentska otkazivanja (online zakazana)
+    const filtered = all.filter(x => x.manual === false /* || x.cancelledBy === "client" */);
+
+    // UVEK osveži listu (da vidiš i ona pre otvaranja strane)
+    setNewCancels(filtered);
+
+    // Bedž samo za NOVA posle inicijalizacije
+    if (!initCancelRef.current) {
+      knownCancelledIdsRef.current = new Set(filtered.map(x => x.id));
+      initCancelRef.current = true;
+      return;
+    }
+    const newcomers = filtered.filter(x => !knownCancelledIdsRef.current.has(x.id));
+    if (newcomers.length) {
+      setUnseenCancelCount(c => c + newcomers.length);
+      newcomers.forEach(x => knownCancelledIdsRef.current.add(x.id));
+    }
+  });
+
+  return () => off();
+}, []);
+
+
 
   // clients with no-show history (by phone)
   const [noShowByPhone, setNoShowByPhone] = useState(new Map());
@@ -2689,6 +2734,7 @@ const onColDrop = (empIdTarget) => async (e) => {
           </button>
         </div>
 {/* TOP BAR: tabovi + Novo zakazivanje (uvek vidljivo) */}
+{/* TOP BAR: tabovi + dugmad */}
 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12 }}>
   <div style={tabbar}>
     <button style={tab === "day" ? tabBtnActive : tabBtn} onClick={() => setTab("day")}>Kalendar</button>
@@ -2696,43 +2742,91 @@ const onColDrop = (empIdTarget) => async (e) => {
     <button style={tab === "schedule" ? tabBtnActive : tabBtn} onClick={() => setTab("schedule")}>Raspored</button>
   </div>
 
-{/* 🔔 Novo zakazivanje — otvara/zatvara panele bez obzira na tab */}
-<button
-  onClick={() => { setNoticeOpen(v => !v); setUnseenCount(0); }}
-  style={{
-    position: "relative",
-    borderRadius: 12,
-    padding: "8px 12px",
-    fontWeight: 800,
-    border: "1px solid rgba(255,255,255,.25)",
-    background: "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.06))",
-    color: "#fff",
-    cursor: "pointer"
-  }}
-  title="Nova online zakazivanja"
->
-  Novo zakazivanje
-  {unseenCount > 0 && (
-    <span style={{
-      position: "absolute",
-      top: -8, right: -8,
-      minWidth: 22, height: 22,
-      borderRadius: 11,
-      fontSize: 12,
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "0 6px",
-      background: "linear-gradient(180deg,#ff5fa2,#ff3f8f)",
+  {/* 🔔 Dugmad: jedno pored drugog */}
+  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+  <button
+    onClick={() => { setNoticeOpen(v => !v); setUnseenCount(0); }}
+    style={{
+      position: "relative",
+      borderRadius: 12,
+      padding: isMobile ? "6px 10px" : "8px 12px",
+      fontWeight: 800,
+      fontSize: isMobile ? 13 : 15,
+      lineHeight: 1.1,
+      border: "1px solid rgba(255,255,255,.25)",
+      background: "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.06))",
       color: "#fff",
-      boxShadow: "0 2px 8px rgba(0,0,0,.25)",
-      border: "1px solid rgba(255,255,255,.6)",
-    }}>
-      {unseenCount}
-    </span>
-  )}
-</button>
+      cursor: "pointer"
+    }}
+    title="Nova online zakazivanja"
+  >
+    Novo zakazivanje
+    {unseenCount > 0 && (
+      <span style={{
+        position: "absolute",
+        top: isMobile ? -6 : -8,
+        right: isMobile ? -6 : -8,
+        minWidth: isMobile ? 18 : 22,
+        height: isMobile ? 18 : 22,
+        borderRadius: 999,
+        fontSize: isMobile ? 11 : 12,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0 6px",
+        background: "linear-gradient(180deg,#ff5fa2,#ff3f8f)",
+        color: "#fff",
+        boxShadow: "0 2px 8px rgba(0,0,0,.25)",
+        border: "1px solid rgba(255,255,255,.6)"
+      }}>
+        {unseenCount}
+      </span>
+    )}
+  </button>
+
+  <button
+    onClick={() => { setCancelOpen(v => !v); setUnseenCancelCount(0); }}
+    style={{
+      position: "relative",
+      borderRadius: 12,
+      padding: isMobile ? "6px 10px" : "8px 12px",
+      fontWeight: 800,
+      fontSize: isMobile ? 13 : 15,
+      lineHeight: 1.1,
+      border: "1px solid rgba(255,255,255,.25)",
+      background: "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.06))",
+      color: "#fff",
+      cursor: "pointer"
+    }}
+    title="Nova online otkazivanja"
+  >
+    Novo otkazivanje
+    {unseenCancelCount > 0 && (
+      <span style={{
+        position: "absolute",
+        top: isMobile ? -6 : -8,
+        right: isMobile ? -6 : -8,
+        minWidth: isMobile ? 18 : 22,
+        height: isMobile ? 18 : 22,
+        borderRadius: 999,
+        fontSize: isMobile ? 11 : 12,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0 6px",
+        background: "linear-gradient(180deg,#ff5fa2,#ff3f8f)",
+        color: "#fff",
+        boxShadow: "0 2px 8px rgba(0,0,0,.25)",
+        border: "1px solid rgba(255,255,255,.6)"
+      }}>
+        {unseenCancelCount}
+      </span>
+    )}
+  </button>
 </div>
+
+</div>
+
 
 {/* ✅ Nova online zakazivanja (globalno) */}
 {noticeOpen && (
@@ -2830,6 +2924,101 @@ const onColDrop = (empIdTarget) => async (e) => {
                   cursor: "pointer"
                 }}
                 title="Sakrij iz liste novih (ne briše termin)"
+              >
+                Sakrij
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+)}
+{/* ✅ Nova online otkazivanja (globalno) */}
+{cancelOpen && (
+  <div style={{
+    marginTop: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.15)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.71), rgba(255, 255, 255, 0.33))",
+    padding: 12,
+  }}>
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+      <div style={{ fontWeight: 800 }}>
+        Nova online otkazivanja{newCancels.length ? ` (${newCancels.length})` : ""}
+      </div>
+      {newCancels.length > 0 && (
+        <button
+          onClick={() => { setNewCancels([]); setUnseenCancelCount(0); }}
+          style={{
+            border: "1px solid rgba(255,255,255,.35)",
+            borderRadius: 10,
+            padding: "6px 10px",
+            fontWeight: 800,
+            background: "transparent",
+            color: "#fff",
+            cursor: "pointer"
+          }}
+          title="Očisti sve"
+        >
+          Očisti sve
+        </button>
+      )}
+    </div>
+
+    {newCancels.length === 0 ? (
+      <div style={{ opacity: 0.8 }}>Nema novih otkazivanja.</div>
+    ) : (
+      <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+        {newCancels.map(c => (
+          <li key={c.id} style={{
+            display:"flex", alignItems:"center", justifyContent:"space-between",
+            gap:8, padding:"6px 8px", borderRadius:8, margin:"6px 0",
+            background:"rgba(255,255,255,.04)"
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                {(c.clientName || "Nepoznat klijent")} {c.cancelledBy === "client" ? "(klijent)" : ""}
+              </div>
+              <div style={{ opacity:.9, fontSize:13 }}>
+                {c.dateKey} u {safeStartTime(c.startHHMM, c.startMin)}
+                {c.employeeName ? ` — kod ${c.employeeName}` : ""}
+              </div>
+              {c.reason ? <div style={{ fontSize: 12, opacity:.85 }}>{c.reason}</div> : null}
+            </div>
+
+            <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+              <button
+                onClick={() => {
+                  const appt = (schedAppts?.find?.(a => a.id === c.id)) || c;
+                  openApptModal(appt);
+                }}
+                style={{
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  fontWeight: 800,
+                  background: "linear-gradient(180deg,#ff5fa2,#ff3f8f)",
+                  color: "#fff",
+                  cursor: "pointer"
+                }}
+                title="Otvori termin"
+              >
+                Otvori
+              </button>
+
+              <button
+                onClick={() => setNewCancels(list => list.filter(x => x.id !== c.id))}
+                style={{
+                  border: "1px solid rgba(255,255,255,.35)",
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  fontWeight: 800,
+                  background: "transparent",
+                  color: "#fff",
+                  cursor: "pointer"
+                }}
+                title="Sakrij iz liste (ne briše termin)"
               >
                 Sakrij
               </button>
