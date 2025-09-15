@@ -408,6 +408,41 @@ async function applyPendingToEarliestAppt(db, phone, amount) {
         cancelledAt: new Date(),
         lateCancel,
       });
+      // 1b) NOTIF za otkazivanje — isti URL pattern i isti format startText kao kod "novi termin"
+try {
+  const dateText = new Intl.DateTimeFormat("sr-RS", {
+    weekday: "short", day: "2-digit", month: "short"
+  }).format(appt.dateObj);
+  const startText = `${dateText} ${appt.startHHMM}`;
+
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(window.location.origin);
+  const url = isLocal
+    ? "https://abeauty.im/api/notify-admins-cancelled-appointment"
+    : "/api/notify-admins-cancelled-appointment";
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      apptId: appt.id,
+      clientName: (user?.firstName || "").trim(),
+      clientPhone: user?.phone || "",
+      serviceName: appt.serviceName || "",
+      startText,
+      screen: "/admin/kalendar",
+      dateKey: appt.dateKey || "",
+      employeeId: appt.employeeId || "",
+      employeeName: appt.employeeName || "",
+      startMin: appt.startMin ?? "",
+    }),
+  });
+
+  const txt = await resp.text();
+  console.log("notify-cancelled response:", resp.status, txt);
+} catch (e) {
+  console.warn("Notify cancelled-appointment failed:", e);
+}
+
 
       // 2) Ako je <6h: transakcijski — upiši pending samo ako ne postoji,
       //    zatim pokušaj odmah da ga zakačiš na najbliži budući termin
