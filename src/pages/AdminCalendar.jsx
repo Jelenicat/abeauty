@@ -234,8 +234,21 @@ if (a.type === "block") {
   if (a.type === "break")    return "Pauza";
   if (a.type === "shift")    return "Smena";
 
-  const s = servicesById.get(a.serviceId);
-  const base = a.serviceName || s?.name || "Usluga";
+ const s = servicesById.get(a.serviceId);
+
+// probaj prvo da složiš nazive iz polja sa više usluga
+const multiNames =
+  (Array.isArray(a.services) && a.services.length)
+    ? a.services.map(x => x.name).join(", ")
+  : (Array.isArray(a.servicesInfo) && a.servicesInfo.length)
+    ? a.servicesInfo.map(x => x.name).join(", ")
+  : (Array.isArray(a.serviceIds) && a.serviceIds.length)
+    ? a.serviceIds.map(id => servicesById.get(id)?.name).filter(Boolean).join(", ")
+  : null;
+
+// fallback ako nema višestrukih polja
+const base = multiNames || a.serviceName || s?.name || "Usluga";
+
 
   const Badge = ({ children }) => (
     <span

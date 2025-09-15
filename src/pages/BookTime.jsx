@@ -107,6 +107,22 @@ export default function BookTime() {
   }, []);
 
   const [activeId, setActiveId] = useState(selectedServices[0]?.id || "");
+  const activeService = selectedServices.find(s => s.id === activeId) || selectedServices[0] || null;
+
+  // === Multi-select u istoj kategoriji (toggle, uključujući aktivnu) ===
+  const [togetherIds, setTogetherIds] = useState(() => new Set(activeService ? [activeService.id] : []));
+  useEffect(() => {
+    if (!activeService) { setTogetherIds(new Set()); return; }
+    setTogetherIds(prev => {
+      const n = new Set();
+      for (const id of prev) {
+        const srv = selectedServices.find(x => x.id === id);
+        if (srv && srv.categoryId === activeService.categoryId) n.add(id);
+      }
+      return n;
+    });
+  }, [activeService?.id, activeService?.categoryId, selectedServices]);
+
   const [monthAnchor, setMonthAnchor] = useState(ymStr(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => new Date());
   const [prefs, setPrefs] = useState(() => {
@@ -115,8 +131,23 @@ export default function BookTime() {
     return m;
   });
   const noServices = selectedServices.length === 0;
-  const activeService = selectedServices.find(s => s.id === activeId) || selectedServices[0] || null;
   const p = activeService ? (prefs.get(activeService.id) || { mode: "any", empId: "", booked: false }) : { mode: "any", empId: "", booked: false };
+
+  // === COMBO: ručno štiklirane usluge iz iste kategorije kao aktivna ===
+  const comboServices = useMemo(() => {
+    if (!activeService) return [];
+    return selectedServices.filter(s => togetherIds.has(s.id) && s.categoryId === activeService.categoryId);
+  }, [selectedServices, activeService, togetherIds]);
+
+  const totalDuration = useMemo(
+    () => comboServices.reduce((sum, s) => sum + Number(s.durationMin || 0), 0),
+    [comboServices]
+  );
+
+  const totalPrice = useMemo(
+    () => comboServices.reduce((sum, s) => sum + (finalPriceOf(s) || 0), 0),
+    [comboServices]
+  );
 
   const eligible = useMemo(() => {
     if (!activeService) return [];
@@ -132,7 +163,7 @@ export default function BookTime() {
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState(false);
 
-  /* ------------ FIX: load kao useCallback + debounce useEffect ------------ */
+  /* ------------ Učitavanje slotova (zbirno trajanje grupe) ------------ */
   const load = useCallback(async () => {
     if (!activeService) {
       setSlotsByEmp(new Map());
@@ -153,7 +184,6 @@ export default function BookTime() {
     for (let i = 0; i < empIds.length; i += 10) chunks.push(empIds.slice(i, i + 10));
 
     try {
-      // 1) Paralelno povuci SVE smene i SVE termine za taj dan (u chunkovima po 10)
       const [shiftSnaps, apptSnaps] = await Promise.all([
         Promise.all(chunks.map(ids =>
           getDocs(query(
@@ -171,7 +201,6 @@ export default function BookTime() {
         )),
       ]);
 
-      // 2) Mape: segmente smena i zauzeća po radnici
       const segsByEmp = new Map();
       shiftSnaps.flat().forEach(s => {
         s.docs.forEach(d => {
@@ -198,13 +227,11 @@ export default function BookTime() {
         });
       });
 
-      // 3) Fallback: ako nema smene, koristi radno vreme salona za taj DOW
       const dowKey = DOW[selectedDay.getDay()];
       const h = salonHours[dowKey] || DEFAULT_SALON_HOURS[dowKey];
       const defaultSeg = [{ start: h.open, end: h.close }];
 
-      // 4) Izračunaj slotove za sve radnice
-      const duration = Number(activeService?.durationMin || 0);
+      const duration = Number(totalDuration || activeService?.durationMin || 0);
       const map = new Map();
       for (const id of empIds) {
         const segments = (segsByEmp.get(id) || defaultSeg);
@@ -217,13 +244,10 @@ export default function BookTime() {
     } finally {
       setLoading(false);
     }
-  }, [activeService, eligible, salonHours, selectedDay]);
+  }, [activeService, eligible, salonHours, selectedDay, totalDuration]);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      load();
-    }, 180); // debounce ~180ms
-
+    const t = setTimeout(() => { load(); }, 180);
     return () => clearTimeout(t);
   }, [load]);
 
@@ -250,12 +274,37 @@ export default function BookTime() {
     return base;
   }, [p.mode, p.empId, slotsByEmp, combined, selectedDay]);
 
+  // Klik na chip usluge:
+  // - druga kategorija: aktivna = ta usluga; selekcija postaje samo ta
+  // - ista kategorija: toggle ZA SVAKU (uključujući aktivnu)
+  const onServiceChipClick = (s) => {
+    if (!activeService || s.categoryId !== activeService.categoryId) {
+      setActiveId(s.id);
+      setTogetherIds(new Set([s.id]));
+      return;
+    }
+    setTogetherIds(prev => {
+      const n = new Set(prev);
+      if (n.has(s.id)) n.delete(s.id); else n.add(s.id);
+      selectedServices.forEach(x => { if (x.categoryId !== activeService.categoryId) n.delete(x.id); });
+      return n;
+    });
+  };
+
   const [confirmData, setConfirmData] = useState(null);
   function askConfirm(slot) {
     if (!user) return alert("Prijavi se da bi rezervisao.");
     if (p.mode === "specific" && !p.empId) return alert("Odaberi radnicu.");
+    if (!comboServices.length) return alert("Odaberi bar jednu uslugu iz ove kategorije.");
     const emp = employees.find((e) => e.id === slot.employeeId);
-    setConfirmData({ slot, emp, service: activeService, date: new Date(selectedDay) });
+    setConfirmData({
+      slot,
+      emp,
+      services: comboServices,
+      totalDuration,
+      totalPrice,
+      date: new Date(selectedDay)
+    });
     try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {}
   }
 
@@ -282,65 +331,104 @@ export default function BookTime() {
         return;
       }
 
-      const docRef = await addDoc(collection(db, "appointments"), {
+      const namesJoined = comboServices.map(s => s.name).join(" + ");
+
+      // legacy polja (da AdminCalendar bez izmena vidi sve stavke)
+      const serviceIdsLegacy = comboServices.map(s => s.id);
+      const servicesInfoLegacy = comboServices.map(s => ({
+        id: s.id,
+        name: s.name,
+        durationMin: Number(s.durationMin || 0),
+        price: finalPriceOf(s) ?? null,
+        ...(s.color ? { color: s.color } : {}),
+      }));
+
+      const payload = {
         type: "booking",
         status: "booked",
-        manual: false, 
+        manual: false,
+
         employeeId: emp.id,
         employeeName: emp.name || "",
+
         dateKey: dk,
         startHHMM: minToTime(slot.startMin),
         endHHMM: minToTime(slot.endMin),
         startMin: slot.startMin,
         endMin: slot.endMin,
-        durationMin: Number(activeService?.durationMin || 0),
-        serviceId: activeService?.id,
-        serviceName: activeService?.name,
-        price: finalPriceOf(activeService) ?? null,
+
+        // === legacy + modern ===
+        serviceIds: serviceIdsLegacy,
+        servicesInfo: servicesInfoLegacy,
+        services: servicesInfoLegacy,
+
+        // ukupno trajanje i cena
+        durationMin: Number(totalDuration || 0),
+        totalPrice: totalPrice || null,
+
+        // kompatibilnost
+        serviceId: comboServices[0]?.id || activeService?.id,
+        serviceName: namesJoined || activeService?.name,
+        price: totalPrice || finalPriceOf(activeService) || null,
+
         clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
         clientPhone: user?.phone || "",
+
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        ...(activeService?.color ? { color: activeService.color } : {}),
-      });
 
-      // === admin push notifikacija ===
-      try {
-        const dateText = new Intl.DateTimeFormat("sr-RS", {
-          weekday: "short", day: "2-digit", month: "short"
-        }).format(selectedDay);
-        const timeText = minToTime(slot.startMin);
+        ...(comboServices[0]?.color ? { color: comboServices[0].color } : {}),
+      };
 
-        const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(window.location.origin);
-        const url = isLocal
-          ? "https://abeauty.im/api/notify-admins-new-appointment"
-          : "/api/notify-admins-new-appointment";
+      const docRef = await addDoc(collection(db, "appointments"), payload);
 
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
-            clientPhone: user?.phone || "",
-            serviceName: activeService?.name || "",
-            startText: `${dateText} ${timeText}`,
-            screen: "/admin/kalendar",
-            dateKey: dk,
-            employeeId: emp.id,
-            employeeName: emp.name || "",
-            startMin: slot.startMin,
-            apptId: docRef.id
-          }),
-        });
+// === admin push notifikacija ===
+try {
+  const dateText = new Intl.DateTimeFormat("sr-RS", {
+    weekday: "short", day: "2-digit", month: "short"
+  }).format(selectedDay);
+  const timeText = minToTime(slot.startMin);
 
-        const txt = await resp.text();
-        console.log("notify-admins response:", resp.status, txt);
-      } catch (e) {
-        console.warn("Slanje admin notifikacije nije uspelo:", e);
-      }
+  // kao pre: ako si na localhostu, gađa produkcijski URL;
+  // u produkciji koristi relativni
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(window.location.origin);
+  const url = isLocal
+    ? "https://abeauty.im/api/notify-admins-new-appointment"
+    : "/api/notify-admins-new-appointment";
 
-      const nextSelected = selectedServices.filter((x) => x.id !== activeService.id);
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clientName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+      clientPhone: user?.phone || "",
+      serviceName: namesJoined || activeService?.name || "",
+      startText: `${dateText} ${timeText}`,
+      screen: "/admin/kalendar",
+      dateKey: dk,
+      employeeId: emp.id,
+      employeeName: emp.name || "",
+      startMin: slot.startMin,
+      apptId: docRef.id
+    }),
+  });
+
+  const txt = await resp.text();
+  console.log("notify-admins response:", resp.status, txt);
+} catch (e) {
+  console.warn("Slanje admin notifikacije nije uspelo:", e);
+}
+
+
+
+
+
+      // Ukloni iz korpe samo izabranu grupu
+      const idsToRemove = new Set(comboServices.map(s => s.id));
+      const nextSelected = selectedServices.filter(x => !idsToRemove.has(x.id));
+
       if (typeof setSelectedServices === "function") setSelectedServices(() => nextSelected);
+
       if (nextSelected.length) {
         setActiveId(nextSelected[0].id);
         alert("Termin je uspešno zakazan ❤️");
@@ -360,7 +448,6 @@ export default function BookTime() {
 
   /* ===================== RENDER ===================== */
   if (isMobile) {
-    // **** MOBILNI – NE DIRAMO ****
     return (
       <div style={wrap(true)}>
         <div style={panel(true)}>
@@ -379,9 +466,18 @@ export default function BookTime() {
                 {selectedServices.map((s) => {
                   const booked = prefs.get(s.id)?.booked;
                   const active = s.id === activeService.id;
+                  const selected = togetherIds.has(s.id);
+                  const dimmed = !!activeService && s.categoryId !== activeService.categoryId;
                   return (
-                    <button key={s.id} onClick={() => setActiveId(s.id)} style={srvItemMobile(active, booked)} type="button">
-                      <div style={{ fontWeight: 900 }}>{s.name}</div>
+                    <button
+                      key={s.id}
+                      onClick={() => onServiceChipClick(s)}
+                      style={srvItemMobile(active, booked, selected, dimmed)}
+                      type="button"
+                    >
+                      <div style={{ fontWeight: 900 }}>
+                        {selected && s.id !== activeService.id ? "✓ " : ""}{s.name}
+                      </div>
                       <div style={{ fontSize: 12, opacity: 0.85 }}>
                         {Number(s.durationMin || 0)} min {finalPriceOf(s) != null && <>• {money(finalPriceOf(s))}</>}
                       </div>
@@ -419,6 +515,12 @@ export default function BookTime() {
                   mobile
                 />
               )}
+
+              <TotalsCard
+                names={comboServices.map(s => s.name)}
+                totalDuration={totalDuration}
+                totalPrice={totalPrice}
+              />
 
               <div style={pillsGridMobile}>
                 {loading ? (
@@ -459,7 +561,7 @@ export default function BookTime() {
     );
   }
 
-  // **** DESKTOP / LAPTOP – ŠIROK, VERTIKALNI LAYOUT ****
+  // **** DESKTOP / LAPTOP ****
   return (
     <div style={wrap(false)}>
       <div style={panel(false)}>
@@ -474,20 +576,24 @@ export default function BookTime() {
           </>
         ) : (
           <>
-            {/* (1) USLUGE – traka iznad svega, celom širinom */}
+            {/* (1) USLUGE – traka iznad svega */}
             <div style={servicesBar}>
               {selectedServices.map((s) => {
                 const booked = prefs.get(s.id)?.booked;
                 const active = s.id === activeService.id;
+                const selected = togetherIds.has(s.id);
+                const dimmed = !!activeService && s.categoryId !== activeService.categoryId;
                 return (
                   <button
                     key={s.id}
-                    onClick={() => setActiveId(s.id)}
+                    onClick={() => onServiceChipClick(s)}
                     type="button"
                     title={s.name}
-                    style={serviceChip(active, booked)}
+                    style={serviceChip(active, booked, selected, dimmed)}
                   >
-                    <div style={{ fontWeight: 900, lineHeight: 1.25 }}>{s.name}</div>
+                    <div style={{ fontWeight: 900, lineHeight: 1.25 }}>
+                      {selected && s.id !== activeService.id ? "✓ " : ""}{s.name}
+                    </div>
                     <div style={{ fontSize: 12, opacity: 0.85 }}>
                       {Number(s.durationMin || 0)} min {finalPriceOf(s) != null && <>• {money(finalPriceOf(s))}</>}
                     </div>
@@ -496,14 +602,16 @@ export default function BookTime() {
               })}
             </div>
 
-            {/* (2) INFO + KONTROLE – puna širina */}
+            {/* (2) INFO + KONTROLE */}
             <div style={controlsRow}>
               <div>
-                <div style={{ fontSize: 12, opacity: 0.9, color: "#fff" }}>Usluga</div>
-                <div style={{ fontWeight: 900, color: "#fff", fontSize: 20 }}>{activeService.name}</div>
+                <div style={{ fontSize: 12, opacity: 0.9, color: "#fff" }}>Usluge</div>
+                <div style={{ fontWeight: 900, color: "#fff", fontSize: 20 }}>
+                  {comboServices.length ? comboServices.map(s => s.name).join(" + ") : (activeService?.name || "")}
+                </div>
                 <div style={{ fontSize: 13, opacity: 0.9, color: "#fff" }}>
-                  Trajanje: <b>{Number(activeService.durationMin || 0)} min</b>
-                  {finalPriceOf(activeService) != null && <> • Cena: <b>{money(finalPriceOf(activeService))}</b></>}
+                  Trajanje: <b>{Number(totalDuration || activeService?.durationMin || 0)} min</b>
+                  {totalPrice ? <> • Cena: <b>{money(totalPrice)}</b></> : (finalPriceOf(activeService) != null ? <> • Cena: <b>{money(finalPriceOf(activeService))}</b></> : null)}
                 </div>
               </div>
 
@@ -533,10 +641,10 @@ export default function BookTime() {
               </div>
             </div>
 
-            {/* (3) TRAKA DATUMA – puna širina */}
+            {/* (3) TRAKA DATUMA */}
             <DateStrip selectedDay={selectedDay} onSelect={setSelectedDay} />
 
-            {/* (4) RADNICE – samo kad je specific */}
+            {/* (4) RADNICE – samo kad je "specific" */}
             {p.mode === "specific" && (
               <StylistsStrip
                 employees={eligible}
@@ -545,7 +653,14 @@ export default function BookTime() {
               />
             )}
 
-            {/* (5) TERMINI – MREŽA PREKO CELE ŠIRINE */}
+            {/* (5) ZBIRNI INFO */}
+            <TotalsCard
+              names={comboServices.map(s => s.name)}
+              totalDuration={totalDuration}
+              totalPrice={totalPrice}
+            />
+
+            {/* (6) TERMINI */}
             <div style={pillsGridDesktop}>
               {loading ? (
                 <div style={{ color: "#fff", opacity: 0.9 }}>Učitavam…</div>
@@ -615,6 +730,28 @@ function DateStrip({ selectedDay, onSelect }) {
   );
 }
 
+function TotalsCard({ names, totalDuration, totalPrice }) {
+  if (!names?.length) return null;
+  return (
+    <div style={{
+      margin: "8px 0 12px",
+      background: "rgba(255,255,255,.18)",
+      border: "1px solid rgba(255,255,255,.35)",
+      borderRadius: 14,
+      padding: "10px 12px",
+      color: "#fff",
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 12,
+      alignItems: "center"
+    }}>
+      <div><b>Izabrano:</b> {names.join(" + ")}</div>
+      <div><b>Trajanje:</b> {Number(totalDuration || 0)} min</div>
+      {totalPrice ? <div><b>Cena:</b> {money(totalPrice)}</div> : null}
+    </div>
+  );
+}
+
 function ModeToggle({ mode, onChange }) {
   return (
     <div style={toggleRow}>
@@ -626,10 +763,9 @@ function ModeToggle({ mode, onChange }) {
 
 function StylistsStrip({ employees, selectedId, onSelect, mobile = false }) {
   if (!employees?.length) return <div style={{ color: "#fff", opacity: 0.85, padding: 8 }}>Nema radnica za ovu uslugu/kategoriju.</div>;
-  const AV = mobile ? 110 : 130;  // slike baš velike
-  const GAP = mobile ? 4 : 4;     // najmanji razmak
+  const AV = mobile ? 110 : 130;
+  const GAP = mobile ? 4 : 4;
   const MINW = mobile ? 110 : 130;
-
   const PAD = mobile ? 4 : 8;
 
   const stripWrapLocal = { display: "grid", gridTemplateColumns: "36px 1fr 36px", alignItems: "center", gap: GAP, margin: "6px 0 10px" };
@@ -666,15 +802,17 @@ function StylistsStrip({ employees, selectedId, onSelect, mobile = false }) {
 /* =============== MODAL =============== */
 function ConfirmModal({ data, onCancel, onConfirm }) {
   if (!data) return null;
-  const { slot, emp, service, date } = data;
+  const { slot, emp, services, totalDuration, totalPrice, date } = data;
   const dateStr = new Intl.DateTimeFormat("sr-RS", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(date);
   return (
     <div style={modalOverlayTop}>
       <div style={modalBox}>
         <h3 style={{ marginTop: 0, marginBottom: 12 }}>Potvrdi rezervaciju</h3>
-        <div style={modalRow}><b>Usluga:</b> {service.name}{finalPriceOf(service) != null ? ` (${money(finalPriceOf(service))})` : ""}</div>
+        <div style={modalRow}><b>Usluge:</b> {services.map(s => s.name).join(", ")}</div>
+        <div style={modalRow}><b>Ukupno trajanje:</b> {Number(totalDuration || 0)} min</div>
+        {totalPrice ? <div style={modalRow}><b>Ukupna cena:</b> {money(totalPrice)}</div> : null}
         <div style={modalRow}><b>Datum:</b> {dateStr}</div>
-        <div style={modalRow}><b>Vreme:</b> {minToTime(slot.startMin)}</div>
+        <div style={modalRow}><b>Početak:</b> {minToTime(slot.startMin)}</div>
         <div style={modalRow}><b>Radnica:</b> {emp?.name || "Radnica"}</div>
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <button style={btnCancel} onClick={onCancel}>Otkaži</button>
@@ -716,17 +854,45 @@ const servicesBar = {
   overflowX: "auto",
   paddingBottom: 4,
 };
-const serviceChip = (active, booked) => ({
-  textAlign: "left",
-  padding: 16,
-  borderRadius: 14,
-  border: active ? "none" : "1px solid rgba(255,255,255,.35)",
-  background: active ? "linear-gradient(135deg,#ff5fa2,#ff7fb5)" : "rgba(255,255,255,.15)",
-  color: "#fff",
-  boxShadow: active ? "0 8px 20px rgba(255,127,181,.28)" : "none",
-  cursor: "pointer",
-  outline: booked ? "2px solid rgba(26,127,60,.6)" : "none",
-});
+const serviceChip = (active, booked, selected, dimmed) => {
+  const base = {
+    textAlign: "left",
+    padding: 16,
+    borderRadius: 14,
+    color: "#fff",
+    cursor: "pointer",
+    transition: "transform .12s ease, box-shadow .12s ease, opacity .12s ease",
+  };
+
+  let background, border, boxShadow, opacity = 1;
+
+  if (active) {
+    background = "linear-gradient(135deg,#ff4f98,#ff7fb5)";
+    border = "none";
+    boxShadow = "0 8px 20px rgba(255,127,181,.28)";
+  } else if (selected) {
+    background = "linear-gradient(135deg,#7a1f4a,#a02f62)";
+    border = "1px solid rgba(255,255,255,.35)";
+    boxShadow = "0 8px 20px rgba(160,47,98,.35)";
+  } else if (dimmed) {
+    background = "rgba(255,255,255,.12)";
+    border = "1px solid rgba(255,255,255,.20)";
+    opacity = 0.65;
+  } else {
+    background = "rgba(255,255,255,.15)";
+    border = "1px solid rgba(255,255,255,.35)";
+    boxShadow = "none";
+  }
+
+  return {
+    ...base,
+    background,
+    border,
+    boxShadow,
+    outline: booked ? "2px solid rgba(26,127,60,.6)" : "none",
+    opacity,
+  };
+};
 
 /* controls row */
 const controlsRow = {
@@ -741,7 +907,6 @@ const inp = {
   height: 42, borderRadius: 10, border: "1px solid #e8e8e8", background: "#fff",
   padding: "0 12px", fontSize: 14, color: "#222", width: "100%",
 };
-// mobilni month <input> stil
 const inpMobile = {
   height: 36,
   borderRadius: 12,
@@ -754,7 +919,6 @@ const inpMobile = {
   maxWidth: "50vw",
   alignSelf: "start",
 };
-
 
 /* date strip */
 const stripWrap = { display: "grid", gridTemplateColumns: "36px 1fr 36px", alignItems: "center", gap: 8, margin: "6px 0 8px" };
@@ -777,7 +941,7 @@ const modeBtn = (active) => ({
   fontWeight: 800, cursor: "pointer", color: "#000",
 });
 
-/* pills – DESKTOP full width */
+/* pills – DESKTOP */
 const pillsGridDesktop = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))",
@@ -796,7 +960,7 @@ const pillBtnDesktop = {
   boxShadow: "0 6px 16px rgba(0,0,0,.08)",
 };
 
-/* pills – mobile (ostaje isto) */
+/* pills – mobile */
 const pillsGridMobile = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 };
 const pillBtnMobile = {
   padding: "12px 10px", borderRadius: 999, border: "1px solid #efcddc",
@@ -805,13 +969,41 @@ const pillBtnMobile = {
 };
 const emptyMsg = { gridColumn: "1 / -1", textAlign: "center", color: "#fff", opacity: 0.9, fontSize: 15, fontWeight: 600, padding: "12px 8px" };
 
-/* mobile services list (isti kao ranije) */
+/* mobile services list */
 const mobileServicesCol = { display: "grid", gridTemplateColumns: "1fr", gap: 8, marginBottom: 8 };
-const srvItemMobile = (active) => ({
-  textAlign: "left", padding: 12, borderRadius: 14, border: active ? "2px solid #ffc0d6" : "1px solid rgba(255,255,255,.35)",
-  background: "rgba(255,255,255,.92)", color: "#222",
-  boxShadow: active ? "0 8px 20px rgba(0,0,0,.12)" : "0 3px 10px rgba(0,0,0,.08)", cursor: "pointer",
-});
+const srvItemMobile = (active, _booked, selected, dimmed) => {
+  let background = "rgba(255,255,255,.92)";
+  let color = "#222";
+  let border = "1px solid rgba(255,255,255,.35)";
+  let boxShadow = "0 3px 10px rgba(0,0,0,.08)";
+  let opacity = 1;
+
+  if (selected) {
+    background = "linear-gradient(135deg,#7a1f4a,#a02f62)";
+    color = "#fff";
+    border = "2px solid #ffb6d0";
+    boxShadow = "0 8px 20px rgba(160,47,98,.25)";
+  }
+  if (active) {
+    border = "2px solid #ffc0d6";
+  }
+  if (dimmed && !selected) {
+    opacity = 0.75;
+  }
+
+  return {
+    textAlign: "left",
+    padding: 12,
+    borderRadius: 14,
+    background,
+    color,
+    border,
+    boxShadow,
+    cursor: "pointer",
+    transition: "transform .12s ease, box-shadow .12s ease, opacity .12s ease",
+    opacity,
+  };
+};
 
 /* modal */
 const modalOverlayTop = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", justifyContent: "center", alignItems: "flex-start", paddingTop: 28, zIndex: 999 };
