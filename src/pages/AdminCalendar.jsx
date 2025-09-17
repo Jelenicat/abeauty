@@ -94,6 +94,22 @@ function getServicePrice(srv) {
   const final = base * (1 - disc / 100);
   return Math.round(final);
 }
+// formatiranje cancelledAt (datum + vreme)
+const ymd = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+
+const hhmm = (d) =>
+  `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(
+    2,
+    "0"
+  )}`;
+
+const fmtCancelledAt = (ts) => {
+  const d = ts?.toDate?.();
+  return d ? `${ymd(d)} u ${hhmm(d)}` : "";
+};
 
 
 /* -------------------- component -------------------- */
@@ -2896,10 +2912,24 @@ const onColDrop = (empIdTarget) => async (e) => {
               <div style={{ fontWeight: 700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                 {nb.clientName || "Nepoznat klijent"}
               </div>
-              <div style={{ opacity: .9, fontSize: 13 }}>
-                {nb.dateKey} u {safeStartTime(nb.startHHMM, nb.startMin)}
-                {nb.employeeName ? ` — kod ${nb.employeeName}` : ""}
-              </div>
+             <div style={{ opacity: .9, fontSize: 13 }}>
+  {nb.dateKey} u {safeStartTime(nb.startHHMM, nb.startMin)}
+  {nb.employeeName ? ` — kod ${nb.employeeName}` : ""}
+  {nb.createdAt?.toDate?.() && (
+    <span style={{ marginLeft: 8, opacity: .8 }}>
+      • zakazano {nb.createdAt
+        .toDate()
+        .toLocaleString("sr-RS", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+    </span>
+  )}
+</div>
+
             </div>
 
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -2989,16 +3019,43 @@ const onColDrop = (empIdTarget) => async (e) => {
             gap:8, padding:"6px 8px", borderRadius:8, margin:"6px 0",
             background:"rgba(255,255,255,.04)"
           }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                {(c.clientName || "Nepoznat klijent")} {c.cancelledBy === "client" ? "(klijent)" : ""}
-              </div>
-              <div style={{ opacity:.9, fontSize:13 }}>
-                {c.dateKey} u {safeStartTime(c.startHHMM, c.startMin)}
-                {c.employeeName ? ` — kod ${c.employeeName}` : ""}
-              </div>
-              {c.reason ? <div style={{ fontSize: 12, opacity:.85 }}>{c.reason}</div> : null}
-            </div>
+       <div style={{ minWidth: 0 }}>
+  <div
+    style={{
+      fontWeight: 700,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    }}
+  >
+    {(c.clientName || "Nepoznat klijent")}{" "}
+    {c.cancelledBy === "client" ? "(klijent)" : ""}
+  </div>
+
+<div style={{ opacity: 0.9, fontSize: 13 }}>
+  {c.dateKey} u {safeStartTime(c.startHHMM, c.startMin)}
+  {c.employeeName ? ` — kod ${c.employeeName}` : ""}
+  {c.cancelledAt?.toDate?.() && (
+    <span style={{ marginLeft: 8, opacity: 0.8 }}>
+      • otkazano {c.cancelledAt
+        .toDate()
+        .toLocaleString("sr-RS", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+    </span>
+  )}
+</div>
+
+
+  {c.reason ? (
+    <div style={{ fontSize: 12, opacity: 0.85 }}>{c.reason}</div>
+  ) : null}
+</div>
+
 
             <div style={{ display:"flex", gap:8, flexShrink:0 }}>
               <button
@@ -3094,6 +3151,19 @@ const onColDrop = (empIdTarget) => async (e) => {
                     "nepoznato"
                   }`}
                 </div>
+                {b.createdAt?.toDate?.() && (
+  <div style={{ opacity: 0.85, fontSize: 12 }}>
+    • zakazano {b.createdAt
+      .toDate()
+      .toLocaleString("sr-RS", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })}
+  </div>
+)}
                 <div style={{ opacity: 0.9 }}>
                   {b.serviceName ||
                     (Array.isArray(b.servicesInfo) &&
