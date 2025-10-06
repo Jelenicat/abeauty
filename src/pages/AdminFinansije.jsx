@@ -156,8 +156,55 @@ export default function AdminFinansije() {
     return Number(a.basePrice ?? 0);
   }
 
+  /* =====================================================
+     FALLBACK META O RADNICI — ime iz termina kad je obrisana
+     ===================================================== */
+  const empIndex = useMemo(() => {
+    const m = new Map();
+    for (const e of employees) m.set(e.id, e);
+    return m;
+  }, [employees]);
+
+  function slugifyName(x="") {
+    return x.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^a-z0-9\-]/g, "");
+  }
+
+  /**
+   * Vrati meta-info o radnici za dati termin:
+   * - Ako postoji employeeId i radnica u bazi => (id, name iz employees)
+   * - Ako postoji employeeId, ali radnica obrisana => (id = employeeId, name iz termina)
+   * - Ako nema employeeId, ali u terminu postoji employeeName => synthetic "legacy:<slug>"
+   * - U suprotnom => (id="unknown", name="Bez imena")
+   */
+  function empOfAppointment(a){
+    const apptName = (a.employeeName || "").trim();
+    const eid = (a.employeeId || "").trim();
+
+    if (eid) {
+      const emp = empIndex.get(eid);
+      return {
+        id: eid,
+        name: (emp?.name || apptName || "Bez imena").trim(),
+        isReal: !!emp,
+        isLegacy: !emp && !!apptName
+      };
+    }
+
+    if (apptName) {
+      return {
+        id: `legacy:${slugifyName(apptName)}`,
+        name: apptName,
+        isReal: false,
+        isLegacy: true
+      };
+    }
+
+    return { id: "unknown", name: "Bez imena", isReal: false, isLegacy: false };
+  }
+
   /* =========================
      DEDUPE HELPERI — spreči duple termine u obračunu
+     (koristi empOfAppointment da bismo imali stabilan ključ i za legacy)
      ========================= */
   function normStr(x) {
     return String(x || "").trim().toLowerCase();
@@ -192,7 +239,7 @@ export default function AdminFinansije() {
   }
   function dedupeKey(a) {
     const { dateKey, startHHMM } = extractDateAndTime(a);
-    const emp = String(a.employeeId || "unknown");
+    const emp = empOfAppointment(a).id || "unknown";
     return [emp, dateKey, startHHMM, clientKeyOf(a), serviceKeyOf(a)].join("|");
   }
   function dedupeAppointments(arr = []) {
@@ -237,7 +284,7 @@ export default function AdminFinansije() {
   // ⚠️ DEDUPE: isti (radnica + datum + vreme + klijent + usluga) računa se kao jedan
   const monthAppointmentsDeduped = useMemo(() => {
     return dedupeAppointments(monthAppointments);
-  }, [monthAppointments]);
+  }, [monthAppointments, empIndex]); // zavisi i od empIndex jer dedupeKey koristi empOfAppointment
 
   // ukupni prihod (bruto)
   const revenue = useMemo(() => {
@@ -249,22 +296,29 @@ export default function AdminFinansije() {
 
   const net = useMemo(() => revenue - costsSum, [revenue, costsSum]);
 
-  // --- zarada po radnici (bruto po radnici)
+  // --- zarada po radnici (bruto po radnici) sa fallback imenom iz termina
   const earningsByEmployee = useMemo(() => {
-    const m = new Map();
+    const m = new Map(); // key=emp.id, value={ total, name, isReal, isLegacy }
     for (const a of monthAppointmentsDeduped) {
-      const eid = a.employeeId || "unknown";
+      const emp = empOfAppointment(a);
       const v = amountForAppt(a);
-      m.set(eid, (m.get(eid) || 0) + (isFinite(v) ? v : 0));
+      const cur = m.get(emp.id) || { total: 0, name: emp.name, isReal: emp.isReal, isLegacy: emp.isLegacy };
+      cur.total += (isFinite(v) ? v : 0);
+      if (!cur.name && emp.name) cur.name = emp.name;
+      cur.isReal = cur.isReal || emp.isReal;
+      cur.isLegacy = cur.isLegacy || emp.isLegacy;
+      m.set(emp.id, cur);
     }
-    const list = [];
-    for (const [eid, total] of m) {
-      const emp = employees.find(e => e.id === eid);
-      list.push({ employeeId: eid, name: emp?.name || "Bez imena", total });
-    }
+    const list = Array.from(m.entries()).map(([employeeId, v]) => ({
+      employeeId,
+      name: v.name || "Bez imena",
+      total: v.total,
+      isReal: v.isReal,
+      isLegacy: v.isLegacy
+    }));
     list.sort((a,b)=> b.total - a.total || a.name.localeCompare(b.name));
     return list;
-  }, [monthAppointmentsDeduped, employees]);
+  }, [monthAppointmentsDeduped, empIndex]);
 
   // --- termini grupisani po radnici (+ sortirani) + tačne cene i imena svih usluga
   const apptsByEmployee = useMemo(() => {
@@ -284,18 +338,24 @@ export default function AdminFinansije() {
         ? a.servicesInfo.map(s => s.name).join(", ")
         : (a.serviceName || "Usluga");
 
-      return { ...a, _dateKey: d, _sh: sh, _eh: eh, _amount: price, _serviceNames: serviceNames };
+      const emp = empOfAppointment(a);
+
+      return {
+        ...a,
+        _dateKey: d, _sh: sh, _eh: eh, _amount: price, _serviceNames: serviceNames,
+        _empId: emp.id, _empName: emp.name, _empIsReal: emp.isReal, _empIsLegacy: emp.isLegacy
+      };
     };
     for (const a of monthAppointmentsDeduped) {
-      const eid = a.employeeId || "unknown";
-      if (!m.has(eid)) m.set(eid, []);
-      m.get(eid).push(norm(a));
+      const na = norm(a);
+      if (!m.has(na._empId)) m.set(na._empId, []);
+      m.get(na._empId).push(na);
     }
     for (const [eid, arr] of m) {
       arr.sort((x,y) => (x._dateKey||"").localeCompare(y._dateKey||"") || (x._sh||"").localeCompare(y._sh||""));
     }
     return m;
-  }, [monthAppointmentsDeduped]);
+  }, [monthAppointmentsDeduped, empIndex]);
 
   // ===== Akcije: troškovi =====
   async function addTemplate(e) {
@@ -350,7 +410,7 @@ export default function AdminFinansije() {
   async function saveCommissionPct(empId) {
     try {
       const pct = Number(commissionByEmp[empId] || 0);
-      // ako radnica ne postoji (npr. "unknown"), preskoči
+      // ako radnica ne postoji u employees (ili je legacy/unknown), preskoči
       const exists = employees.some(e => e.id === empId);
       if (!exists) return;
       await updateDoc(doc(db, "employees", empId), {
@@ -509,7 +569,8 @@ export default function AdminFinansije() {
               {earningsByEmployee.map(r => {
                 const isOpen = open.has(r.employeeId);
                 const appts = apptsByEmployee.get(r.employeeId) || [];
-                const isRealEmp = employees.some(e => e.id === r.employeeId);
+                const isRealEmp = !!r.isReal;
+                const isLegacy  = !!r.isLegacy;
 
                 const handleKeyToggle = (e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -532,13 +593,20 @@ export default function AdminFinansije() {
                       onKeyDown={handleKeyToggle}
                       title="Prikaži termine"
                     >
-                      <div className="fin-item-name">{r.name}</div>
+                      <div className="fin-item-name">
+                        {r.name}
+                        {!isRealEmp && (
+                          <span title="Radnica ne postoji u employees (ime iz termina)" style={{marginLeft:8, fontSize:12, color:"#999"}}>
+                            • iz termina
+                          </span>
+                        )}
+                      </div>
 
                       <div className="fin-item-right">
                         {/* Ukupna zarada */}
                         <div className="fin-item-amount">{r.total.toLocaleString()} RSD</div>
 
-                        {/* Kontrole za procenat + izračun */}
+                        {/* Kontrole za procenat + izračun (samo ako postoji u employees) */}
                         {isRealEmp && (
                           <div
                             onClick={(e) => e.stopPropagation()}
