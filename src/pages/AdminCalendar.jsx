@@ -20,7 +20,7 @@ import {
   deleteField,
 } from "firebase/firestore";
 import { runTransaction, writeBatch, increment, getDocs } from "firebase/firestore";
-
+import ClientStatsPrompt from "../partials/ClientStatsPrompt";
 
 import {
   FiCalendar,
@@ -825,6 +825,7 @@ const isBlock   = mode === "block";
 const showModeFields = !isMobile || !!mode;
 
 const [showBlockDaysUI, setShowBlockDaysUI] = useState(false);
+
 
 
   // meta
@@ -5540,6 +5541,7 @@ function ApptModal({
   const [endHHMM, setEndHHMM] = React.useState(initialEnd);
   const [endTouched, setEndTouched] = React.useState(false);   // user menjao kraj?
   const [priceDirty, setPriceDirty] = React.useState(false);   // user menjao cenu?
+const [showClientStats, setShowClientStats] = React.useState(false);
 
   // Datum
   const [editDateStr, setEditDateStr] = React.useState(
@@ -6095,6 +6097,22 @@ if (!priceDirty) {
             >
               <FiSave /> Sačuvaj
             </button>
+                {/* ⬇️ NOVO: dugme Klijent (pored Sačuvaj) */}
+    {(editClientPhone || appt?.clientPhone || editClientName || appt?.clientName) && (
+      <button
+        type="button"
+        onClick={() => setShowClientStats(true)}
+        title="Istorija klijenta"
+        style={{
+          ...styles.actionBtn,
+          background:"#fff",
+          color:"#444",
+          border:"1px solid #ddd6cc"
+        }}
+      >
+        <FiUser /> Klijent
+      </button>
+    )}
           </div>
         </div>
       </div>
@@ -6126,6 +6144,13 @@ if (!priceDirty) {
             </div>
           </div>
         </div>
+      )}
+       {showClientStats && (
+        <ClientStatsPrompt
+          phone={(editClientPhone || appt?.clientPhone || "").trim()}
+          name={(editClientName  || appt?.clientName  || "").trim()}
+          onClose={() => setShowClientStats(false)}
+        />
       )}
     </div>
   );
