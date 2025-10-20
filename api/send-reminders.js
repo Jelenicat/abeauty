@@ -114,13 +114,68 @@ async function getAppointmentsForTomorrow() {
     const a = doc.data();
     out.push({
       clientPhone: a.clientPhone,
-      serviceName: a.serviceName,
+      serviceName: a.serviceName, // zadržano (ne koristimo u poruci, ali ne kvari kompatibilnost)
       employeeName: a.employeeName,
       startHHMM: a.startHHMM,
       dateKey: a.dateKey,
+
+      // ⬇️ dodato: biće nam potrebno za kategorije
+      serviceId: a.serviceId || null,
+      serviceIds: Array.isArray(a.serviceIds) ? a.serviceIds : (a.serviceId ? [a.serviceId] : []),
     });
   });
   return out;
+}
+
+/* ---------- Mapiranja: categories & services ---------- */
+
+// Učitaj sve kategorije: id -> name
+async function loadCategoryNames(fs) {
+  const snap = await fs.collection('categories').get();
+  const byId = {};
+  snap.forEach(d => {
+    byId[d.id] = String(d.data()?.name || '').trim();
+  });
+  return byId;
+}
+
+// Učitaj mapu serviceId -> categoryId SAMO za serviceId-ove koji nam trebaju
+async function loadServiceToCategory(fs, appts) {
+  const allIds = new Set();
+  for (const a of appts) {
+    const ids = Array.isArray(a.serviceIds) ? a.serviceIds : (a.serviceId ? [a.serviceId] : []);
+    for (const id of ids) if (id) allIds.add(id);
+  }
+  const ids = Array.from(allIds);
+  if (!ids.length) return {};
+
+  const byService = {};
+  // jednostavno i stabilno: po ID-u jedan get (dnevno je to mali broj)
+  await Promise.all(
+    ids.map(async (sid) => {
+      try {
+        const d = await fs.collection('services').doc(sid).get();
+        const x = d.data();
+        if (x && (x.categoryId || x.category)) {
+          byService[sid] = x.categoryId || x.category;
+        }
+      } catch (_) {}
+    })
+  );
+  return byService;
+}
+
+// Vrati niz jedinstvenih naziva kategorija (lowercase) za termin
+function categoriesForAppointment(appt, maps) {
+  const ids = Array.isArray(appt.serviceIds) ? appt.serviceIds : (appt.serviceId ? [appt.serviceId] : []);
+  const out = new Set();
+  for (const sid of ids) {
+    const catId = maps.serviceToCategory[sid];
+    const catName = catId ? maps.categoryNameById[catId] : null;
+    if (catName) out.add(catName.toLocaleLowerCase('sr-RS'));
+  }
+  if (!out.size) out.add('usluga'); // fallback ako baš ništa ne nađemo
+  return Array.from(out);
 }
 
 /* ---------- Anti-duplicate helperi (Firestore) ---------- */
@@ -212,12 +267,20 @@ export default async function handler(req, res) {
       grouped[to].push(a);
     }
 
-    // IZMENJENA FUNKCIJA – deduplikacija istih termina
+    // Inicijalizuj FS & učitaj mape za kategorije/usluge (potrebno i u dryRun)
+    const fs = getFirestore();
+    const categoryNameById = await loadCategoryNames(fs);
+    const serviceToCategory = await loadServiceToCategory(fs, filtered);
+    const maps = { categoryNameById, serviceToCategory };
+
+    // Građenje poruke sa KATEGORIJAMA (umesto serviceName)
     function buildMsgGroup(list) {
       const seen = new Set();
       const uniq = [];
       for (const a of list) {
-        const key = `${a.dateKey}|${a.startHHMM}|${String(a.serviceName || "").trim().toLowerCase()}`;
+        // ključ za lokalnu deduplikaciju u okviru poruke: datum|vreme|kategorije
+        const cats = categoriesForAppointment(a, maps).join(',');
+        const key = `${a.dateKey}|${a.startHHMM}|${cats}`;
         if (!seen.has(key)) {
           seen.add(key);
           uniq.push(a);
@@ -232,7 +295,9 @@ export default async function handler(req, res) {
       const slots = uniq
         .map(a => {
           const { fmtDate, fmtTime } = formatDateTimeRAW(a.dateKey, a.startHHMM);
-          return `${fmtDate} u ${fmtTime}h (${a.serviceName || "usluga"})`;
+          const cats = categoriesForAppointment(a, maps).join(',');
+          // primer: "20.10.2025. u 15:00h feniranje" ili "… pedikir,manikir"
+          return `${fmtDate} u ${fmtTime}h ${cats}`;
         })
         .join("; ");
 
@@ -263,13 +328,12 @@ export default async function handler(req, res) {
     }
 
     // Slanje po klijentu
-    const fs = getFirestore();
     const inRunSet = new Set();
     const results = [];
 
     for (const [to, list] of Object.entries(grouped)) {
       try {
-        // Stabilan ključ: sortiramo termine pre spajanja
+        // Stabilan ključ: sortiramo termine pre spajanja (zadržano ponašanje)
         const key = list
           .map(a => `${a.dateKey}-${a.startHHMM}`)
           .sort()
