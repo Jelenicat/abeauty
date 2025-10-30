@@ -32,14 +32,11 @@ function initAdmin() {
 }
 
 /* ---------- helpers ---------- */
-function formatDateTimeRAW(dateISO, timeHHMM) {
+function fmtDateLabelDDMM(dateISO) {
+  // "2025-10-29" -> "29.10."
   const [y, m, d] = String(dateISO).split("-");
-  const hhmm = String(timeHHMM || "00:00").padStart(5, "0");
-  const fmtDate = `${d}.${m}.${y}.`;
-  const fmtTime = hhmm;
-  return { fmtDate, fmtTime };
+  return `${d}.${m}.`;
 }
-
 function getLocalHour(tz) {
   const s = new Intl.DateTimeFormat('en-GB', {
     timeZone: tz,
@@ -64,22 +61,27 @@ function toE164RS(phone) {
   if (d.startsWith('6')) return '+381' + d;
   return null;
 }
-// ASCII fallback
+// ASCII transliteracija (da izbegnemo Unicode/UCS-2)
 function toAscii(s = '') {
   return s
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\x20-\x7E]/g, '');
 }
+// Grubi cap da ostanemo u 1 GSM-7 segmentu (153 char za concatenated safety)
+function capGsmOneSeg(s) {
+  const MAX = 153;
+  return s.length <= MAX ? s : (s.slice(0, MAX - 3) + '...');
+}
 
 /* ---------- Brevo (Send SMS) ---------- */
-async function sendSMS({ apiKey, sender, to, text, unicodeEnabled }) {
+async function sendSMS({ apiKey, sender, to, text }) {
   const body = {
     sender,
     recipient: to,
     content: text,
     type: 'transactional',
-    unicodeEnabled: !!unicodeEnabled,
+    unicodeEnabled: false, // FIKS: uvek šaljemo kao GSM-7
   };
 
   const r = await fetch('https://api.brevo.com/v3/transactionalSMS/send', {
@@ -114,12 +116,10 @@ async function getAppointmentsForTomorrow() {
     const a = doc.data();
     out.push({
       clientPhone: a.clientPhone,
-      serviceName: a.serviceName, // zadržano (ne koristimo u poruci, ali ne kvari kompatibilnost)
+      serviceName: a.serviceName,
       employeeName: a.employeeName,
       startHHMM: a.startHHMM,
       dateKey: a.dateKey,
-
-      // ⬇️ dodato: biće nam potrebno za kategorije
       serviceId: a.serviceId || null,
       serviceIds: Array.isArray(a.serviceIds) ? a.serviceIds : (a.serviceId ? [a.serviceId] : []),
     });
@@ -150,7 +150,6 @@ async function loadServiceToCategory(fs, appts) {
   if (!ids.length) return {};
 
   const byService = {};
-  // jednostavno i stabilno: po ID-u jedan get (dnevno je to mali broj)
   await Promise.all(
     ids.map(async (sid) => {
       try {
@@ -165,17 +164,15 @@ async function loadServiceToCategory(fs, appts) {
   return byService;
 }
 
-// Vrati niz jedinstvenih naziva kategorija (lowercase) za termin
-function categoriesForAppointment(appt, maps) {
+// Vrati JEDNU (prvu) kategoriju, lowercase (kraće poruke)
+function firstCategoryForAppointment(appt, maps) {
   const ids = Array.isArray(appt.serviceIds) ? appt.serviceIds : (appt.serviceId ? [appt.serviceId] : []);
-  const out = new Set();
   for (const sid of ids) {
     const catId = maps.serviceToCategory[sid];
     const catName = catId ? maps.categoryNameById[catId] : null;
-    if (catName) out.add(catName.toLocaleLowerCase('sr-RS'));
+    if (catName) return String(catName).toLocaleLowerCase('sr-RS');
   }
-  if (!out.size) out.add('usluga'); // fallback ako baš ništa ne nađemo
-  return Array.from(out);
+  return 'usluga';
 }
 
 /* ---------- Anti-duplicate helperi (Firestore) ---------- */
@@ -214,17 +211,15 @@ export default async function handler(req, res) {
     // Podrška za oba query naziva: ?dry=1 i ?dryRun=1
     const dryRun = /^(1|true)$/i.test(String(req.query.dryRun || req.query.dry || ''));
     const force = /^(1|true)$/i.test(String(req.query.force || ''));
-    const asciiOnly = /^(1|true)$/i.test(
-      String(req.query.ascii || env('SMS_ASCII_ONLY') || '')
-    );
+
+    // DEFAULT: ASCII ON (uvek transliterišemo) – možeš isključiti sa ?ascii=0 po potrebi
+    const asciiOnly = !/^(0|false)$/i.test(String(req.query.ascii || env('SMS_ASCII_ONLY') || '1'));
+
     const useFallbackSender = /^(1|true)$/i.test(String(req.query.fallback || ''));
     const onlyParam = String(req.query.only || '').trim();
     const onlyE164 = onlyParam ? toE164RS(onlyParam) : null;
 
-    const dedupeMin = Math.max(
-      0,
-      parseInt(String(req.query.dedupeMin || ''), 10) || 120
-    );
+    const dedupeMin = Math.max(0, parseInt(String(req.query.dedupeMin || ''), 10) || 120);
 
     const chosenSender =
       useFallbackSender && senderFallback ? senderFallback : senderMain;
@@ -273,44 +268,67 @@ export default async function handler(req, res) {
     const serviceToCategory = await loadServiceToCategory(fs, filtered);
     const maps = { categoryNameById, serviceToCategory };
 
-    // Građenje poruke sa KATEGORIJAMA (umesto serviceName)
+    // ---------------- NOVI FORMAT PORUKE (kratak, GSM-7, bez "h"/godine) ----------------
     function buildMsgGroup(list) {
+      // uniq po (date|time|firstCat)
       const seen = new Set();
       const uniq = [];
       for (const a of list) {
-        // ključ za lokalnu deduplikaciju u okviru poruke: datum|vreme|kategorije
-        const cats = categoriesForAppointment(a, maps).join(',');
-        const key = `${a.dateKey}|${a.startHHMM}|${cats}`;
+        const cat = firstCategoryForAppointment(a, maps);
+        const key = `${a.dateKey}|${a.startHHMM}|${cat}`;
         if (!seen.has(key)) {
           seen.add(key);
-          uniq.push(a);
+          uniq.push({ ...a, _cat: cat });
         }
       }
 
-      // sortiraj po datumu+vremenu radi stabilnosti
+      // sortiraj po datumu+vremenu
       uniq.sort((x, y) =>
         (x.dateKey + x.startHHMM).localeCompare(y.dateKey + y.startHHMM)
       );
 
-      const slots = uniq
-        .map(a => {
-          const { fmtDate, fmtTime } = formatDateTimeRAW(a.dateKey, a.startHHMM);
-          const cats = categoriesForAppointment(a, maps).join(',');
-          // primer: "20.10.2025. u 15:00h feniranje" ili "… pedikir,manikir"
-          return `${fmtDate} u ${fmtTime}h ${cats}`;
-        })
-        .join("; ");
+      // Grupacija po datumu (tehnički svi su "sutra", ali nek stoji generički)
+      const byDate = new Map();
+      for (const a of uniq) {
+        if (!byDate.has(a.dateKey)) byDate.set(a.dateKey, []);
+        byDate.get(a.dateKey).push(a);
+      }
 
-      let txt = `Imate zakazane termine: ${slots}. Kontakt: ${salonPhone || ""} | Vas aBeauty`;
-      return asciiOnly ? toAscii(txt) : txt;
+      // Pošto realno šaljemo za sutra (1 datum), formiramo kraći tekst:
+      let parts = [];
+      for (const [dateKey, items] of byDate.entries()) {
+        const dateLabel = fmtDateLabelDDMM(dateKey); // "29.10."
+        // skupi stavke "HH:MM kat"
+        const rows = items.map(a => `${a.startHHMM} ${a._cat}`);
+        // ako ima jedna stavka: "Vas termin je 29.10. 16:00 manikir."
+        // ako ima više: "Vasi termini 29.10.: 16:00 manikir; 17:45 manikir."
+        if (rows.length === 1) {
+          parts.push(`Vas termin je ${dateLabel} ${rows[0]}.`);
+        } else {
+          // Cap na 3 stavke + "+N"
+          const MAX = 3;
+          const shown = rows.slice(0, MAX);
+          const rest = rows.length - shown.length;
+          const tail = rest > 0 ? ` +${rest}` : '';
+          parts.push(`Vasi termini ${dateLabel}: ${shown.join('; ')}${tail}.`);
+        }
+      }
+
+      // Dodaj Info: telefon
+      let txt = parts.join(' ') + (salonPhone ? ` Info: ${salonPhone}` : '');
+
+      // UVEK ASCII (default), pa cap na 1 segment
+      txt = asciiOnly ? toAscii(txt) : txt;
+      txt = capGsmOneSeg(txt);
+      return txt;
     }
 
     // Dry run ili zabranjeno slanje u ovom satu
     if (dryRun || !shouldSendNow || !allowed) {
-      const sample = Object.entries(grouped).slice(0, 5).map(([to, list]) => ({
-        to,
-        message: buildMsgGroup(list),
-      }));
+      const sample = Object.entries(grouped).slice(0, 5).map(([to, list]) => {
+        const message = buildMsgGroup(list);
+        return { to, message, length: message.length };
+      });
       return json(res, 200, {
         ok: true,
         tz,
@@ -355,7 +373,6 @@ export default async function handler(req, res) {
           sender: chosenSender,
           to,
           text: message,
-          unicodeEnabled: !asciiOnly,
         });
 
         inRunSet.add(key);
@@ -368,6 +385,7 @@ export default async function handler(req, res) {
           ok: resp.ok,
           status: resp.status,
           data: resp.data,
+          length: message.length,
         });
       } catch (e) {
         results.push({
