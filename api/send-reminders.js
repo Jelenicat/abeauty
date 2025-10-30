@@ -315,7 +315,8 @@ export default async function handler(req, res) {
       }
 
       // Dodaj Info: telefon
-      let txt = parts.join(' ') + (salonPhone ? ` Info: ${salonPhone}` : '');
+let txt = parts.join(' ') + (salonPhone ? ` Info: ${salonPhone} aBeauty` : ' aBeauty');
+
 
       // UVEK ASCII (default), pa cap na 1 segment
       txt = asciiOnly ? toAscii(txt) : txt;
