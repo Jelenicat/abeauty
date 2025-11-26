@@ -377,14 +377,23 @@ function BlockDaysBar({ visible, anchorDate, onCancel, onConfirm, isMobile }) {
     onCancel?.();
   };
 
-  const handleConfirm = async () => {
-    if (selected.size === 0) return;
-    // pozovi onConfirm za SVAKI izabrani dan (from=to=isti dan)
-    for (const key of selected) {
-      await onConfirm?.(key, key);
+const handleConfirm = async () => {
+  if (selected.size === 0) return;
+
+  // Prođi kroz dane u nedelji redom i blokiraj sve čekirane
+  for (const d of weekDays) {
+    const key = fmtKey(d); // "YYYY-MM-DD"
+    if (selected.has(key)) {
+      await onConfirm?.(d, d);  // važan deo: šaljemo PRAVI Date, ne string!
     }
-    setSelected(new Set());
-  };
+  }
+
+  // počisti selekciju i zatvori panel
+  setSelected(new Set());
+  onCancel?.();
+};
+
+
 
   // stilovi
     const stripWrap = {
@@ -3701,7 +3710,7 @@ const allServicesArray =
 <BlockDaysBar
   visible={mode === "block" && showBlockDaysUI}
   anchorDate={dayDate}
-  isMobile={isMobile}               // ⬅ DODAJ OVO
+  isMobile={isMobile}
   onCancel={() => setShowBlockDaysUI(false)}
   onConfirm={async (dStart, dEnd) => {
     await blockWholeDaysRange({
@@ -3709,9 +3718,10 @@ const allServicesArray =
       fromDate: dStart,
       toDate: dEnd,
     });
-    setShowBlockDaysUI(false);
+    // OVDE VIŠE NE ZATVARAMO – to sada radi handleConfirm preko onCancel
   }}
 />
+
 
 
 
