@@ -4218,6 +4218,10 @@ const allServicesArray =
      // OVO dodaj ↓↓↓
       selSrvIds={selSrvIds}
       getServicePrice={getServicePrice}
+  
+      clients={clients}
+      clientsByName={clientsByName}
+      clientsByPhone={clientsByPhone}
       
   onSave={async (patch) => {
   // 1) Datum koji važi (možda izmenjen u modalu)
@@ -5502,6 +5506,9 @@ function ApptModal({
   employees,
   employeesById,
   servicesById,
+  clients,
+clientsByName,
+clientsByPhone,
   salonHours,
   shiftsByEmp,
   pendingPenaltyByPhone,
@@ -5989,13 +5996,61 @@ if (!priceDirty) {
               <div>{appt.clientName ? <b>{appt.clientName}</b> : null}{appt.clientPhone ? ` • ${appt.clientPhone}` : null}</div>
             </div>
           )}
+{/* Klijent – izmena */}
+<div style={{ display: "grid", gap: 8 }}>
+  <div style={{ fontWeight: 700, fontSize: 16 }}>Klijent</div>
 
-          {/* Klijent – izmena */}
-          <div style={{ display:"grid", gap:8 }}>
-            <div style={{ fontWeight:700, fontSize:16 }}>Klijent</div>
-            <input style={styles.inp} placeholder="Ime i prezime" value={editClientName} onChange={(e)=>setEditClientName(e.target.value)} />
-            <input style={styles.inp} placeholder="Telefon" value={editClientPhone} onChange={(e)=>setEditClientPhone(e.target.value)} />
-          </div>
+  {/* Ime + autocomplete */}
+  <input
+    style={styles.inp}
+    placeholder="Ime i prezime"
+    list="modal-client-suggestions"
+    value={editClientName}
+    onChange={(e) => {
+      const v = e.target.value;
+      setEditClientName(v);
+
+      // automatski popuni telefon ako postoji match po imenu
+      const hit =
+        clientsByName && typeof clientsByName.get === "function"
+          ? clientsByName.get(v.toLowerCase())
+          : null;
+
+      if (hit) {
+        setEditClientPhone(hit.phone || "");
+      }
+    }}
+  />
+
+  {/* lista predloga imena */}
+  <datalist id="modal-client-suggestions">
+    {Array.isArray(clients) &&
+      clients.map((c) => (
+        <option key={c.id} value={c.name} />
+      ))}
+  </datalist>
+
+  {/* Telefon + lookup po telefonu */}
+  <input
+    style={styles.inp}
+    placeholder="Telefon"
+    value={editClientPhone}
+    onChange={(e) => {
+      const v = e.target.value;
+      setEditClientPhone(v);
+
+      const hit =
+        clientsByPhone && typeof clientsByPhone.get === "function"
+          ? clientsByPhone.get(normPhone(v))
+          : null;
+
+      if (hit) {
+        setEditClientName(hit.name || "");
+      }
+    }}
+  />
+</div>
+
 
           {/* Cena + Napomena */}
           <div style={{ display:"flex", gap:12, flexWrap:isMobile?"wrap":"nowrap", alignItems:"flex-start", margin:"12px 0" }}>
