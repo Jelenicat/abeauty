@@ -15,6 +15,7 @@ import {
   getDocs,       // ⬅️ dodato
 } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
+import { deleteDoc } from "firebase/firestore";
 
 // (može ostati import ako ga koristiš negde drugde; ovde ga ne koristimo za inline)
 // import ClientStatsPrompt from "../partials/ClientStatsPrompt";
@@ -70,113 +71,81 @@ function phoneVariants(raw) {
 
 /* ====== INLINE PROFIL KLIJENTA (lokalno, bez modala) ====== */
 function InlineClientProfile({ name, phone, onClose }) {
-  const [stats, setStats] = useState({
-    total: 0,
-    activeOrDone: 0,
-    canceled: 0,
-    noShow: 0,
-  });
-  const [perEmpService, setPerEmpService] = useState([]); // [{serviceName, empCounts:{...}, total}]
-  const [last5, setLast5] = useState([]); // poslednjih 5 termina
+  const [last5, setLast5] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // CACHE → instant pri ponovnom otvaranju
+  const cacheRef = useRef({});
 
   useEffect(() => {
     let dead = false;
+
     (async () => {
       try {
-        const variants = phoneVariants(phone);
-        const col = collection(db, "appointments");
+        const key = phone || name;
 
-        if (!variants.length && !name) {
-          setStats({ total: 0, activeOrDone: 0, canceled: 0, noShow: 0 });
-          setPerEmpService([]);
-          setLast5([]);
+        // ⬅️ CACHE HIT
+        if (cacheRef.current[key]) {
+          setLast5(cacheRef.current[key]);
+          setLoading(false);
           return;
         }
 
-        // 1) Svi termini (za statistiku + raspodelu po radnicama/uslugama)
-        const allQ = variants.length
-          ? query(col, where("clientPhone", "in", variants))
-          : query(col, where("clientName", "==", name || ""));
-        const snapAll = await getDocs(allQ); // jednokratan fetch kao u ClientStatsPrompt
+        const variants = phoneVariants(phone);
+        if (!variants.length && !name) {
+          setLast5([]);
+          setLoading(false);
+          return;
+        }
+
+        setLoading(true);
+
+        const col = collection(db, "appointments");
+        const q = variants.length
+          ? query(
+              col,
+              where("clientPhone", "in", variants),
+              orderBy("dateKey", "desc"),
+              limit(5)
+            )
+          : query(
+              col,
+              where("clientName", "==", name || ""),
+              orderBy("dateKey", "desc"),
+              limit(5)
+            );
+
+        const snap = await getDocs(q);
         if (dead) return;
 
-        const all = [];
-        snapAll.forEach((d) => all.push({ id: d.id, ...(d.data() || {}) }));
+        const data = [];
+        snap.forEach((d) => data.push({ id: d.id, ...(d.data() || {}) }));
 
-        // saberi statistiku i usluge po radnicama
-        let total = 0,
-          activeOrDone = 0,
-          canceled = 0,
-          noShow = 0;
-        const serviceEmp = new Map(); // "svc__emp" -> cnt
-        const svcTotals = new Map(); // "svc" -> cnt
-        const keySE = (svc, emp) => `${svc}__${emp}`;
-
-        for (const a of all) {
-          total++;
-          const st = (a.status || "booked").toLowerCase();
-          if (st.includes("cancel")) canceled++;
-          else if (st.includes("no")) noShow++;
-          else activeOrDone++;
-
-          const items =
-            Array.isArray(a.servicesInfo) && a.servicesInfo.length
-              ? a.servicesInfo
-              : a.serviceName
-              ? [{ name: a.serviceName }]
-              : [];
-          const emp = a.employeeName || "—";
-          for (const it of items) {
-            const svc = it?.name || a.serviceName || "Usluga";
-            serviceEmp.set(keySE(svc, emp), (serviceEmp.get(keySE(svc, emp)) || 0) + 1);
-            svcTotals.set(svc, (svcTotals.get(svc) || 0) + 1);
-          }
-        }
-        setStats({ total, activeOrDone, canceled, noShow });
-
-        const employeesSet = new Set();
-        for (const k of serviceEmp.keys()) employeesSet.add(k.split("__")[1]);
-        const rows = [];
-        const byService = new Map();
-        for (const [k, cnt] of serviceEmp.entries()) {
-          const [svc, emp] = k.split("__");
-          if (!byService.has(svc)) byService.set(svc, new Map());
-          byService.get(svc).set(emp, cnt);
-        }
-        for (const [svc, empMap] of byService.entries()) {
-          const row = { serviceName: svc, empCounts: {}, total: svcTotals.get(svc) || 0 };
-          employeesSet.forEach((emp) => (row.empCounts[emp] = empMap.get(emp) || 0));
-          rows.push(row);
-        }
-        rows.sort((a, b) => (b.total || 0) - (a.total || 0));
-        setPerEmpService(rows);
-
-        // 2) Poslednjih 5 termina – sortirano po datumu (dateKey) kao u modalu
-        const fiveQ = variants.length
-          ? query(col, where("clientPhone", "in", variants), orderBy("dateKey", "desc"), limit(5))
-          : query(col, where("clientName", "==", name || ""), orderBy("dateKey", "desc"), limit(5));
-        const snap5 = await getDocs(fiveQ);
-        if (dead) return;
-        const last = [];
-        snap5.forEach((d) => last.push({ id: d.id, ...(d.data() || {}) }));
-        setLast5(last);
+        cacheRef.current[key] = data; // ⬅️ SAVE CACHE
+        setLast5(data);
+        setLoading(false);
       } catch (e) {
         console.error(e);
+        setLoading(false);
       }
     })();
+
     return () => {
       dead = true;
     };
   }, [name, phone]);
 
-  // Izvučemo sve nazive radnica (kolone)
-  const allEmployees = useMemo(() => {
-    const s = new Set();
-    perEmpService.forEach((r) => {
-      Object.keys(r.empCounts || {}).forEach((e) => s.add(e));
-    });
-    return Array.from(s);
-  }, [perEmpService]);
+  async function deleteAppointment(apptId) {
+    if (!window.confirm("Da li si sigurna da želiš da obrišeš ovaj termin?")) return;
+
+    try {
+      await deleteDoc(doc(db, "appointments", apptId));
+      setLast5((prev) => prev.filter((a) => a.id !== apptId));
+    } catch (e) {
+      console.error(e);
+      alert("Greška pri brisanju termina.");
+    }
+  }
 
   return (
     <div
@@ -189,7 +158,8 @@ function InlineClientProfile({ name, phone, onClose }) {
         padding: 12,
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+      {/* HEADER */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ margin: 0, fontWeight: 900 }}>
           Klijent: {name} ({phone})
         </h3>
@@ -204,108 +174,19 @@ function InlineClientProfile({ name, phone, onClose }) {
             cursor: "pointer",
             fontWeight: 800,
           }}
-          title="Zatvori"
-          aria-label="Zatvori"
         >
           ×
         </button>
       </div>
 
-      {/* Stat boxevi */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, minmax(0,1fr))",
-          gap: 8,
-          marginTop: 10,
-          marginBottom: 12,
-        }}
-      >
-        {[
-          ["Ukupno termina", stats.total],
-          ["Aktivno/realizovano", stats.activeOrDone],
-          ["Otkazano", stats.canceled],
-          ["No-show", stats.noShow],
-        ].map(([label, val]) => (
-          <div
-            key={label}
-            style={{
-              border: "1px solid #eee",
-              borderRadius: 12,
-              padding: 10,
-              background: "#fff",
-              boxShadow: "0 4px 12px rgba(0,0,0,.05)",
-            }}
-          >
-            <div style={{ fontSize: 12, color: "#666", fontWeight: 700 }}>{label}</div>
-            <div style={{ fontSize: 22, fontWeight: 900 }}>{val}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Usluge po radnicama */}
-      <div
-        style={{
-          border: "1px solid #eee",
-          borderRadius: 12,
-          overflow: "hidden",
-          marginBottom: 12,
-        }}
-      >
-        <div
-          style={{
-            padding: "10px 12px",
-            fontWeight: 900,
-            borderBottom: "1px solid #f0f0f0",
-            background: "#fafafa",
-          }}
-        >
-          Usluge po radnicama
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
-            <thead>
-              <tr style={{ background: "#fcfcfc" }}>
-                <th style={th}>Usluga</th>
-                {allEmployees.map((e) => (
-                  <th style={th} key={e}>
-                    {e}
-                  </th>
-                ))}
-                <th style={th}>Ukupno</th>
-              </tr>
-            </thead>
-            <tbody>
-              {perEmpService.map((row, i) => (
-                <tr key={row.serviceName} style={i % 2 ? { background: "#fafafa" } : undefined}>
-                  <td style={td}>{row.serviceName}</td>
-                  {allEmployees.map((e) => (
-                    <td style={td} key={e}>
-                      {row.empCounts[e] || 0}
-                    </td>
-                  ))}
-                  <td style={tdBold}>{row.total || 0}</td>
-                </tr>
-              ))}
-              {perEmpService.length === 0 && (
-                <tr>
-                  <td style={td} colSpan={allEmployees.length + 2}>
-                    Nema podataka za raspodelu.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Poslednjih 5 termina */}
+      {/* LAST 5 */}
       <div
         style={{
           border: "1px solid #eee",
           borderRadius: 12,
           overflow: "hidden",
           background: "#fff",
+          marginTop: 12,
         }}
       >
         <div
@@ -318,12 +199,18 @@ function InlineClientProfile({ name, phone, onClose }) {
         >
           ▾ Poslednjih 5 termina
         </div>
-        <div style={{ maxHeight: 300, overflow: "auto", padding: 12 }}>
-          {last5.length === 0 ? (
-            <div style={{ padding: "6px 0", color: "#666" }}>Nema termina.</div>
+
+        <div style={{ maxHeight: 260, overflow: "auto", padding: 12 }}>
+          {loading ? (
+            <div style={{ color: "#777" }}>Učitavanje…</div>
+          ) : last5.length === 0 ? (
+            <div style={{ color: "#777" }}>Nema termina.</div>
           ) : (
-            last5.map((a) => (
-              <div key={a.id} style={{ padding: "6px 0", borderBottom: "1px solid #f6f6f6" }}>
+            last5.map((a, idx) => (
+              <div
+                key={a.id}
+                style={{ padding: "6px 0", borderBottom: "1px solid #f6f6f6" }}
+              >
                 <div style={{ fontWeight: 800 }}>
                   {a.dateKey || "—"}{" "}
                   <span style={{ opacity: 0.8 }}>
@@ -331,12 +218,39 @@ function InlineClientProfile({ name, phone, onClose }) {
                     {a.endHHMM ? `–${a.endHHMM}` : ""} • {a.employeeName || "—"}
                   </span>
                 </div>
+
                 <div>
                   {Array.isArray(a.servicesInfo) && a.servicesInfo.length
                     ? a.servicesInfo.map((s) => s.name).join(", ")
                     : a.serviceName || "—"}
                 </div>
-                <div style={{ color: "#777", fontSize: 12 }}>status: {a.status || "—"}</div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ color: "#777", fontSize: 12 }}>
+                    status: {a.status || "—"}
+                  </div>
+
+                  {idx === 0 && (
+                    <button
+                      onClick={() => deleteAppointment(a.id)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "#c00",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Obriši
+                    </button>
+                  )}
+                </div>
               </div>
             ))
           )}
@@ -345,6 +259,7 @@ function InlineClientProfile({ name, phone, onClose }) {
     </div>
   );
 }
+
 
 /* ========================================================== */
 
@@ -711,10 +626,10 @@ export default function AdminKlijenti() {
                         <td style={td}>{c.lastDate}</td>
                         <td style={td}>
                           <button onClick={() => openStats(c)} style={btn}>
-                            📊 Profil
+                            Profil
                           </button>
-                          <button onClick={() => openEdit(c)} style={{ ...btn, marginLeft: 8 }}>
-                            ✏️ Uredi
+                          <button onClick={() => openEdit(c)} style={{ ...btn, marginTop: 4 }}>
+                            Uredi
                           </button>
                         </td>
                       </tr>

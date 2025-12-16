@@ -121,6 +121,9 @@ export default function Home() {
   // Moji zakazani termini (+ modal za otkazivanje)
   const [myAppointments, setMyAppointments] = useState([]);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+// Prošli termini
+const [pastAppointments, setPastAppointments] = useState([]);
+const [pastModalOpen, setPastModalOpen] = useState(false);
 
   const navigate = useNavigate();
   const { user, isLoggedIn, logout } = useAuth();
@@ -396,6 +399,40 @@ async function applyPendingToEarliestAppt(db, phone, amount) {
 
     return unsub;
   }, [isLoggedIn, user?.phone]);
+/* ===== Moji PROŠLI termini (poslednjih 5) ===== */
+useEffect(() => {
+  if (!isLoggedIn || !user?.phone) {
+    setPastAppointments([]);
+    return;
+  }
+
+const qPast = query(
+  collection(db, "appointments"),
+  where("clientPhone", "==", user.phone),
+  orderBy("dateKey", "desc"),
+  orderBy("startMin", "desc")
+);
+
+
+  const unsub = onSnapshot(qPast, (snap) => {
+    const now = new Date();
+    const past = [];
+
+    snap.forEach((d) => {
+      const a = d.data();
+      if (!a?.dateKey || !a?.startHHMM) return;
+
+      const dateObj = new Date(`${a.dateKey}T${a.startHHMM}`);
+      if (dateObj < now) {
+        past.push({ id: d.id, ...a, dateObj });
+      }
+    });
+
+    setPastAppointments(past.slice(0, 5));
+  });
+
+  return unsub;
+}, [isLoggedIn, user?.phone]);
 
   async function cancelAppointment(appt) {
     try {
@@ -544,9 +581,25 @@ try {
         {/* DODATO: Otkaži termin (vidljivo samo za korisnika koji nije admin i ima buduće termine) */}
         {isLoggedIn && !user?.isAdmin && myAppointments.length > 0 && (
           <button className="cancel-btn" onClick={() => setCancelModalOpen(true)}>
-            Otkaži termin
+            Budući termin (Otkaži termin)
           </button>
         )}
+        {isLoggedIn && !user?.isAdmin && pastAppointments.length > 0 && (
+  <button
+    className="custom-btn"
+    style={{
+      position: "absolute",
+      left: "50%",
+      top: "calc(50% + 170px)",
+      transform: "translate(-50%, -50%)",
+      fontSize: "1rem",
+    }}
+    onClick={() => setPastModalOpen(true)}
+  >
+    Prošli termini
+  </button>
+)}
+
       </section>
 
       {/* O NAMA */}
@@ -825,6 +878,59 @@ try {
           </div>
         </div>
       )}
+{/* PAST APPOINTMENTS MODAL */}
+{pastModalOpen && (
+  <div
+    className="gallery-overlay overlay--top"
+    onClick={() => setPastModalOpen(false)}
+  >
+    <div
+      className="cancel-dialog"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <h3 style={{ margin: 0 }}>Prošli termini</h3>
+        <button
+          className="gallery-close"
+          onClick={() => setPastModalOpen(false)}
+        >
+          ✕
+        </button>
+      </div>
+
+      {!pastAppointments.length ? (
+        <div style={{ opacity: 0.7 }}>Nema prošlih termina.</div>
+      ) : (
+        <div className="cancel-list">
+          {pastAppointments.map((a) => {
+            const dstr = new Intl.DateTimeFormat("sr-RS", {
+              weekday: "short",
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            }).format(a.dateObj);
+
+            return (
+              <div key={a.id} className="cancel-card">
+                <div>
+                  <div style={{ fontWeight: 800 }}>
+                    {dstr} u {a.startHHMM}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    {a.serviceName} • {a.employeeName}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.6 }}>
+                    Status: {a.status === "cancelled" ? "Otkazan" : "Završen"}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  </div>
+)}
 
       {/* LOGIN MODAL */}
       <LoginModal
