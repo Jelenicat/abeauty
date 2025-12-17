@@ -252,6 +252,7 @@ body.gallery-open{ overflow:hidden; }
 
 /* Mobilne dorade */
 @media (max-width: 768px){
+  
   .gallery-dialog{ width:96vw; max-height:92vh; border-radius:14px; }
   .gallery-topbar{ padding:8px 10px; }
   .gallery-stage{ min-height:46vh; max-height:62vh; }
@@ -260,6 +261,21 @@ body.gallery-open{ overflow:hidden; }
   .gallery-thumbs{ gap:8px; grid-template-columns:repeat(auto-fit, minmax(60px,1fr)); }
 }
 
+@media (max-width: 768px){
+  .cancel-btn{
+    width: 92%;
+    max-width: 420px;
+
+    padding: 10px 14px;   /* ⬅️ MANJA VISINA */
+    font-size: 0.9rem;
+    font-weight: 600;
+
+    white-space: nowrap; /* ⬅️ NAJBITNIJE */
+    text-align: center;
+
+    animation: none;     /* ⬅️ da ne “pleše” */
+  }
+}
 
 /* animacija */
 @keyframes floaty{
