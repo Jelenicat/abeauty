@@ -108,20 +108,32 @@ export default function BookTime() {
 
   const [activeId, setActiveId] = useState(selectedServices[0]?.id || "");
   const activeService = selectedServices.find(s => s.id === activeId) || selectedServices[0] || null;
+  // ⬇️ FIX: activeService mora uvek biti neka čekirana usluga iz kategorije
+
+
+  
 
   // === Multi-select u istoj kategoriji (toggle, uključujući aktivnu) ===
   const [togetherIds, setTogetherIds] = useState(() => new Set(activeService ? [activeService.id] : []));
-  useEffect(() => {
-    if (!activeService) { setTogetherIds(new Set()); return; }
-    setTogetherIds(prev => {
-      const n = new Set();
-      for (const id of prev) {
-        const srv = selectedServices.find(x => x.id === id);
-        if (srv && srv.categoryId === activeService.categoryId) n.add(id);
-      }
-      return n;
-    });
-  }, [activeService?.id, activeService?.categoryId, selectedServices]);
+
+// 🔁 reset selekcije SAMO kad se promeni kategorija
+useEffect(() => {
+  if (!activeService) {
+    setTogetherIds(new Set());
+    return;
+  }
+
+  setTogetherIds(prev => {
+    // ako je aktivna već u selekciji – ne diraj
+    if (prev.has(activeService.id)) return prev;
+
+    // nova kategorija → samo aktivna ostaje čekirana
+    return new Set([activeService.id]);
+  });
+}, [activeService?.categoryId]);
+
+  // samo ista kategorija
+
 
   const [monthAnchor, setMonthAnchor] = useState(ymStr(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => new Date());
@@ -149,15 +161,27 @@ export default function BookTime() {
     [comboServices]
   );
 
-  const eligible = useMemo(() => {
-    if (!activeService) return [];
-    const cid = activeService.categoryId;
-    return employees.filter((e) => {
-      const srv = new Set(e.services || []);
-      const cat = new Set(e.categories || []);
-      return srv.has(activeService.id) || (cid && cat.has(cid));
-    });
-  }, [employees, activeService]);
+const eligible = useMemo(() => {
+  if (!comboServices.length) return [];
+
+  return employees.filter(e => {
+    const empServices = new Set(e.services || []);
+    const empCategories = new Set(e.categories || []);
+
+    return comboServices.every(s =>
+      empServices.has(s.id) || empCategories.has(s.categoryId)
+    );
+  });
+}, [employees, comboServices]);
+
+
+
+
+
+
+
+
+
 
   const [slotsByEmp, setSlotsByEmp] = useState(new Map());
   const [loading, setLoading] = useState(false);
@@ -277,19 +301,33 @@ export default function BookTime() {
   // Klik na chip usluge:
   // - druga kategorija: aktivna = ta usluga; selekcija postaje samo ta
   // - ista kategorija: toggle ZA SVAKU (uključujući aktivnu)
-  const onServiceChipClick = (s) => {
-    if (!activeService || s.categoryId !== activeService.categoryId) {
-      setActiveId(s.id);
-      setTogetherIds(new Set([s.id]));
-      return;
+const onServiceChipClick = (s) => {
+  // druga kategorija → reset
+  if (!activeService || s.categoryId !== activeService.categoryId) {
+    setActiveId(s.id);
+    setTogetherIds(new Set([s.id]));
+    return;
+  }
+
+  // ista kategorija → toggle
+  setTogetherIds(prev => {
+    const n = new Set(prev);
+    if (n.has(s.id)) {
+      n.delete(s.id);
+    } else {
+      n.add(s.id);
     }
-    setTogetherIds(prev => {
-      const n = new Set(prev);
-      if (n.has(s.id)) n.delete(s.id); else n.add(s.id);
-      selectedServices.forEach(x => { if (x.categoryId !== activeService.categoryId) n.delete(x.id); });
-      return n;
-    });
-  };
+
+    // ne dozvoli prazno
+    if (n.size === 0) {
+      n.add(s.id);
+      setActiveId(s.id);
+    }
+
+    return n;
+  });
+};
+
 
   const [confirmData, setConfirmData] = useState(null);
   function askConfirm(slot) {
