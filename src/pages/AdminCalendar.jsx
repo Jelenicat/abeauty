@@ -4667,6 +4667,13 @@ const badge = (border, bg) => ({
     setIsArming(false);
     setDragEmpId(null);
   };
+  const getServiceLabel = (a) => {
+  if (Array.isArray(a?.servicesInfo) && a.servicesInfo.length) {
+    return a.servicesInfo.map(s => s.name).join(", ");
+  }
+  return a.serviceName || "Usluga";
+};
+
 
   return (
     <div style={{ ...gridWrap, paddingLeft: 0 }} className="grid-day">
@@ -4838,16 +4845,20 @@ const badge = (border, bg) => ({
                             }] : [];
                           })());
 
-                  const apptNames = apptServices.map(s => s.name).join(", ");
-                  const baseName = apptNames || a.serviceName || "Usluga";
+                const baseName =
+  apptServices.length > 0
+    ? apptServices.map(s => s.name).join(", ")
+    : (a.serviceName || "Usluga");
 
-                 const priceFromServices = apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0);
 
-// Ako postoji lista usluga → uvek zbir iz usluga.
-// Ako je nema (legacy zapis) → koristi a.price ako je postavljen, inače zbir.
- const priceTotal = (a?.price != null)
-   ? Number(a.price)   // 👉 uvek koristi ručno upisanu cenu ako postoji
-   : priceFromServices; // 👉 fallback: zbir iz servicesInfo
+     const priceTotal =
+  a.price != null
+    ? Number(a.price) // 👈 RUČNA CENA UVEK POBEĐUJE
+    : apptServices.length > 0
+        ? apptServices.reduce((sum, s) => sum + Number(s.price || 0), 0)
+        : 0;
+
+
 
                   const phone = normPhone(a.clientPhone);
                   const hasNoShowHistory = !!(phone && noShowByPhone.get(phone));
@@ -4878,18 +4889,57 @@ const badge = (border, bg) => ({
                         isVacation ? "Odmor" :
                         isBreak    ? "Pauza" :
                         isBlock    ? "Blokirano" :
-                        `${apptNames || a.serviceName || "Usluga"}${
-                          priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
-                        }${a.clientName ? " · " + a.clientName : ""}`
+                    `${baseName}${
+  priceTotal > 0 ? ` • ${priceTotal.toLocaleString("sr-RS")} RSD` : ""
+}${a.clientName ? " · " + a.clientName : ""}`
+
                       }
                       onDragOver={(e) => e.preventDefault()}
                       onTouchStart={stopTouchPropagation}
                       onTouchEnd={stopTouchPropagation}
                     >
                       
-                      <div style={cardTitle(isMobile)}>
-                        {labelFor(a, servicesById)}
-                      </div>
+<div
+  style={{
+    ...cardTitle(isMobile),
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  }}
+>
+  {/* naziv usluge */}
+  <span>{getServiceLabel(a)}</span>
+
+  {/* ručno / aBeauty */}
+  {"manual" in a && (
+    <span
+      style={{
+        ...badge("#ff5fa2", "#ff5fa2"),
+        color: "#fff",
+      }}
+    >
+      {a.manual ? "ručno" : "aBeauty"}
+    </span>
+  )}
+
+  {/* NO-SHOW pored */}
+  {a.status === "no-show" && (
+    <span
+      style={{
+        ...badge("#7f1d1d", "#b91c1c"),
+        color: "#fff",
+      }}
+    >
+      No-show
+    </span>
+  )}
+</div>
+
+
+
+
+
 
                       {/* Info redovi - vreme/cena/klijent */}
                       {isBlock || isBreak || isVacation ? (
