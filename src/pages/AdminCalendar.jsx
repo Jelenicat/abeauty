@@ -4909,7 +4909,26 @@ const badge = (border, bg) => ({
   }}
 >
   {/* naziv usluge */}
+  {isBlock ? (
+  <div style={{ textAlign: "center", width: "100%" }}>
+    <div style={{ fontWeight: 700 }}>Blokirano</div>
+    <div
+      style={{ marginTop: 4, fontSize: 12, opacity: 0.9, cursor: "pointer" }}
+      onClick={(e) => {
+        e.stopPropagation();
+        const newReason = prompt("Unesi razlog blokade:", a.reason || "");
+        if (newReason !== null) {
+          markAppt?.(a.id, { reason: newReason });
+        }
+      }}
+    >
+      {a.reason ? `Razlog: ${a.reason}` : "+ Dodaj razlog"}
+    </div>
+  </div>
+) : (
   <span>{getServiceLabel(a)}</span>
+)}
+
 
   {/* ručno / aBeauty */}
   {"manual" in a && (
