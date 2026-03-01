@@ -259,7 +259,44 @@ function InlineClientProfile({ name, phone, onClose }) {
     </div>
   );
 }
+function EditorFields({ form, setForm, inputStyle, focusRef }) {
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <label style={{ display: "grid", gap: 6 }}>
+        <span style={{ fontWeight: 800 }}>Ime i prezime</span>
+        <input
+          ref={focusRef}
+          value={form.name}
+          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          style={inputStyle}
+          placeholder="npr. Ana Perić"
+        />
+      </label>
 
+      <label style={{ display: "grid", gap: 6 }}>
+        <span style={{ fontWeight: 800 }}>Telefon (samo cifre)</span>
+        <input
+          value={form.phone}
+          onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          style={inputStyle}
+          placeholder="0641234567"
+        />
+      </label>
+
+      <label style={{ display: "grid", gap: 6 }}>
+        <span style={{ fontWeight: 800 }}>Uloga</span>
+        <select
+          value={form.role}
+          onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+          style={inputStyle}
+        >
+          <option value="client">client</option>
+          <option value="employee">employee</option>
+        </select>
+      </label>
+    </div>
+  );
+}
 
 /* ========================================================== */
 
@@ -493,42 +530,7 @@ export default function AdminKlijenti() {
   };
   const btnPrimary = { ...btn, border: "none", background: "#ff69b4", color: "#fff" };
 
-  function EditorFields({ focusRef }) {
-    return (
-      <div style={{ display: "grid", gap: 10 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 800 }}>Ime i prezime</span>
-          <input
-            ref={focusRef}
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            style={inputStyle}
-            placeholder="npr. Ana Perić"
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 800 }}>Telefon (samo cifre)</span>
-          <input
-            value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            style={inputStyle}
-            placeholder="0641234567"
-          />
-        </label>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 800 }}>Uloga</span>
-          <select
-            value={form.role}
-            onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-            style={inputStyle}
-          >
-            <option value="client">client</option>
-            <option value="employee">employee</option>
-          </select>
-        </label>
-      </div>
-    );
-  }
+  
 
   return (
     <div style={wrap}>
@@ -646,7 +648,7 @@ export default function AdminKlijenti() {
                                 gap: 10,
                               }}
                             >
-                              <EditorFields />
+                              <EditorFields form={form} setForm={setForm} inputStyle={inputStyle} />
                               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                                 <button onClick={closeEditor} style={btn}>
                                   Otkaži
@@ -708,7 +710,12 @@ export default function AdminKlijenti() {
               }}
             >
               <h3 style={{ marginTop: 0, marginBottom: 12, fontWeight: 900 }}>Dodaj klijenta</h3>
-              <EditorFields focusRef={newNameRef} />
+              <EditorFields
+  form={form}
+  setForm={setForm}
+  inputStyle={inputStyle}
+  focusRef={newNameRef}
+/>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
                 <button onClick={closeEditor} style={btn}>
                   Otkaži
