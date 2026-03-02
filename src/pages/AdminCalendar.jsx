@@ -1343,28 +1343,72 @@ useEffect(() => {
   });
   return () => off();
 }, []);
-/* === [STEP 3] client field handlers === */
-function onClientNameChange(e) {
+
+/* === [STEP 3] client field handlers (POPUNI TEK NA IZBOR) === */
+const [phoneTouched, setPhoneTouched] = useState(false);
+const [nameSugOpen, setNameSugOpen] = useState(false);
+const [phoneSugOpen, setPhoneSugOpen] = useState(false);
+const nameBlurTimerRef = useRef(null);
+const phoneBlurTimerRef = useRef(null);
+
+const nameMatches = useMemo(() => {
+  const q = (clientName || "").trim().toLowerCase();
+  if (!q) return [];
+  return clients
+    .filter(c => (c.name || "").toLowerCase().includes(q))
+    .slice(0, 8);
+}, [clientName, clients]);
+
+const phoneMatches = useMemo(() => {
+  const q = normPhone(clientPhone || "");
+  if (!q) return [];
+  return clients
+    .filter(c => {
+      const p = normPhone(c.phone || "");
+      return p && p.includes(q);
+    })
+    .slice(0, 8);
+}, [clientPhone, clients]);
+
+const onClientNameChange = (e) => {
   const v = e.target.value;
   setClientName(v);
-  setSelectedClientId(null);
-  const hit = clientsByName.get(v.toLowerCase());
-  if (hit) {
-    setClientPhone(hit.phone || "");
-    setSelectedClientId(hit.id);
-  }
-}
 
-function onClientPhoneChange(e) {
+  // otvori predloge čim user krene da kuca
+  setNameSugOpen(true);
+
+  // dok kuca ime — NE popunjavaj telefon
+  // samo resetuj selekciju (jer user menja unos)
+  setSelectedClientId(null);
+
+  // ako obriše ime, možeš (opciono) i da obrišeš telefon samo ako ga nije ručno dirao
+  if (!v.trim() && !phoneTouched) {
+    setClientPhone("");
+  }
+};
+
+const onClientPhoneChange = (e) => {
   const v = e.target.value;
   setClientPhone(v);
+
+  setPhoneSugOpen(true);
+
+  // čim user dira telefon — zaključaj da ga sistem više ne dira automatski
+  setPhoneTouched(true);
   setSelectedClientId(null);
-  const hit = clientsByPhone.get(normPhone(v));
-  if (hit) {
-    setClientName(hit.name || "");
-    setSelectedClientId(hit.id);
-  }
-}
+};
+
+// pozovi ovo kad user KLIKNE na klijenta iz dropdown liste
+const pickClient = (c) => {
+  setSelectedClientId(c.id);
+  setClientName(c.name || "");
+  setClientPhone(c.phone || "");
+  setPhoneTouched(false); // jer je sad popunjeno izborom (nije ručni telefon)
+
+  // zatvori oba dropdown-a
+  setNameSugOpen(false);
+  setPhoneSugOpen(false);
+};
 
 
 // opens modal
@@ -3656,42 +3700,143 @@ const allServicesArray =
 
   {mode === "booking" && (
     <>
-<div style={ctlItem}>
-  <label style={lbl}>Klijent</label>
 {/* === [STEP 4] client inputs (autocomplete + free text) === */}
-<div style={ctlItem}>
-  <input
-    list="client-suggestions"
-    placeholder="Ime klijenta"
-    value={clientName}
-    onChange={onClientNameChange}
-    style={inp}
-  />
-  <datalist id="client-suggestions">
-    {clients.map(c => (
-      <option key={c.id} value={c.name} />
-    ))}
-  </datalist>
+{/* === KLIJENT (ime + telefon jedan ispod drugog) === */}
+<div
+style={{
+  ...ctlItem,
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+
+flex: "1 1 220px",   // KLJUČNO
+minWidth: 220,
+maxWidth: 280,
+  minHeight: 0,
+}}
+>
+<div style={{ fontWeight: 700, fontSize: 13, marginBottom: 1, color:"#fff"}}>
+  Klijent
 </div>
 
-<div style={ctlItem}>
-  <label style={lbl}>Telefon</label>
-  <input
-    placeholder="Broj telefona"
-    value={clientPhone}
-    onChange={onClientPhoneChange}
-    style={inp}
-    inputMode="tel"
-  />
-</div>
+  {/* Ime klijenta */}
+  <div style={{ position: "relative", width: "100%" }}>
+    <input
+      placeholder="Ime klijenta"
+      value={clientName}
+      onChange={onClientNameChange}
+      onFocus={() => setNameSugOpen(true)}
+      onBlur={() => {
+        if (nameBlurTimerRef.current) clearTimeout(nameBlurTimerRef.current);
+        nameBlurTimerRef.current = setTimeout(() => setNameSugOpen(false), 150);
+      }}
+     style={{ ...inp, width: "87%", boxSizing: "border-box" }}   
+    />
 
-  <datalist id="client-options">
-    {clientsAll.map((c, i) => (
-      <option key={i} value={`${c.name} • ${c.phone}`} />
-    ))}
-  </datalist>
-</div>
+    {nameSugOpen && nameMatches.length > 0 && (
+      <div
+style={{
+    position: "absolute",
+    top: "100%",
+    right: 0,          // ✅ poravnaj uz desnu ivicu inputa
+    left: "auto",      // ✅ znači “ne drži se leve”
+    width: 420,        // ili koliko želiš da bude max
+    maxWidth: "min(420px, calc(100vw - 24px))", // ✅ ne probija ekran
+    background: "#fff",
+    border: "1px solid rgba(0,0,0,0.12)",
+    borderRadius: 10,
+    marginTop: 6,
+    boxShadow: "0 10px 24px rgba(0,0,0,0.08)",
+    zIndex: 9999,
 
+    overflowY: "auto", // ✅ samo vertikalno ako ima mnogo stavki
+    maxHeight: 320,
+
+    overflowX: "hidden",  // ✅ nema horizontalnog skrola
+  }}
+      >
+        {nameMatches.map((c) => (
+          <div
+            key={c.id}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => pickClient(c)}
+            style={{
+              padding: "10px 12px",
+              cursor: "pointer",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 4,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>{c.name}</span>
+            <span style={{ opacity: 0.7 }}>{c.phone}</span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  {/* Telefon */}
+  <div style={{ position: "relative" }}>
+    <label style={{ ...lbl, marginBottom: 4, display: "block" }}>Telefon</label>
+    <input
+      placeholder="Broj telefona"
+      value={clientPhone}
+      onChange={onClientPhoneChange}
+      onFocus={() => setPhoneSugOpen(true)}
+      onBlur={() => {
+        if (phoneBlurTimerRef.current) clearTimeout(phoneBlurTimerRef.current);
+        phoneBlurTimerRef.current = setTimeout(() => setPhoneSugOpen(false), 150);
+      }}
+     style={{ ...inp, width: "87%", boxSizing: "border-box" }}   
+      inputMode="tel"
+    />
+
+    {phoneSugOpen && phoneMatches.length > 0 && (
+      <div
+  style={{
+    position: "absolute",
+    top: "100%",
+    right: 0,          // ✅ poravnaj uz desnu ivicu inputa
+    left: "auto",      // ✅ znači “ne drži se leve”
+    width: 420,        // ili koliko želiš da bude max
+    maxWidth: "min(420px, calc(100vw - 24px))", // ✅ ne probija ekran
+    background: "#fff",
+    border: "1px solid rgba(0,0,0,0.12)",
+    borderRadius: 10,
+    marginTop: 6,
+    boxShadow: "0 10px 24px rgba(0,0,0,0.08)",
+    zIndex: 9999,
+
+    overflowY: "auto", // ✅ samo vertikalno ako ima mnogo stavki
+    maxHeight: 320,
+
+    overflowX: "hidden",  // ✅ nema horizontalnog skrola
+  }}
+      >
+        {phoneMatches.map((c) => (
+          <div
+            key={c.id}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => pickClient(c)}
+            style={{
+              padding: "10px 12px",
+              cursor: "pointer",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 4,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>{c.name}</span>
+            <span style={{ opacity: 0.7, flexShrink: 0, marginLeft: 12 }}>
+  {c.phone}
+</span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+</div>
     </>
   )}
 
@@ -5719,7 +5864,36 @@ React.useEffect(() => {
   const [editNote,  setEditNote]  = React.useState(appt?.note || "");
   const [editClientName,  setEditClientName]  = React.useState(appt?.clientName  || "");
   const [editClientPhone, setEditClientPhone] = React.useState(appt?.clientPhone || "");
+const [editNameSugOpen, setEditNameSugOpen] = React.useState(false);
+const [editPhoneSugOpen, setEditPhoneSugOpen] = React.useState(false);
+const editNameBlurRef = React.useRef(null);
+const editPhoneBlurRef = React.useRef(null);
 
+const editNameMatches = React.useMemo(() => {
+  const q = (editClientName || "").trim().toLowerCase();
+  if (!q) return [];
+  return (clients || [])
+    .filter(c => (c.name || "").toLowerCase().includes(q))
+    .slice(0, 8);
+}, [editClientName, clients]);
+
+const editPhoneMatches = React.useMemo(() => {
+  const q = normPhone(editClientPhone || "");
+  if (!q) return [];
+  return (clients || [])
+    .filter(c => {
+      const p = normPhone(c.phone || "");
+      return p && p.includes(q);
+    })
+    .slice(0, 8);
+}, [editClientPhone, clients]);
+
+const pickEditClient = (c) => {
+  setEditClientName(c.name || "");
+  setEditClientPhone(c.phone || "");
+  setEditNameSugOpen(false);
+  setEditPhoneSugOpen(false);
+};
   // Inicijalne izabrane usluge
   const initialSrvIds =
     (apptServices?.map(s => s.id)) ||
@@ -6079,55 +6253,115 @@ if (!priceDirty) {
 <div style={{ display: "grid", gap: 8 }}>
   <div style={{ fontWeight: 700, fontSize: 16 }}>Klijent</div>
 
-  {/* Ime + autocomplete */}
-  <input
-    style={styles.inp}
-    placeholder="Ime i prezime"
-    list="modal-client-suggestions"
-    value={editClientName}
-    onChange={(e) => {
-      const v = e.target.value;
-      setEditClientName(v);
+  {/* Ime */}
+  <div style={{ position: "relative" }}>
+    <input
+      style={styles.inp}
+      placeholder="Ime i prezime"
+      value={editClientName}
+      onChange={(e) => {
+        setEditClientName(e.target.value);
+        setEditNameSugOpen(true);
+        // ✅ nema autopop telefona
+      }}
+      onFocus={() => setEditNameSugOpen(true)}
+      onBlur={() => {
+        if (editNameBlurRef.current) clearTimeout(editNameBlurRef.current);
+        editNameBlurRef.current = setTimeout(() => setEditNameSugOpen(false), 150);
+      }}
+    />
 
-      // automatski popuni telefon ako postoji match po imenu
-      const hit =
-        clientsByName && typeof clientsByName.get === "function"
-          ? clientsByName.get(v.toLowerCase())
-          : null;
+    {editNameSugOpen && editNameMatches.length > 0 && (
+      <div
+        style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          right: 0,
+          background: "#fff",
+          border: "1px solid rgba(0,0,0,0.12)",
+          borderRadius: 10,
+          marginTop: 6,
+          boxShadow: "0 10px 24px rgba(0,0,0,0.08)",
+          zIndex: 80,
+          overflow: "hidden",
+        }}
+      >
+        {editNameMatches.map((c) => (
+          <div
+            key={c.id}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => pickEditClient(c)}
+            style={{
+              padding: "10px 12px",
+              cursor: "pointer",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>{c.name}</span>
+            <span style={{ opacity: 0.7 }}>{c.phone}</span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
 
-      if (hit) {
-        setEditClientPhone(hit.phone || "");
-      }
-    }}
-  />
+  {/* Telefon */}
+  <div style={{ position: "relative" }}>
+    <input
+      style={styles.inp}
+      placeholder="Telefon"
+      value={editClientPhone}
+      onChange={(e) => {
+        setEditClientPhone(e.target.value);
+        setEditPhoneSugOpen(true);
+        // ✅ telefon ne menja ime dok se ne klikne predlog
+      }}
+      onFocus={() => setEditPhoneSugOpen(true)}
+      onBlur={() => {
+        if (editPhoneBlurRef.current) clearTimeout(editPhoneBlurRef.current);
+        editPhoneBlurRef.current = setTimeout(() => setEditPhoneSugOpen(false), 150);
+      }}
+    />
 
-  {/* lista predloga imena */}
-  <datalist id="modal-client-suggestions">
-    {Array.isArray(clients) &&
-      clients.map((c) => (
-        <option key={c.id} value={c.name} />
-      ))}
-  </datalist>
-
-  {/* Telefon + lookup po telefonu */}
-  <input
-    style={styles.inp}
-    placeholder="Telefon"
-    value={editClientPhone}
-    onChange={(e) => {
-      const v = e.target.value;
-      setEditClientPhone(v);
-
-      const hit =
-        clientsByPhone && typeof clientsByPhone.get === "function"
-          ? clientsByPhone.get(normPhone(v))
-          : null;
-
-      if (hit) {
-        setEditClientName(hit.name || "");
-      }
-    }}
-  />
+    {editPhoneSugOpen && editPhoneMatches.length > 0 && (
+      <div
+        style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          right: 0,
+          background: "#fff",
+          border: "1px solid rgba(0,0,0,0.12)",
+          borderRadius: 10,
+          marginTop: 6,
+          boxShadow: "0 10px 24px rgba(0,0,0,0.08)",
+          zIndex: 80,
+          overflow: "hidden",
+        }}
+      >
+        {editPhoneMatches.map((c) => (
+          <div
+            key={c.id}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => pickEditClient(c)}
+            style={{
+              padding: "10px 12px",
+              cursor: "pointer",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>{c.name}</span>
+            <span style={{ opacity: 0.7 }}>{c.phone}</span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
 </div>
 
 
