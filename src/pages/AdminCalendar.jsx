@@ -17,7 +17,8 @@ import {
   where,
   orderBy,
   serverTimestamp,
-  deleteField,
+deleteField,
+
 } from "firebase/firestore";
 import { runTransaction, writeBatch, increment, getDocs } from "firebase/firestore";
 import ClientStatsPrompt from "../partials/ClientStatsPrompt";
@@ -1154,6 +1155,7 @@ const knownIdsRef = useRef(new Set());
     where("status", "==", "booked"),
     orderBy("dateKey", "desc"),
     orderBy("startMin", "desc")
+   
   );
 
   const off = onSnapshot(q, (snap) => {
@@ -1223,7 +1225,7 @@ useEffect(() => {
     where("type", "==", "booking"),
     where("status", "==", "cancelled"),
     orderBy("cancelledAt", "desc")   // ⟵ ključno
-    // , limit(50)                    // (opciono) ako želiš ograničenje
+                    // (opciono) ako želiš ograničenje
   );
 
   const off = onSnapshot(q, (snap) => {
@@ -1513,7 +1515,7 @@ const offClientsPenalty = onSnapshot(
   // 1) ostaje tvoj "daily listeners" efekat – BEZ unutrašnjeg useEffect-a:
 // daily listeners (day tab)
 useEffect(() => {
-  
+  if (tab !== "day") return;
   const dk = dateKey(dayDate);
   const qShifts = query(collection(db, "shifts"), where("dateKey", "==", dk));
   const qAppts  = query(collection(db, "appointments"), where("dateKey", "==", dk));
@@ -1537,7 +1539,7 @@ useEffect(() => {
   );
 
   return () => { offA(); offS(); };
-}, [dayDate]);
+}, [tab, dayDate]);
 
   // napravi shift evente iz dayShifts
   // napravi shift + blok evente iz dayShifts
@@ -1569,6 +1571,7 @@ useEffect(() => {
 
   // month snapshots (shifts + timeOff)
   useEffect(() => {
+      if (tab !== "month") return;
     const base = new Date(monthAnchor + "-01T00:00:00");
     const start = dateKey(new Date(base.getFullYear(), base.getMonth(), 1));
     const end = dateKey(new Date(base.getFullYear(), base.getMonth() + 1, 0));
@@ -1605,10 +1608,11 @@ useEffect(() => {
       offB();
       offV();
     };
-  }, [monthAnchor]);
+ }, [tab, monthAnchor]);
 
   // schedule tab: bookings for selected day
   useEffect(() => {
+     if (tab !== "schedule") return;
     const dk = dateKey(schedDate);
 const q = query(
   collection(db, "appointments"),
@@ -1627,7 +1631,7 @@ const q = query(
       )
     );
     return () => off();
-  }, [schedDate]);
+  }, [tab, schedDate]);
 useEffect(() => {
   if (!pendingApptId || !Array.isArray(schedAppts) || !schedAppts.length) return;
   const appt = schedAppts.find(a => a.id === pendingApptId);
